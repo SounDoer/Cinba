@@ -18,7 +18,7 @@
 | 4. Transport | ✅ 完成 |
 | 5. CoreClient | ✅ 完成，4 个测试通过（合计 8 个） |
 | 6. 权限门 | ✅ 完成 |
-| 7. 端到端验证 | ⚠️ 机制已验证（脚本化答 y/n 均符合预期），**但 `rl.question` 的交互路径待你在真实终端里手动确认一次** |
+| 7. 端到端验证 | ✅ 完成，脚本化与真实终端交互均验证通过 |
 
 本轮新增备注：
 
@@ -903,12 +903,12 @@ git add -A && git commit -m "feat: 端到端验证 REPL"
 
 ---
 
-## 阶段 1a 完成标准
+## 阶段 1a 完成标准（全部达成，2026-09-06 收工）
 
 - [x] `npm install` 后三个本地包能互相 import
 - [x] `node --test "packages/core-client/src/*.test.ts"` 全部通过（8/8）
 - [x] `node scripts/repl.ts "说一个字：好"` 正常对话并退出
-- [ ] `node scripts/repl.ts "运行 ls 命令..."` 会停下来问、答 `y` 执行、答 `n` 拒绝 ← 待人工跑一次
+- [x] `node scripts/repl.ts "运行 ls 命令..."` 会停下来问、答 `y` 执行、答 `n` 拒绝
 - [x] 全程没有 `shell: true`，没有 DEP0190 警告
 
 达成后进阶段 1b（Electron GUI）。届时 `scripts/repl.ts` 里的那套事件处理逻辑，就是 GUI 渲染层的蓝本——把 `console.log` 换成往 DOM 里写，把 `rl.question` 换成弹窗。
