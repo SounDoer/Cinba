@@ -1,0 +1,17 @@
+{
+  "name": "@cinba/desktop",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "main": "./src/main.ts",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@cinba/core-client": "*",
+    "@cinba/core-host": "*"
+  },
+  "devDependencies": {
+    "electron": "^44.2.0"
+  }
+}

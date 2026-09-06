@@ -146,6 +146,13 @@ window.cinba = {
 2. 主进程与 preload 改写为 `.js`（这两处代码很薄），`core-client` / `core-host` 仍为 `.ts`，若它们也无法被加载则退到方案 3
 3. 引入最小构建步骤（需放行 esbuild 安装脚本，是本阶段唯一会改变既有安全姿态的选项）
 
+**实测结论（2026-09-06）：** Electron 主进程可直接执行 `.ts`，并能解析本地 workspace 包
+（`[smoke] startCore 是 function`）。**无需任何备用方案**，构建步骤与 esbuild 放行均不涉及。
+
+**另一处与预期不同：** Electron 44 已**没有 `postinstall` 脚本**，改为暴露 `install-electron`
+命令要求显式触发下载。因此 `npm install` 之后二进制并不存在（`node_modules/electron/dist/` 缺失、
+`path.txt` 为空），需另跑一次 `node node_modules/electron/install.js`。这与安装脚本拦截无关。
+
 ## 6. 测试策略
 
 | 层 | 手段 |
