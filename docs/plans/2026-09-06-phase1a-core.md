@@ -740,7 +740,7 @@ export type { Transport } from "./transport.ts";
 - [ ] **Step 6: 跑全部测试**
 
 ```bash
-node --test packages/core-client/src/
+node --test "packages/core-client/src/*.test.ts"
 ```
 
 期望：8 个测试全部 pass。
@@ -897,7 +897,7 @@ git add -A && git commit -m "feat: 端到端验证 REPL"
 ## 阶段 1a 完成标准
 
 - [ ] `npm install` 后三个本地包能互相 import
-- [ ] `node --test packages/core-client/src/` 全部通过
+- [ ] `node --test "packages/core-client/src/*.test.ts"` 全部通过
 - [ ] `node scripts/repl.ts "说一个字：好"` 正常对话并退出
 - [ ] `node scripts/repl.ts "运行 ls 命令..."` 会停下来问、答 `y` 执行、答 `n` 拒绝
 - [ ] 全程没有 `shell: true`，没有 DEP0190 警告
