@@ -78,16 +78,17 @@ core-client 会话状态（消息数组）  ← 唯一真相
 { "type": "message_update", "assistantMessageEvent": { "type": "text_delta", "delta": "好" } }
 ```
 
-界面动作（`ViewAction`）共六种：
+界面动作（`ViewAction`）共七种：
 
-| 动作 | 载荷 | 来源事件 |
+| 动作 | 载荷 | 来源 |
 |---|---|---|
-| `message_added` | role、id | `message_start` |
-| `text_appended` | messageId、text | `message_update` 里的 `text_delta` |
-| `thinking_appended` | messageId、text | `message_update` 里的 thinking 增量 |
-| `tool_changed` | toolCallId、toolName、args、status、result | `tool_execution_*` |
-| `confirm_requested` | requestId、toolName、args | `extension_ui_request`（method=confirm） |
-| `settled` | usage、cost | `agent_settled` |
+| `message_added` | messageId、role | `message_start`（role 为 user/assistant） |
+| `text_appended` | messageId、text | `message_update` 的 `text_delta` |
+| `thinking_appended` | messageId、text | `message_update` 的 `thinking_delta` |
+| `tool_changed` | toolCallId、toolName、args、status、result | `tool_execution_start` / `_end`，以及主进程在用户点「允许」后补发的 running |
+| `confirm_requested` | requestId | `extension_ui_request`（method=confirm） |
+| `usage_changed` | totalTokens、totalCost | `message_end` 的 usage，累加 |
+| `busy_changed` | busy | 主进程发出 prompt 时为 true，`agent_settled` 时为 false |
 
 工具卡片按 `toolCallId` 索引——阶段 0 笔记已确认这是并发时对号入座的依据。
 
