@@ -1,7 +1,7 @@
 # Cinba 设计文档
 
-日期：2026-09-06
-状态：已确认，待实施
+日期：2026-09-06（最后更新 2026-09-07）
+状态：阶段 0 / 1a / 1b 已完成。第 8 节记录了各阶段实测确认与新暴露的问题。
 
 ## 1. 目标
 
@@ -157,11 +157,30 @@ Cinba/
 
 因此**权限门是阶段 1 的硬需求**，不是可选项：`packages/extensions/` 中第一个要实现的就是它（`pi.on("tool_call")` 拦截 + `ctx.ui.confirm()`）。在此之前不得在含重要文件的目录中运行，也不得用可能触发写操作的 prompt。
 
+### 已解决（阶段 1 期间）
+
+- ~~**`ctx.ui.confirm()` 如何穿过 RPC 边界。**~~ Pi 的 extension UI protocol 已经定义好了这条往返通道（`extension_ui_request` / `extension_ui_response`，按 `id` 配对），不需要自造。但 Pi 内置的 `RpcClient` 用不了——它的 `send()` 是 private，没法把回应写回 stdin，所以 `core-client` 自己实现。详见 `docs/notes/2026-09-06-rpc-protocol-findings.md` 第 9 节。
+- ~~**`shell: true` 的替代方案。**~~ 改为用 Node 直接执行 Pi 的 `rpc-entry`，两个问题都没了。**但在 Electron 下有个陷阱**：主进程里 `process.execPath` 是 `electron.exe` 而不是 `node.exe`，必须给子进程设 `ELECTRON_RUN_AS_NODE=1`，否则 Electron 会把入口文件当成一个 app 加载后静默退出。已在 `core-host` 落实并加测试。
+
 ### 待解问题
 
-- **`ctx.ui.confirm()` 如何穿过 RPC 边界。** 权限确认的对话框在 GUI 侧，拦截逻辑在核心侧的 extension 里，中间隔着协议。需查明 Pi 的 extension UI protocol 是否已为 RPC 模式定义了对应的往返事件；若没有，需要自己设计这条通道。**这是阶段 1 最硬的一块，动手前必须先查清。**
-- **`shell: true` 的替代方案。** 当前 spawn Pi 依赖 shell（Windows 上 Node 禁止直接 spawn `.cmd`），会触发 DEP0190 警告。`core-host` 正式实现时应改为直接用 Node 启动 Pi 的入口 JS，绕开 shell。
 - **Pi 的 extension API 稳定性。** 文档路径带 `/latest`，项目迭代快。因此不把大量逻辑压在 extension API 上。
+
+- **`desktop` 包同时扮演了前端与核心侧。** 第 5 节的依赖规则说前端只依赖 `core-client`，但 `packages/desktop` 也依赖 `core-host`——因为它的主进程负责起 Pi、管进程，那是核心侧的活。渲染层本身是干净的（零 import），所以这不是渗透性的问题。
+
+  阶段 3 需要决定：是把 `desktop` 拆成「薄前端 + 独立的本机核心进程」，还是让它保留「本机模式 / 远程模式」两种形态——后者的话，依赖 `core-host` 就是正当的，规则该改的是文字而不是代码。**这是取舍，不是缺陷。**
+
+- **⚠️ 切换项目这条路假设了核心与界面共享文件系统。** 第 7 节明确警告过「前两阶段不要假设核心与 UI 同进程、同机器、同文件系统」，**而这一条我们踩了**：
+
+  ```js
+  // packages/desktop/src/main.ts
+  dialog.showOpenDialog(window, { properties: ["openDirectory"] })  // 弹的是本机的选择器
+  existsSync(parsed.cwd)                                            // 查的是本机的路径
+  ```
+
+  阶段 3 里项目目录在服务器上，本机选择器选不到，`existsSync` 查错了机器。**这条是必须重做，不是可选优化。**
+
+  影响范围已核实：只在 `main.ts` 的 `chooseProject` / `loadCwd` / `saveCwd` 三处，约 40 行。渲染层拿到的「项目」只是一个用来显示名字的字符串，从不碰路径，所以不受影响。重做时应改为向核心侧索取可选目录，而不是在界面这侧翻文件系统。
 
 ## 9. 安全注意
 
