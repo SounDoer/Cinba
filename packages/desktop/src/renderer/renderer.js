@@ -13,6 +13,9 @@ const usageLabel = document.getElementById("usage");
 /** messageId → 那条消息的正文节点。 */
 const textNodes = new Map();
 
+/** toolCallId → { node, entry }，用来原地更新卡片。 */
+const toolNodes = new Map();
+
 function setBusy(busy) {
   input.disabled = busy;
   sendButton.disabled = busy;
@@ -39,6 +42,82 @@ function renderMessage(entry) {
   return box;
 }
 
+const STATUS_LABEL = {
+  pending: "待批准",
+  running: "执行中",
+  done: "完成",
+  error: "被拒绝或出错",
+};
+
+function renderTool(entry) {
+  const box = document.createElement("div");
+  box.className = `tool ${entry.status}`;
+
+  const head = document.createElement("div");
+  head.className = "tool-head";
+
+  const name = document.createElement("span");
+  name.className = "tool-name";
+  name.textContent = entry.toolName;
+
+  const status = document.createElement("span");
+  status.className = "tool-status";
+  status.textContent = STATUS_LABEL[entry.status] ?? entry.status;
+
+  head.append(name, status);
+  box.append(head);
+
+  if (entry.args !== undefined) {
+    const args = document.createElement("pre");
+    args.className = "tool-args";
+    args.textContent = JSON.stringify(entry.args, null, 2);
+    box.append(args);
+  }
+
+  if (entry.result) {
+    const result = document.createElement("pre");
+    result.className = "tool-result";
+    result.textContent = entry.result;
+    box.append(result);
+  }
+
+  if (entry.confirmRequestId) {
+    const row = document.createElement("div");
+    row.className = "tool-confirm";
+    const requestId = entry.confirmRequestId;
+
+    const allow = document.createElement("button");
+    allow.className = "allow";
+    allow.textContent = "允许";
+    allow.addEventListener("click", () => void window.cinba.respondConfirm(requestId, true));
+
+    const deny = document.createElement("button");
+    deny.className = "deny";
+    deny.textContent = "拒绝";
+    deny.addEventListener("click", () => void window.cinba.respondConfirm(requestId, false));
+
+    row.append(allow, deny);
+    box.append(row);
+  }
+
+  transcript.append(box);
+  toolNodes.set(entry.toolCallId, { node: box, entry });
+  return box;
+}
+
+/** 卡片的变化很杂（状态、结果、按钮增减），整张重画最简单也最不容易错。 */
+function updateTool(entry) {
+  const existing = toolNodes.get(entry.toolCallId);
+  if (!existing) {
+    renderTool(entry);
+    return;
+  }
+  const merged = { ...existing.entry, ...entry };
+  const fresh = renderTool(merged);
+  // renderTool 把新节点接在了末尾，这里用它替换掉原位置的旧节点，顺序才不会乱。
+  existing.node.replaceWith(fresh);
+}
+
 function scrollToBottom() {
   transcript.scrollTop = transcript.scrollHeight;
 }
@@ -52,6 +131,32 @@ function applyAction(action) {
     case "text_appended": {
       const node = textNodes.get(action.messageId);
       if (node) node.textContent += action.text;
+      break;
+    }
+
+    case "tool_changed":
+      updateTool({
+        kind: "tool",
+        toolCallId: action.toolCallId,
+        toolName: action.toolName,
+        args: action.args,
+        status: action.status,
+        result: action.result,
+        confirmRequestId:
+          action.status === "pending"
+            ? toolNodes.get(action.toolCallId)?.entry.confirmRequestId
+            : undefined,
+      });
+      break;
+
+    case "confirm_requested": {
+      // 确认请求不带 toolCallId，挂到最近一张待批准的卡片上。
+      const pending = [...toolNodes.values()]
+        .reverse()
+        .find((item) => item.entry.status === "pending");
+      if (pending) {
+        updateTool({ ...pending.entry, confirmRequestId: action.requestId });
+      }
       break;
     }
 
@@ -70,9 +175,11 @@ function applyAction(action) {
 function renderSnapshot(snapshot) {
   transcript.replaceChildren();
   textNodes.clear();
+  toolNodes.clear();
 
   for (const entry of snapshot.entries) {
     if (entry.kind === "message") renderMessage(entry);
+    else renderTool(entry);
   }
 
   usageLabel.textContent = `${snapshot.totalTokens} tokens · $${snapshot.totalCost.toFixed(4)}`;
