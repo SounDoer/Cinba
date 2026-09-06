@@ -8,6 +8,21 @@
 
 ---
 
+## 进度（截至 2026-09-06 收工）
+
+| Task | 状态 |
+|---|---|
+| 1. workspace 骨架 | ✅ 完成并验证（符号链接已建立，`rpc-entry` 可从本地解析） |
+| 2. core-host | ⚠️ **代码已写并提交，但未运行验证**。下次开工第一件事：跑 Task 2 Step 2 |
+| 3-7 | 未开始 |
+
+环境备注：
+
+- provider 用 DeepSeek，`DEEPSEEK_API_KEY` 已设为用户级环境变量
+- `npm install` 时有 3 个包的安装脚本被 npm 拦下未执行（`@google/genai`、`esbuild`、`protobufjs`）。**这是刻意保持的安全姿态**，暂不批准。若将来报错提到 esbuild 缺少二进制，再用 `npm approve-scripts` 单独放行
+
+---
+
 ## 阶段 0 已验证的事实（本计划的依据）
 
 - Pi 包的 exports 映射里有 `./rpc-entry` → `dist/bundle/rpc-entry.js`，**专供 Node 直接启动**。实测 `node rpc-entry.js --provider deepseek` 可用，不需要 shell，不需要 `--mode rpc`，无 DEP0190 警告。
