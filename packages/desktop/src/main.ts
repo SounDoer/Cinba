@@ -1,18 +1,165 @@
-// 冒烟实验：验证 Electron 主进程能直接执行 .ts，并能解析本地 workspace 包。
-import { app, BrowserWindow } from "electron";
+// Electron 主进程。
+//
+// 唯一真相住在这里：Pi 子进程、协议客户端、会话账本。
+// 渲染层只是一份可随时由快照重建的副本，因此刷新界面不会丢对话。
+
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import type { IpcMainInvokeEvent } from "electron";
 import { fileURLToPath } from "node:url";
 import { startCore } from "@cinba/core-host";
+import {
+  CoreClient,
+  createEventFolder,
+  createSession,
+  foldUiRequest,
+  StdioTransport,
+} from "@cinba/core-client";
+import type { Session, ViewAction } from "@cinba/core-client";
 
-console.log("[smoke] main.ts 被执行了");
-console.log("[smoke] startCore 是", typeof startCore);
+const GATE = fileURLToPath(
+  import.meta.resolve("@cinba/extensions/src/permission-gate.ts"),
+);
+
+/** 文字增量逐 token 到达，攒一批再发，避免每个字一次 IPC 往返加一次重绘。 */
+const FLUSH_INTERVAL_MS = 30;
+
+let window: BrowserWindow | undefined;
+let client: CoreClient | undefined;
+let session: Session = createSession();
+let cwd = process.cwd();
+
+/** 待回应的权限确认：requestId → 把答案交回给 CoreClient 的那个函数。 */
+const pendingConfirms = new Map<string, (confirmed: boolean) => void>();
+
+let outbox: ViewAction[] = [];
+let flushTimer: NodeJS.Timeout | undefined;
+
+/** 记进账本，并排队发给窗口。 */
+function emit(actions: ViewAction[]): void {
+  for (const action of actions) session.apply(action);
+  outbox.push(...actions);
+
+  if (flushTimer) return;
+  flushTimer = setTimeout(() => {
+    flushTimer = undefined;
+    const batch = outbox;
+    outbox = [];
+    if (batch.length > 0) window?.webContents.send("cinba:actions", batch);
+  }, FLUSH_INTERVAL_MS);
+}
+
+/** 起一个新的 Pi 进程，并把账本清空。切换工作目录时也走这里。 */
+function startSession(): void {
+  void client?.close();
+  pendingConfirms.clear();
+  outbox = [];
+  session = createSession();
+
+  const fold = createEventFolder();
+  const next = new CoreClient(new StdioTransport(startCore({ cwd, extensions: [GATE] })));
+
+  next.onEvent((event) => emit(fold(event)));
+
+  next.onUiRequest(async (request) => {
+    const action = foldUiRequest(request);
+    if (!action) return { cancelled: true };
+
+    emit([action]);
+
+    // 一直挂着，直到窗口把用户的选择送回来。
+    // 核心此刻正阻塞等待，这正是权限门起作用的地方。
+    const confirmed = await new Promise<boolean>((resolve) => {
+      pendingConfirms.set(request.id, resolve);
+    });
+    return { confirmed };
+  });
+
+  client = next;
+}
 
 app.whenReady().then(() => {
-  const win = new BrowserWindow({
-    width: 900,
-    height: 700,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  startSession();
+
+  window = new BrowserWindow({
+    width: 980,
+    height: 760,
+    title: "Cinba",
+    webPreferences: {
+      preload: fileURLToPath(import.meta.resolve("./preload.js")),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
   });
-  void win.loadFile(fileURLToPath(import.meta.resolve("./renderer/index.html")));
+
+  void window.loadFile(fileURLToPath(import.meta.resolve("./renderer/index.html")));
 });
 
-app.on("window-all-closed", () => app.quit());
+// 窗口关了就把 Pi 子进程一起收走，否则会留下孤儿进程。
+app.on("window-all-closed", () => {
+  void client?.close();
+  app.quit();
+});
+
+// ---- 窗口来的请求 ----
+// 渲染层的输入一律当作不可信处理：校验类型，不信任取值。
+
+ipcMain.handle("cinba:getSnapshot", () => session.snapshot());
+
+ipcMain.handle("cinba:prompt", (_event: IpcMainInvokeEvent, text: unknown) => {
+  if (typeof text !== "string" || text.trim() === "") return;
+  emit([{ type: "busy_changed", busy: true }]);
+  void client?.prompt(text);
+});
+
+ipcMain.handle("cinba:abort", () => {
+  void client?.abort();
+});
+
+ipcMain.handle(
+  "cinba:respondConfirm",
+  (_event: IpcMainInvokeEvent, requestId: unknown, confirmed: unknown) => {
+    if (typeof requestId !== "string" || typeof confirmed !== "boolean") return;
+    const resolve = pendingConfirms.get(requestId);
+    if (!resolve) return;
+    pendingConfirms.delete(requestId);
+
+    // 用户点了允许：卡片进入「执行中」。这是 running 状态的唯一来源——
+    // Pi 在确认与执行完成之间不发任何事件。
+    if (confirmed) {
+      const pending = session
+        .snapshot()
+        .entries.find(
+          (entry) => entry.kind === "tool" && entry.confirmRequestId === requestId,
+        );
+      if (pending && pending.kind === "tool") {
+        emit([
+          {
+            type: "tool_changed",
+            toolCallId: pending.toolCallId,
+            toolName: pending.toolName,
+            status: "running",
+          },
+        ]);
+      }
+    }
+
+    resolve(confirmed);
+  },
+);
+
+ipcMain.handle("cinba:chooseProject", async () => {
+  if (!window) return cwd;
+  const result = await dialog.showOpenDialog(window, {
+    title: "选择项目目录",
+    properties: ["openDirectory"],
+  });
+  if (result.canceled || result.filePaths.length === 0) return cwd;
+
+  cwd = result.filePaths[0]!;
+  startSession();
+  window.webContents.send("cinba:reset", cwd);
+  return cwd;
+});
+
+ipcMain.handle("cinba:getProject", () => cwd);
