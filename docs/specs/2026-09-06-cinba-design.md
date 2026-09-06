@@ -63,8 +63,9 @@ Cinba/
 ├── .gitignore
 ├── AGENTS.md                    # 项目说明，Pi 自动加载为上下文
 ├── docs/
-│   └── specs/
-│       └── 2026-09-06-cinba-design.md
+│   ├── specs/                   # 设计文档
+│   ├── plans/                   # 各阶段实施计划
+│   └── notes/                   # 实测记录与调查笔记
 ├── scripts/
 │   └── probe.ts                 # 阶段0 协议探针，之后留作调试工具
 └── packages/
@@ -137,10 +138,29 @@ Cinba/
 
 **阶段 3 才会变贵的部分**（阶段 1-2 不提前做，但心里有数）：会话存储从本地文件变共享存储；工具权限确认从同步弹窗变异步网络往返。只要前两阶段不假设"核心与 UI 同进程、同机器、同文件系统"，这些都是加东西而非推倒重来。
 
-## 8. 待验证的未知
+## 8. 已验证的结论与待解问题
 
-- **Pi 的 RPC 模式 vs JSON event stream 模式，该用哪个。** 按文档描述，GUI 需要双向通信（发消息 + 响应工具权限请求），应走 RPC 模式，但两者的确切事件形状尚未实际验证。**阶段 0 的首要任务就是确认这一点。** 若 RPC 模式不支持某些必需的交互，架构可能需要微调。
-- Pi 的 extension API 稳定性。文档路径带 `/latest`，项目迭代快。因此不把大量逻辑压在 extension API 上。
+完整实测记录见 `docs/notes/2026-09-06-rpc-protocol-findings.md`。
+
+### 已确认（阶段 0 实测，2026-09-06）
+
+- **走 RPC 模式**（`pi --mode rpc`）。事件流完整可用：`agent_start` / `turn_start` / `message_start` / `message_update` / `tool_execution_*` / `agent_end` / `agent_settled`，嵌套结构为 agent > turn > message。
+- **`agent_settled` 是"可接受新输入"的信号**，GUI 据此解除输入锁。不可用 `turn_end` 代替——调完工具后还会有下一轮。
+- **RPC 进程常驻**，一次 prompt 结束后不退出。`core-host` 需管理进程生命周期，GUI 关闭时必须回收子进程。
+- **消息的 role 有三种**：`user` / `assistant` / `toolResult`。
+- **费用与 token 用量随消息实时返回**，GUI 无需自行计算。
+
+### ⚠️ 已确认的安全缺口
+
+**RPC 模式默认放行模型请求的一切工具调用，没有权限确认握手。** `tool_execution_start` 之后直接执行，不等待客户端回应。
+
+因此**权限门是阶段 1 的硬需求**，不是可选项：`packages/extensions/` 中第一个要实现的就是它（`pi.on("tool_call")` 拦截 + `ctx.ui.confirm()`）。在此之前不得在含重要文件的目录中运行，也不得用可能触发写操作的 prompt。
+
+### 待解问题
+
+- **`ctx.ui.confirm()` 如何穿过 RPC 边界。** 权限确认的对话框在 GUI 侧，拦截逻辑在核心侧的 extension 里，中间隔着协议。需查明 Pi 的 extension UI protocol 是否已为 RPC 模式定义了对应的往返事件；若没有，需要自己设计这条通道。**这是阶段 1 最硬的一块，动手前必须先查清。**
+- **`shell: true` 的替代方案。** 当前 spawn Pi 依赖 shell（Windows 上 Node 禁止直接 spawn `.cmd`），会触发 DEP0190 警告。`core-host` 正式实现时应改为直接用 Node 启动 Pi 的入口 JS，绕开 shell。
+- **Pi 的 extension API 稳定性。** 文档路径带 `/latest`，项目迭代快。因此不把大量逻辑压在 extension API 上。
 
 ## 9. 安全注意
 
