@@ -27,9 +27,12 @@ export type ViewAction =
   | { type: "usage_changed"; totalTokens: number; totalCost: number }
   | { type: "busy_changed"; busy: boolean };
 
-/** 工具结果形如 { content: [{ type: "text", text: "..." }] }，抽出其中的文本。 */
-function extractResultText(result: unknown): string {
-  const content = (result as { content?: unknown })?.content;
+/**
+ * 抽出 { content: [{ type: "text", text: "..." }] } 里的文本。
+ * 工具结果与消息正文用的是同一种形状，所以共用这一个。
+ */
+function extractText(carrier: unknown): string {
+  const content = (carrier as { content?: unknown })?.content;
   if (!Array.isArray(content)) return "";
   return content
     .filter((part): part is { type: string; text: string } => {
@@ -55,11 +58,24 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
   return (event: CoreEvent): ViewAction[] => {
     switch (event.type) {
       case "message_start": {
-        const role = (event.message as { role?: string } | undefined)?.role;
+        const message = event.message as { role?: string; content?: unknown } | undefined;
+        const role = message?.role;
         // toolResult 不进消息流：它的内容已经贴在工具卡片上了，再渲染一遍是重复。
         if (role !== "user" && role !== "assistant") return [];
+
         currentMessageId = `m${++messageCount}`;
-        return [{ type: "message_added", messageId: currentMessageId, role }];
+        const actions: ViewAction[] = [
+          { type: "message_added", messageId: currentMessageId, role },
+        ];
+
+        // 用户消息的正文在这里就已经完整了，不像助手消息靠后续的 text_delta 一点点填。
+        // 助手消息此刻的 content 是空的，所以这段对它是空转。
+        const text = extractText(message);
+        if (text) {
+          actions.push({ type: "text_appended", messageId: currentMessageId, text });
+        }
+
+        return actions;
       }
 
       case "message_update": {
@@ -108,7 +124,7 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
             toolCallId: String(event.toolCallId),
             toolName: String(event.toolName),
             status: event.isError === true ? "error" : "done",
-            result: extractResultText(event.result),
+            result: extractText(event.result),
           },
         ];
 

@@ -13,6 +13,30 @@ test("user 与 assistant 消息各拿到一个新 id", () => {
   ]);
 });
 
+test("用户消息的正文在 message_start 里就已经完整，必须一并取出", () => {
+  // 助手消息的正文靠后续的 text_delta 一点点填，用户消息没有那个过程——
+  // 只在 message_start 出现这一次。漏掉就是个永远空着的气泡。
+  const fold = createEventFolder();
+
+  const actions = fold({
+    type: "message_start",
+    message: { role: "user", content: [{ type: "text", text: "你好" }] },
+  });
+
+  assert.deepEqual(actions, [
+    { type: "message_added", messageId: "m1", role: "user" },
+    { type: "text_appended", messageId: "m1", text: "你好" },
+  ]);
+});
+
+test("助手消息开始时正文为空，不产生多余的追加动作", () => {
+  const fold = createEventFolder();
+
+  assert.deepEqual(fold({ type: "message_start", message: { role: "assistant", content: [] } }), [
+    { type: "message_added", messageId: "m1", role: "assistant" },
+  ]);
+});
+
 test("toolResult 消息不进消息流（内容已在工具卡片上）", () => {
   const fold = createEventFolder();
 
