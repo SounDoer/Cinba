@@ -13,8 +13,17 @@
 | Task | 状态 |
 |---|---|
 | 1. workspace 骨架 | ✅ 完成并验证（符号链接已建立，`rpc-entry` 可从本地解析） |
-| 2. core-host | ✅ 完成并验证（Step 2 手工验证跑通完整事件流，无 DEP0190 警告） |
-| 3-7 | 未开始 |
+| 2. core-host | ✅ 完成并验证（手工验证跑通完整事件流，无 DEP0190 警告） |
+| 3. 切行 | ✅ 完成，4 个测试通过 |
+| 4. Transport | ✅ 完成 |
+| 5. CoreClient | ✅ 完成，4 个测试通过（合计 8 个） |
+| 6. 权限门 | ✅ 完成 |
+| 7. 端到端验证 | ⚠️ 机制已验证（脚本化答 y/n 均符合预期），**但 `rl.question` 的交互路径待你在真实终端里手动确认一次** |
+
+本轮新增备注：
+
+- `node --test <目录>` 在 Node 24 上**不会**发现 `.ts` 测试文件（它会把目录名当模块加载并报 `MODULE_NOT_FOUND`）。必须用 glob：`node --test "packages/core-client/src/*.test.ts"`。计划中相关命令已改。
+- 用管道给 `scripts/repl.ts` 喂答案（`echo y | node scripts/repl.ts ...`）会失败：stdin 在 confirm 请求到达前就 EOF 了，readline 关闭后再 `question()` 报 `ERR_USE_AFTER_CLOSE`。这是管道的性质，不是代码 bug——真实终端里 stdin 不关。自动化验证要绕开 readline。
 
 环境备注：
 
@@ -896,10 +905,10 @@ git add -A && git commit -m "feat: 端到端验证 REPL"
 
 ## 阶段 1a 完成标准
 
-- [ ] `npm install` 后三个本地包能互相 import
-- [ ] `node --test "packages/core-client/src/*.test.ts"` 全部通过
-- [ ] `node scripts/repl.ts "说一个字：好"` 正常对话并退出
-- [ ] `node scripts/repl.ts "运行 ls 命令..."` 会停下来问、答 `y` 执行、答 `n` 拒绝
-- [ ] 全程没有 `shell: true`，没有 DEP0190 警告
+- [x] `npm install` 后三个本地包能互相 import
+- [x] `node --test "packages/core-client/src/*.test.ts"` 全部通过（8/8）
+- [x] `node scripts/repl.ts "说一个字：好"` 正常对话并退出
+- [ ] `node scripts/repl.ts "运行 ls 命令..."` 会停下来问、答 `y` 执行、答 `n` 拒绝 ← 待人工跑一次
+- [x] 全程没有 `shell: true`，没有 DEP0190 警告
 
 达成后进阶段 1b（Electron GUI）。届时 `scripts/repl.ts` 里的那套事件处理逻辑，就是 GUI 渲染层的蓝本——把 `console.log` 换成往 DOM 里写，把 `rl.question` 换成弹窗。
