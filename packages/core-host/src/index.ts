@@ -16,7 +16,43 @@ export type CoreOptions = {
   extensions?: string[];
 };
 
+export type SpawnPlan = {
+  args: string[];
+  env: Record<string, string | undefined>;
+};
+
 const DEFAULT_PROVIDER = "deepseek";
+
+/**
+ * 算出启动 Pi 要用的参数与环境变量。
+ *
+ * 抽成纯函数是为了能测：真正的 spawn 依赖运行时状态，测不了，
+ * 但「参数拼对没有」「环境变量带上没有」是能测的，而后者恰好出过一次事故。
+ */
+export function buildSpawnPlan(
+  entry: string,
+  options: CoreOptions = {},
+  baseEnv: Record<string, string | undefined> = process.env,
+): SpawnPlan {
+  const args: string[] = [entry, "--provider", options.provider ?? DEFAULT_PROVIDER];
+
+  if (options.model) {
+    args.push("--model", options.model);
+  }
+
+  for (const extension of options.extensions ?? []) {
+    args.push("-e", extension);
+  }
+
+  return {
+    args,
+    // 在 Electron 主进程里 process.execPath 是 electron.exe，不是 node.exe。
+    // 不设这个变量，electron.exe 会把 rpc-entry.js 当成一个 app 去加载后立刻退出
+    // （实测：exit code=0，stdout 只有一个换行，stderr 为空——完全静默）。
+    // 在普通 Node 下这个变量无害，所以两边都设，不做环境判断。
+    env: { ...baseEnv, ELECTRON_RUN_AS_NODE: "1" },
+  };
+}
 
 /**
  * 启动 Pi 的 RPC 进程。
@@ -33,18 +69,11 @@ export function startCore(options: CoreOptions = {}): ChildProcess {
     import.meta.resolve("@earendil-works/pi-coding-agent/rpc-entry"),
   );
 
-  const args: string[] = ["--provider", options.provider ?? DEFAULT_PROVIDER];
+  const plan = buildSpawnPlan(entry, options);
 
-  if (options.model) {
-    args.push("--model", options.model);
-  }
-
-  for (const extension of options.extensions ?? []) {
-    args.push("-e", extension);
-  }
-
-  return spawn(process.execPath, [entry, ...args], {
+  return spawn(process.execPath, plan.args, {
     cwd: options.cwd ?? process.cwd(),
     stdio: ["pipe", "pipe", "inherit"],
+    env: plan.env,
   });
 }
