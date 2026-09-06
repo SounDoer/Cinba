@@ -5,6 +5,7 @@
   "version": "0.0.0",
   "exports": "./src/index.ts",
   "dependencies": {
+    "@cinba/extensions": "*",
     "@earendil-works/pi-coding-agent": "^0.85.1"
   }
 }

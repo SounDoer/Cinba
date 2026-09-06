@@ -19,10 +19,6 @@ import {
 } from "@cinba/core-client";
 import type { Session, ViewAction } from "@cinba/core-client";
 
-const GATE = fileURLToPath(
-  import.meta.resolve("@cinba/extensions/src/permission-gate.ts"),
-);
-
 /** 文字增量逐 token 到达，攒一批再发，避免每个字一次 IPC 往返加一次重绘。 */
 const FLUSH_INTERVAL_MS = 30;
 
@@ -86,7 +82,7 @@ function startSession(): void {
   session = createSession();
 
   const fold = createEventFolder();
-  const child = startCore({ cwd, extensions: [GATE] });
+  const child = startCore({ cwd });
 
   // Pi 的报错必须有个去处，否则它出问题时我们一无所知。
   child.stderr?.setEncoding("utf8");

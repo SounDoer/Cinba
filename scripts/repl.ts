@@ -3,15 +3,10 @@
 // 用法：node scripts/repl.ts "你的问题"
 
 import { createInterface } from "node:readline/promises";
-import { fileURLToPath } from "node:url";
 import { startCore } from "@cinba/core-host";
 import { CoreClient, StdioTransport } from "@cinba/core-client";
 
-const gate = fileURLToPath(
-  import.meta.resolve("@cinba/extensions/src/permission-gate.ts"),
-);
-
-const child = startCore({ extensions: [gate] });
+const child = startCore();
 
 // startCore 把 stderr 交给调用方处理，这里原样转到终端。
 child.stderr?.setEncoding("utf8");

@@ -12,7 +12,7 @@ export type CoreOptions = {
   provider?: string;
   /** 模型 id。不填则用该 provider 的默认模型。 */
   model?: string;
-  /** 要加载的 extension 文件的绝对路径。 */
+  /** 额外要加载的 extension 文件的绝对路径。权限门是自带的，不用也不能在这里传。 */
   extensions?: string[];
 };
 
@@ -31,6 +31,7 @@ const DEFAULT_PROVIDER = "deepseek";
  */
 export function buildSpawnPlan(
   entry: string,
+  gate: string,
   options: CoreOptions = {},
   baseEnv: Record<string, string | undefined> = process.env,
 ): SpawnPlan {
@@ -40,7 +41,9 @@ export function buildSpawnPlan(
     args.push("--model", options.model);
   }
 
-  for (const extension of options.extensions ?? []) {
+  // 权限门永远排第一个，且不经过 options——它是这个 agent 的固有属性，
+  // 不是调用方的选项。交给调用方传就意味着「谁忘了传谁裸奔」。
+  for (const extension of [gate, ...(options.extensions ?? [])]) {
     args.push("-e", extension);
   }
 
@@ -69,7 +72,11 @@ export function startCore(options: CoreOptions = {}): ChildProcess {
     import.meta.resolve("@earendil-works/pi-coding-agent/rpc-entry"),
   );
 
-  const plan = buildSpawnPlan(entry, options);
+  const gate = fileURLToPath(
+    import.meta.resolve("@cinba/extensions/src/permission-gate.ts"),
+  );
+
+  const plan = buildSpawnPlan(entry, gate, options);
 
   // stderr 也走 pipe，不用 "inherit"：Windows 上的 Electron GUI 进程没有挂控制台，
   // "inherit" 会让 Pi 的报错彻底消失（阶段 1b 有一个 bug 就因此难查）。
