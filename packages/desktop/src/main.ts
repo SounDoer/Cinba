@@ -5,6 +5,9 @@
 
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import type { IpcMainInvokeEvent } from "electron";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startCore } from "@cinba/core-host";
 import {
@@ -26,7 +29,34 @@ const FLUSH_INTERVAL_MS = 30;
 let window: BrowserWindow | undefined;
 let client: CoreClient | undefined;
 let session: Session = createSession();
-let cwd = process.cwd();
+
+// 「当前是哪个项目」。用 process.cwd() 当默认值是错的——那只是启动命令碰巧所在的
+// 目录（用 npm --workspace 启动时会是 packages/desktop），与用户的项目无关。
+let cwd = homedir();
+
+function configPath(): string {
+  return join(app.getPath("userData"), "config.json");
+}
+
+/** 上次选过的项目。读不出来、或那个目录已经没了，就退回主目录。 */
+function loadCwd(): string {
+  try {
+    const parsed = JSON.parse(readFileSync(configPath(), "utf8")) as { cwd?: unknown };
+    if (typeof parsed.cwd === "string" && existsSync(parsed.cwd)) return parsed.cwd;
+  } catch {
+    // 首次启动没有这个文件，属正常情况。
+  }
+  return homedir();
+}
+
+function saveCwd(next: string): void {
+  try {
+    mkdirSync(app.getPath("userData"), { recursive: true });
+    writeFileSync(configPath(), JSON.stringify({ cwd: next }, null, 2), "utf8");
+  } catch {
+    // 记不住不影响这一次使用，不值得打断用户。
+  }
+}
 
 /** 待回应的权限确认：requestId → 把答案交回给 CoreClient 的那个函数。 */
 const pendingConfirms = new Map<string, (confirmed: boolean) => void>();
@@ -78,6 +108,7 @@ function startSession(): void {
 }
 
 app.whenReady().then(() => {
+  cwd = loadCwd();
   startSession();
 
   window = new BrowserWindow({
@@ -157,6 +188,7 @@ ipcMain.handle("cinba:chooseProject", async () => {
   if (result.canceled || result.filePaths.length === 0) return cwd;
 
   cwd = result.filePaths[0]!;
+  saveCwd(cwd);
   startSession();
   window.webContents.send("cinba:reset", cwd);
   return cwd;
