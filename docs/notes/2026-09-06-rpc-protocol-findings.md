@@ -239,3 +239,61 @@ API 设计的参考实现。
 - `docs/rpc.md` 另有说明：Node 应用也可直接用 `AgentSession` 而不 spawn 子进程。
   本项目不采用——那会破坏"前端不 import Pi"的边界，且阻断阶段 3 的远程化
 - 其余 40+ 示例覆盖自定义工具、自定义 provider、渲染器、状态栏等，阶段 4 打磨时值得逐个翻
+
+---
+
+## 10. 补充实测：启动方式与权限门可行性
+
+### 10.1 用 Node 直接启动 rpc-entry（替代 shell）
+
+Pi 的 exports 映射含 `"./rpc-entry": { "import": "./dist/bundle/rpc-entry.js" }`，是专供程序化启动的入口。
+
+```
+node <rpc-entry.js 路径> --provider deepseek
+```
+
+实测可用：不需要 `--mode rpc`，不需要 `shell: true`，无 DEP0190 警告。**第 7 节记录的坑就此解决。**
+
+解析方式有讲究：该子路径只声明了 `import` 条件，**CJS 的 `require.resolve` 会报 `ERR_PACKAGE_PATH_NOT_EXPORTED`**，必须用 ESM 的 `import.meta.resolve`（再经 `fileURLToPath` 转成普通路径给 spawn）。
+
+### 10.2 `rpc-entry` 支持 `-e` 加载扩展
+
+实测 `-e <绝对路径>` 在 `rpc-entry` 上有效，不只 `pi` 命令支持。这是权限门能落地的前提。
+
+### 10.3 权限门实测有效
+
+扩展中 `pi.on("tool_call")` 里调 `ctx.ui.confirm()`，客户端应答 `{confirmed:false}`：
+
+```
+1280ms  tool_execution_start  bash {"command":"ls -la"}
+1281ms  extension_ui_request  (method=confirm, title, message)
+        ← 客户端故意延迟 1500ms 才回 confirmed:false
+2795ms  tool_execution_end    isError=true  result="用户拒绝"
+4054ms  agent_settled
+```
+
+结论：
+
+- 核心确实**阻塞等待**客户端应答（延迟 1.5s，结束就晚 1.5s）
+- `block: true` 后工具**未执行**
+- 拒绝理由作为工具结果（`isError: true`）回传给模型，模型据此继续
+
+### 10.4 ⚠️ `tool_execution_start` 不代表已执行
+
+它表示"开始处理该工具调用"，实际执行发生在权限确认之后。事件顺序为
+`tool_execution_start` → `extension_ui_request` → （等待）→ `tool_execution_end`。
+
+**GUI 渲染要求**：收到 `tool_execution_start` 只能显示"请求中/待批准"，最终状态以
+`tool_execution_end` 的 `isError` 为准。渲染成"已执行"会给用户错误的安全感。
+
+### 10.5 confirm 请求的字段
+
+```json
+{
+  "type": "extension_ui_request",
+  "id": "<uuid>",
+  "method": "confirm",
+  "title": "允许执行 bash？",
+  "message": "{\"command\":\"ls\"}"
+}
+```
