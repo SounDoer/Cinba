@@ -175,3 +175,67 @@ Windows 上 `pi` 实际是 `pi.cmd`。Node 18.20+ 出于安全考虑禁止直接
 
 1. **"当前是哪个项目"是 Pi 的一等概念**，会话按工作目录分隔。GUI 必须处理项目切换。
 2. **会话就是 JSONL 文件，一行一条**，与 RPC 协议同格式。这解释了会话树与分叉的实现方式，GUI 不需要自造存储格式。
+
+---
+
+## 9. 补充调查：Extension UI Protocol 与内置 RpcClient
+
+来源：`<npm全局>/@earendil-works/pi-coding-agent/` 下的 `docs/rpc.md`、`examples/extensions/`、`dist/modes/rpc/*.d.ts`。
+包内自带全套离线文档和 40+ 扩展示例，版本与安装版本严格一致，优先于网页文档。
+
+### 9.1 权限确认的通道已由 Pi 定义（解决第 3 节的待解问题）
+
+`docs/rpc.md` 的 "Extension UI Protocol" 一节：extension 调用 `ctx.ui.*` 时，RPC 模式会把它翻译成
+建立在基础事件流之上的请求/响应子协议。
+
+```
+extension 调 ctx.ui.confirm()
+  → stdout: { type: "extension_ui_request", id, method: "confirm", ... }   （核心阻塞等待）
+  → 客户端弹窗，用户选择
+  → stdin:  { type: "extension_ui_response", id, confirmed: true }
+  → ctx.ui.confirm() 返回
+```
+
+- **阻塞式（需回应）**：`select`、`confirm`、`input`、`editor`
+- **广播式（不需回应）**：`notify`、`setStatus`、`setWidget`、`setTitle`、`set_editor_text`
+- 请求可含 `timeout`（毫秒），超时由核心侧自动以默认值兑现，客户端无需自行计时
+- 响应三种形态：`{value}` / `{confirmed}` / `{cancelled: true}`，均按 `id` 配对
+- RPC 模式下 `ctx.hasUI === true`、`ctx.mode === "rpc"`。需要真实终端的 `custom()` 等方法降级为
+  no-op 或返回空值，写 extension 时用 `ctx.mode === "tui"` 守卫
+
+**结论：不需要自造协议，照实现即可。** 原先标记为"阶段 1 最硬的一块"的问题已解除。
+
+### 9.2 内置 `RpcClient` 可参考但不可直接用
+
+包入口导出了 `RpcClient` 及配套类型。功能覆盖面很广：`prompt`、`steer`、`abort`、`setModel`、
+`getAvailableModels`、`fork`、`getTree`、`getEntries`、`compact`、`exportHtml`、`waitForIdle` 等。
+
+**但它无法回应 extension UI 请求：**
+
+- `handleLine` 中，非 `response` 类型的行一律转发给事件监听器，所以 `extension_ui_request` **能收到**
+- 但 `send()` 与 `process` 均为 private，**没有任何公开途径把 `extension_ui_response` 写回 stdin**
+
+因此直接采用 `RpcClient` 会导致权限门无法工作。
+
+### 9.3 阶段 1 的决定
+
+**自己实现 `core-client`，但复用 Pi 导出的类型：**
+
+```ts
+import type {
+  RpcCommand, RpcResponse,
+  RpcExtensionUIRequest, RpcExtensionUIResponse,
+  JsonAgentSessionEvent,
+} from "@earendil-works/pi-coding-agent";
+```
+
+省掉照 JSON 猜结构的工作，同时保留对双向通道的完全控制。`RpcClient` 的方法签名可作为
+API 设计的参考实现。
+
+### 9.4 其他值得回看的材料
+
+- `examples/extensions/confirm-destructive.ts` —— `ctx.ui.confirm()` / `ctx.ui.select()` 的用法样板，
+  并演示了用 `before_*` 事件返回 `{cancel: true}` 来取消操作
+- `docs/rpc.md` 另有说明：Node 应用也可直接用 `AgentSession` 而不 spawn 子进程。
+  本项目不采用——那会破坏"前端不 import Pi"的边界，且阻断阶段 3 的远程化
+- 其余 40+ 示例覆盖自定义工具、自定义 provider、渲染器、状态栏等，阶段 4 打磨时值得逐个翻
