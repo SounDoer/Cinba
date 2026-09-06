@@ -32,13 +32,24 @@ function renderMessage(entry) {
   role.textContent = entry.role === "user" ? "你" : "助手";
   box.append(role);
 
+  // 思考过程默认收起：它对理解很有用，但平时会淹没正文。
+  const thinking = document.createElement("details");
+  thinking.className = "thinking";
+  thinking.hidden = !entry.thinking;
+  const summary = document.createElement("summary");
+  summary.textContent = "思考过程";
+  const thinkingText = document.createElement("pre");
+  thinkingText.textContent = entry.thinking ?? "";
+  thinking.append(summary, thinkingText);
+  box.append(thinking);
+
   const text = document.createElement("div");
   // textContent 而非 innerHTML：这是模型生成的内容，绝不能让它往界面里注入标记。
   text.textContent = entry.text;
   box.append(text);
 
   transcript.append(box);
-  textNodes.set(entry.messageId, text);
+  textNodes.set(entry.messageId, { text, thinking, thinkingText });
   return box;
 }
 
@@ -129,8 +140,17 @@ function applyAction(action) {
       break;
 
     case "text_appended": {
-      const node = textNodes.get(action.messageId);
-      if (node) node.textContent += action.text;
+      const nodes = textNodes.get(action.messageId);
+      if (nodes) nodes.text.textContent += action.text;
+      break;
+    }
+
+    case "thinking_appended": {
+      const nodes = textNodes.get(action.messageId);
+      if (nodes) {
+        nodes.thinking.hidden = false;
+        nodes.thinkingText.textContent += action.text;
+      }
       break;
     }
 

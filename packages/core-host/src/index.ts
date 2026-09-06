@@ -71,9 +71,12 @@ export function startCore(options: CoreOptions = {}): ChildProcess {
 
   const plan = buildSpawnPlan(entry, options);
 
+  // stderr 也走 pipe，不用 "inherit"：Windows 上的 Electron GUI 进程没有挂控制台，
+  // "inherit" 会让 Pi 的报错彻底消失（阶段 1b 有一个 bug 就因此难查）。
+  // 由调用方决定往哪儿转发。
   return spawn(process.execPath, plan.args, {
     cwd: options.cwd ?? process.cwd(),
-    stdio: ["pipe", "pipe", "inherit"],
+    stdio: ["pipe", "pipe", "pipe"],
     env: plan.env,
   });
 }

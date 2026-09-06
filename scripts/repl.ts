@@ -12,6 +12,11 @@ const gate = fileURLToPath(
 );
 
 const child = startCore({ extensions: [gate] });
+
+// startCore 把 stderr 交给调用方处理，这里原样转到终端。
+child.stderr?.setEncoding("utf8");
+child.stderr?.on("data", (chunk: string) => process.stderr.write(chunk));
+
 const client = new CoreClient(new StdioTransport(child));
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });

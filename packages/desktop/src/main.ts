@@ -86,7 +86,13 @@ function startSession(): void {
   session = createSession();
 
   const fold = createEventFolder();
-  const next = new CoreClient(new StdioTransport(startCore({ cwd, extensions: [GATE] })));
+  const child = startCore({ cwd, extensions: [GATE] });
+
+  // Pi 的报错必须有个去处，否则它出问题时我们一无所知。
+  child.stderr?.setEncoding("utf8");
+  child.stderr?.on("data", (chunk: string) => console.error("[pi]", chunk.trimEnd()));
+
+  const next = new CoreClient(new StdioTransport(child));
 
   next.onEvent((event) => emit(fold(event)));
 
