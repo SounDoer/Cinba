@@ -97,7 +97,7 @@ core-client 会话状态（消息数组）  ← 唯一真相
 
 ### 3.4 IPC 契约
 
-`preload.js` 通过 `contextBridge` 暴露的全部接口，仅此五项：
+`preload.js` 通过 `contextBridge` 暴露的全部接口，仅此八项：
 
 ```js
 window.cinba = {
@@ -105,10 +105,14 @@ window.cinba = {
   abort(),                       // 中止
   respondConfirm(requestId, ok), // 回应权限确认
   chooseProject(),               // 打开文件夹选择器，切换工作目录
-  onAction(handler),             // 订阅界面动作
+  getProject(),                  // 问当前工作目录（启动时给按钮填字）
   getSnapshot(),                 // 索取完整快照
+  onActions(handler),            // 订阅界面动作（成批到达）
+  onReset(handler),              // 工作目录换了，该整份重画
 }
 ```
+
+每多一个口子就是多一份攻击面，因此只开必需的。
 
 主进程把渲染层来的请求当作不可信输入处理：校验类型与取值范围。
 
