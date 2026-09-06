@@ -1,0 +1,10 @@
+{
+  "name": "@cinba/core-host",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.85.1"
+  }
+}

@@ -1,9 +1,7 @@
 {
-  "name": "cinba",
+  "name": "@cinba/core-client",
   "private": true,
   "type": "module",
   "version": "0.0.0",
-  "workspaces": [
-    "packages/*"
-  ]
+  "exports": "./src/index.ts"
 }
