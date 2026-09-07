@@ -23,7 +23,7 @@
 | 5. React 界面：工具卡片与权限确认 | ✅ 全部验证通过 |
 | 6. 目录选择器 | ✅ 完成并验证（逐层进入、切换后 ls 生效）|
 | 7. desktop 瘦身、删除 IPC | ✅ 完成，浏览器与 Electron 同步验证通过 |
-| 8. 验收与收尾 | 未开始 |
+| 8. 验收与收尾 | ✅ 全部通过 |
 
 ---
 
@@ -52,6 +52,23 @@ import 带 `.ts` 后缀（`./events.ts`）。理论上 Vite 会解析符号链�
 **服务仍只监听 `127.0.0.1`。**
 
 ---
+
+## 执行期发现（计划写完之后才暴露的）
+
+**1. 开发服务器与生产的 WebSocket 地址不是一回事。** 界面用 `ws://` 加 `location.host` 连回来，
+从 4517 加载时是对的；但开发时页面由 Vite 的 5173 提供，那样会连到 Vite 而不是 core-server。
+改法是给 WebSocket 一个专属路径 `/ws`，Vite 只代理这一条，页面本身仍由 Vite 提供（保留热更新）。
+
+**2. 布局要挂在 `#root` 上，不是 `body` 上。** 原来的 CSS 把 grid 放在 `body`，因为
+`header / main / footer` 是它的直接子元素；React 渲染进 `#root` 之后，body 的 grid 只看到
+一个子元素，整个界面塌成一团。这类问题只有跑起来看才会发现。
+
+**3. 热更新会重复调用 `createRoot`。** 症状是「点按钮没反应」，很容易误判成事件没绑上。
+把 root 存到 `globalThis` 上复用即可。只影响开发时，但排查成本不低。
+
+**4. Windows 路径里的反斜杠在多层引号中反复被吃掉。** 写测试与探针脚本时撞了四次
+（`C:\Users` 被解析成 `C:Users`，因为 `\U` 被当成转义序列）。
+**结论：脚本里的 Windows 路径一律用正斜杠**，Node 一样认。
 
 ## 文件结构
 
@@ -96,7 +113,7 @@ packages/desktop/
 - Create: `packages/web/index.html`
 - Create: `packages/web/src/main.tsx`
 
-- [ ] **Step 1: 创建包**
+- [x] **Step 1: 创建包**
 
 `packages/web/package.json`：
 
@@ -123,7 +140,7 @@ packages/desktop/
 }
 ```
 
-- [ ] **Step 2: 写 Vite 配置**
+- [x] **Step 2: 写 Vite 配置**
 
 `packages/web/vite.config.ts`：
 
@@ -140,7 +157,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 3: 写最小页面**
+- [x] **Step 3: 写最小页面**
 
 `packages/web/index.html`：
 
@@ -182,7 +199,7 @@ createRoot(document.getElementById("root")!).render(
 );
 ```
 
-- [ ] **Step 4: 安装，并确认安全姿态没变**
+- [x] **Step 4: 安装，并确认安全姿态没变**
 
 ```powershell
 npm install
@@ -200,7 +217,7 @@ protobufjs
 **若列表变长了，停下来告诉用户**，不要自行 `npm approve-scripts`——那是用户从阶段 1a
 起就刻意保持的安全姿态。
 
-- [ ] **Step 5: 跑起来（关键验证）**
+- [x] **Step 5: 跑起来（关键验证）**
 
 ```powershell
 npm run dev --workspace @cinba/web
@@ -215,7 +232,7 @@ npm run dev --workspace @cinba/web
 **这证明了三件事**：Vite 能解析 workspace 符号链接、能处理带 `.ts` 后缀的 import、
 `core-client` 确实不含任何 Node 专属代码。
 
-- [ ] **Step 6: 若失败，按序尝试退路**
+- [x] **Step 6: 若失败，按序尝试退路**
 
 **只在 Step 5 失败时执行。** 记录实际报错，然后：
 
@@ -242,7 +259,7 @@ import { fileURLToPath } from "node:url";
 退路 3 —— 给 `core-client` 加构建步骤产出 `.js`。**这会改变它「无构建」的性质，
 动手前先跟用户确认。**
 
-- [ ] **Step 7: 验证构建产物**
+- [x] **Step 7: 验证构建产物**
 
 ```powershell
 npm run build --workspace @cinba/web
@@ -256,7 +273,7 @@ Test-Path packages\web\dist\index.html
 
 期望 `True`。
 
-- [ ] **Step 8: 提交**
+- [x] **Step 8: 提交**
 
 ```powershell
 git add -A
@@ -273,7 +290,7 @@ git commit -m "feat(web): Vite smoke test compiling core-client for the browser"
 - Modify: `packages/core-client/src/remote.ts`
 - Modify: `packages/core-client/src/remote.test.ts`
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 在 `packages/core-client/src/protocol.test.ts` 的「认得四种客户端消息」之后插入：
 
@@ -292,7 +309,7 @@ test("list_dir 的 path 必须是非空字符串", () => {
 });
 ```
 
-- [ ] **Step 2: 运行，确认失败**
+- [x] **Step 2: 运行，确认失败**
 
 ```powershell
 node --test "packages/core-client/src/protocol.test.ts"
@@ -300,7 +317,7 @@ node --test "packages/core-client/src/protocol.test.ts"
 
 期望：FAIL，「认得 list_dir」那条返回了 `undefined`。
 
-- [ ] **Step 3: 改 protocol.ts**
+- [x] **Step 3: 改 protocol.ts**
 
 把 `ClientMessage` 的定义改为（末尾多一项）：
 
@@ -332,7 +349,7 @@ export type ServerMessage =
       return { type: "list_dir", path: message.path };
 ```
 
-- [ ] **Step 4: 运行，确认通过**
+- [x] **Step 4: 运行，确认通过**
 
 ```powershell
 node --test "packages/core-client/src/protocol.test.ts"
@@ -340,7 +357,7 @@ node --test "packages/core-client/src/protocol.test.ts"
 
 期望：6 个测试全部 pass。
 
-- [ ] **Step 5: 写 RemoteSession 的失败测试**
+- [x] **Step 5: 写 RemoteSession 的失败测试**
 
 在 `packages/core-client/src/remote.test.ts` 的「四种命令都按协议发出去」之后插入：
 
@@ -369,7 +386,7 @@ test("listDir 按协议发出去，目录列表交给处理器", () => {
 });
 ```
 
-- [ ] **Step 6: 运行，确认失败**
+- [x] **Step 6: 运行，确认失败**
 
 ```powershell
 node --test "packages/core-client/src/remote.test.ts"
@@ -377,7 +394,7 @@ node --test "packages/core-client/src/remote.test.ts"
 
 期望：FAIL，`remote.listDir` 不是一个函数。
 
-- [ ] **Step 7: 改 remote.ts**
+- [x] **Step 7: 改 remote.ts**
 
 在 `RemoteHandlers` 里加一项：
 
@@ -410,7 +427,7 @@ export type RemoteHandlers = {
         return;
 ```
 
-- [ ] **Step 8: 跑全部测试**
+- [x] **Step 8: 跑全部测试**
 
 ```powershell
 node --test "packages/core-host/src/*.test.ts" "packages/core-client/src/*.test.ts"
@@ -418,7 +435,7 @@ node --test "packages/core-host/src/*.test.ts" "packages/core-client/src/*.test.
 
 期望：48 个测试全部 pass（原 45 + 本任务的 3）。
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 ```powershell
 git add -A
@@ -436,7 +453,7 @@ git commit -m "feat(core-client): directory listing messages"
 `core-server` 的 `package.json` **不改**：它只是按仓库布局读取 `packages/web/dist` 里的文件，
 并不 import 那个包。声明一个用不到的依赖会让「声明」与「实际」对不上，阶段 1b 清理过这类问题。
 
-- [ ] **Step 1: 加静态文件服务**
+- [x] **Step 1: 加静态文件服务**
 
 在 `packages/core-server/src/index.ts` 的 import 区，把 `ws` 那行之后补上：
 
@@ -486,7 +503,7 @@ async function serveStatic(request: IncomingMessage, response: ServerResponse): 
 }
 ```
 
-- [ ] **Step 2: 把 WebSocket 挂到 HTTP 服务上**
+- [x] **Step 2: 把 WebSocket 挂到 HTTP 服务上**
 
 把这一段：
 
@@ -519,7 +536,7 @@ httpServer.listen(PORT, HOST, () => {
   httpServer.close();
 ```
 
-- [ ] **Step 3: 处理 list_dir**
+- [x] **Step 3: 处理 list_dir**
 
 在 import 区的 `node:fs` 那行加上 `readdirSync`：
 
@@ -553,7 +570,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
     }
 ```
 
-- [ ] **Step 4: 验证静态文件与目录列表**
+- [x] **Step 4: 验证静态文件与目录列表**
 
 ```powershell
 node packages\core-server\src\index.ts
@@ -592,7 +609,7 @@ Remove-Item packages\core-server\tmp-probe.mjs
 
 期望：打出父目录 `C:\Users` 和若干子目录名。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```powershell
 git add -A
@@ -608,7 +625,7 @@ git commit -m "feat(core-server): serve the UI and list directories on the same 
 - Modify: `packages/web/src/main.tsx`（整份替换）
 - Create: `packages/web/src/Transcript.tsx`
 
-- [ ] **Step 1: 搬样式**
+- [x] **Step 1: 搬样式**
 
 把 `packages/desktop/src/renderer/style.css` 整份复制到 `packages/web/src/style.css`，
 然后在末尾追加 Markdown 与目录选择器要用的样式：
@@ -638,7 +655,7 @@ git commit -m "feat(core-server): serve the UI and list directories on the same 
 .picker-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
 ```
 
-- [ ] **Step 2: 写消息流组件**
+- [x] **Step 2: 写消息流组件**
 
 `packages/web/src/Transcript.tsx`：
 
@@ -742,7 +759,7 @@ export function Transcript({
 }
 ```
 
-- [ ] **Step 3: 写入口**
+- [x] **Step 3: 写入口**
 
 `packages/web/src/main.tsx` 整份替换为：
 
@@ -862,7 +879,7 @@ function App() {
 createRoot(document.getElementById("root")!).render(<App />);
 ```
 
-- [ ] **Step 4: 验证纯对话**
+- [x] **Step 4: 验证纯对话**
 
 一个终端起服务：
 
@@ -883,13 +900,13 @@ npm run dev --workspace @cinba/web
 3. 回答期间输入框变灰
 4. 费用与 token 在右上角增长
 
-- [ ] **Step 5: 验证 HTML 不被执行（安全）**
+- [x] **Step 5: 验证 HTML 不被执行（安全）**
 
 问：「请原样输出这一行，不要解释：`<img src=x onerror="alert(1)">`」
 
 期望：**页面上显示为文字**，没有弹窗、没有破图。这验证了 `react-markdown` 默认禁原始 HTML。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```powershell
 git add -A
@@ -902,7 +919,7 @@ git commit -m "feat(web): React transcript with Markdown rendering"
 
 Task 4 里 `Transcript.tsx` 已经把工具卡片与确认按钮写完了，本任务只做验证。
 
-- [ ] **Step 1: 验证放行**
+- [x] **Step 1: 验证放行**
 
 浏览器里问「运行 ls 命令，告诉我当前目录下有什么」。期望：
 
@@ -911,17 +928,17 @@ Task 4 里 `Transcript.tsx` 已经把工具卡片与确认按钮写完了，本�
 3. 点「允许」→ 转蓝「执行中」→ 转绿「完成」并显示输出
 4. 助手接着回答
 
-- [ ] **Step 2: 验证拦截**
+- [x] **Step 2: 验证拦截**
 
 再问一次，这次点「拒绝」。期望：卡片转红、结果区显示「用户拒绝了这次工具调用」、
 **助手明确表示知道被拒绝了**。
 
-- [ ] **Step 3: 验证中止与刷新**
+- [x] **Step 3: 验证中止与刷新**
 
-- [ ] 问一个长问题，输出到一半按 `Esc` 或点「中止」→ 出现「已中止」胶囊
-- [ ] **按 F5 刷新浏览器 → 对话完整恢复**（账本在服务器，浏览器重连拿快照）
+- [x] 问一个长问题，输出到一半按 `Esc` 或点「中止」→ 出现「已中止」胶囊
+- [x] **按 F5 刷新浏览器 → 对话完整恢复**（账本在服务器，浏览器重连拿快照）
 
-- [ ] **Step 4: 若有问题则修，无问题跳过提交**
+- [x] **Step 4: 若有问题则修，无问题跳过提交**
 
 ```powershell
 git add -A
@@ -936,7 +953,7 @@ git commit -m "fix(web): tool card corrections"
 - Create: `packages/web/src/ProjectPicker.tsx`
 - Modify: `packages/web/src/main.tsx`
 
-- [ ] **Step 1: 写选择器**
+- [x] **Step 1: 写选择器**
 
 `packages/web/src/ProjectPicker.tsx`：
 
@@ -1017,7 +1034,7 @@ export function ProjectPicker({
 }
 ```
 
-- [ ] **Step 2: 接进入口**
+- [x] **Step 2: 接进入口**
 
 在 `packages/web/src/main.tsx` 的 import 区加：
 
@@ -1058,7 +1075,7 @@ import type { Listing } from "./ProjectPicker.tsx";
       ) : null}
 ```
 
-- [ ] **Step 3: 验证**
+- [x] **Step 3: 验证**
 
 浏览器里点左上角「项目：…」按钮。期望：
 
@@ -1067,7 +1084,7 @@ import type { Listing } from "./ProjectPicker.tsx";
 3. 点「就用这个目录」→ 浮层关闭，对话清空，左上角显示新目录名
 4. 问「运行 ls」，列出的是**新目录**的内容
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```powershell
 git add -A
@@ -1084,7 +1101,7 @@ git commit -m "feat(web): directory picker over server-provided listings"
 - Delete: `packages/desktop/src/preload.js`
 - Delete: `packages/desktop/src/renderer/`（整个目录）
 
-- [ ] **Step 1: 重写 main.ts**
+- [x] **Step 1: 重写 main.ts**
 
 ```typescript
 // Electron 主进程。
@@ -1111,14 +1128,14 @@ app.whenReady().then(() => {
 app.on("window-all-closed", () => app.quit());
 ```
 
-- [ ] **Step 2: 删掉不再需要的文件**
+- [x] **Step 2: 删掉不再需要的文件**
 
 ```powershell
 Remove-Item packages\desktop\src\preload.js
 Remove-Item -Recurse packages\desktop\src\renderer
 ```
 
-- [ ] **Step 3: 去掉运行时依赖**
+- [x] **Step 3: 去掉运行时依赖**
 
 `packages/desktop/package.json` 整份替换为：
 
@@ -1138,7 +1155,7 @@ Remove-Item -Recurse packages\desktop\src\renderer
 }
 ```
 
-- [ ] **Step 4: 验证 Electron 窗口显示同一个界面**
+- [x] **Step 4: 验证 Electron 窗口显示同一个界面**
 
 先构建界面：
 
@@ -1160,13 +1177,13 @@ npm start --workspace @cinba/desktop
 
 期望：窗口里显示的界面**与浏览器里完全一样**，能对话、能批准工具、能切换项目。
 
-- [ ] **Step 5: 验证两边同时开着**
+- [x] **Step 5: 验证两边同时开着**
 
 保持 Electron 窗口开着，浏览器再打开 `http://127.0.0.1:4517`。
 
 在其中一边发消息，期望**另一边同步显示**。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```powershell
 git add -A
@@ -1177,7 +1194,7 @@ git commit -m "refactor(desktop): reduce to a window pointing at the shared UI"
 
 ## Task 8：验收与收尾
 
-- [ ] **Step 1: 跑全部测试**
+- [x] **Step 1: 跑全部测试**
 
 ```powershell
 node --test "packages/core-host/src/*.test.ts" "packages/core-client/src/*.test.ts"
@@ -1185,7 +1202,7 @@ node --test "packages/core-host/src/*.test.ts" "packages/core-client/src/*.test.
 
 期望：48 个全部 pass。
 
-- [ ] **Step 2: 确认安全姿态没变**
+- [x] **Step 2: 确认安全姿态没变**
 
 ```powershell
 npm install
@@ -1193,7 +1210,7 @@ npm install
 
 期望：被拦下的安装脚本仍是 `@google/genai`、`esbuild`、`protobufjs` 三个，没有变多。
 
-- [ ] **Step 3: 确认 TUI 未受影响**
+- [x] **Step 3: 确认 TUI 未受影响**
 
 ```powershell
 node packages\tui\src\index.ts
@@ -1201,20 +1218,20 @@ node packages\tui\src\index.ts
 
 问一句话、试一次权限确认、Ctrl+C 退出。
 
-- [ ] **Step 4: 走完整验收清单**
+- [x] **Step 4: 走完整验收清单**
 
-- [ ] 浏览器打开 `http://127.0.0.1:4517`，功能与 3a 的 GUI 完全一致
-- [ ] Electron 窗口显示同一个界面
-- [ ] 两边同时开着，看到同一个会话，任一边发消息另一边同步
-- [ ] Markdown 正确渲染（标题、列表、代码块、粗体）
-- [ ] 让模型输出一段 HTML，确认显示为文字而非被执行
-- [ ] 目录选择器能逐层进入并切换项目
-- [ ] 中止、权限确认、thinking 折叠、费用显示全部照旧
-- [ ] `preload.js` 与 `renderer/` 已从仓库删除
-- [ ] `npm install` 后被拦下的安装脚本仍是原来那三个
-- [ ] Ctrl+C 停掉 core-server 后无残留 node 进程
+- [x] 浏览器打开 `http://127.0.0.1:4517`，功能与 3a 的 GUI 完全一致
+- [x] Electron 窗口显示同一个界面
+- [x] 两边同时开着，看到同一个会话，任一边发消息另一边同步
+- [x] Markdown 正确渲染（标题、列表、代码块、粗体）
+- [x] 让模型输出一段 HTML，确认显示为文字而非被执行
+- [x] 目录选择器能逐层进入并切换项目
+- [x] 中止、权限确认、thinking 折叠、费用显示全部照旧
+- [x] `preload.js` 与 `renderer/` 已从仓库删除
+- [x] `npm install` 后被拦下的安装脚本仍是原来那三个
+- [x] Ctrl+C 停掉 core-server 后无残留 node 进程
 
-- [ ] **Step 5: 更新文档并提交**
+- [x] **Step 5: 更新文档并提交**
 
 把本文件进度表标为完成，勾上设计文档第 9 节的清单。
 
@@ -1227,10 +1244,10 @@ git commit -m "docs: mark phase 3b-1 complete"
 
 ## 阶段 3b-1 完成标准
 
-- [ ] Task 8 Step 4 的十项验收全部通过
-- [ ] `node --test` 48 个全绿
-- [ ] `packages/desktop` 不含任何界面代码，`main.ts` 在 30 行以内
-- [ ] 被拦下的安装脚本仍是原来那三个
-- [ ] 服务仍只监听 `127.0.0.1`
+- [x] Task 8 Step 4 的十项验收全部通过
+- [x] `node --test` 48 个全绿
+- [x] `packages/desktop` 不含任何界面代码，`main.ts` 在 30 行以内
+- [x] 被拦下的安装脚本仍是原来那三个
+- [x] 服务仍只监听 `127.0.0.1`
 
 达成后进 3b-2：远程接入（Tailscale、令牌、断线重连、手机适配）。
