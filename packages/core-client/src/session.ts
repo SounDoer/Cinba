@@ -25,7 +25,13 @@ export type ToolEntry = {
   confirmRequestId?: string;
 };
 
-export type Entry = MessageEntry | ToolEntry;
+/** 系统提示，例如「已中止」。不是谁说的话，单独一类。 */
+export type NoticeEntry = {
+  kind: "notice";
+  text: string;
+};
+
+export type Entry = MessageEntry | ToolEntry | NoticeEntry;
 
 export type Snapshot = {
   entries: Entry[];
@@ -120,6 +126,10 @@ export function createSession(): Session {
           }
           return;
         }
+
+        case "notice":
+          entries.push({ kind: "notice", text: action.text });
+          return;
 
         case "usage_changed":
           totalTokens = action.totalTokens;

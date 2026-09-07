@@ -255,6 +255,10 @@ function applyAction(action: ViewAction): void {
       break;
     }
 
+    case "notice":
+      transcript.append(`${YELLOW}[${action.text}]${RESET}`);
+      break;
+
     case "usage_changed":
       statusBar.totalTokens = action.totalTokens;
       statusBar.totalCost = action.totalCost;
@@ -309,8 +313,7 @@ promptInput.input.onSubmit = (value: string) => {
 promptInput.input.onEscape = () => {
   if (!busy) return;
   void client.abort();
-  transcript.append(`${YELLOW}[已中止]${RESET}`);
-  tui.requestRender();
+  applyAction({ type: "notice", text: "已中止" });
 };
 
 function exit(): void {

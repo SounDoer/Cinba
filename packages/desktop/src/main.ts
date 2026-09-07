@@ -149,6 +149,9 @@ ipcMain.handle("cinba:prompt", (_event: IpcMainInvokeEvent, text: unknown) => {
 
 ipcMain.handle("cinba:abort", () => {
   void client?.abort();
+  // 中止后画面只是「不再往外冒字」，太含糊。留一条明确的提示，
+  // 而且走账本，刷新界面后还在。
+  emit([{ type: "notice", text: "已中止" }]);
 });
 
 ipcMain.handle(

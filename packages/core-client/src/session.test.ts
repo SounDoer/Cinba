@@ -108,6 +108,17 @@ test("确认被回答后卡片上的待确认标记清除", () => {
   assert.equal(session.snapshot().entries[0].status, "running");
 });
 
+test("系统提示作为独立条目进账本", () => {
+  // 「已中止」这类提示必须进账本，不能只在界面上打一行——
+  // 否则 GUI 刷新一下就没了，用户会以为什么都没发生过。
+  const session = createSession();
+
+  session.apply({ type: "message_added", messageId: "m1", role: "assistant" });
+  session.apply({ type: "notice", text: "已中止" });
+
+  assert.deepEqual(session.snapshot().entries[1], { kind: "notice", text: "已中止" });
+});
+
 test("费用与忙碌状态记在快照上", () => {
   const session = createSession();
 

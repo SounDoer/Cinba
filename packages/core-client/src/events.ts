@@ -24,6 +24,14 @@ export type ViewAction =
       result?: string;
     }
   | { type: "confirm_requested"; requestId: string }
+  /**
+   * 系统提示，例如「已中止」。
+   *
+   * 折叠器不产生它——它不来自 Pi 的事件流，而是宿主侧或前端在用户操作后自己发出的。
+   * 走这条通道而不是直接往界面上打一行，是为了让它跟别的内容一样进账本，
+   * 刷新界面后还在。
+   */
+  | { type: "notice"; text: string }
   | { type: "usage_changed"; totalTokens: number; totalCost: number }
   | { type: "busy_changed"; busy: boolean };
 

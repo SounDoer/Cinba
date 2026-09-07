@@ -87,6 +87,16 @@ button:disabled { color: #bbb; cursor: default; }
 .tool-confirm .allow { border-color: #3daa5f; color: #2b7a44; }
 .tool-confirm .deny  { border-color: #d64545; color: #a83232; }
 
+.notice {
+  align-self: center;
+  color: #999;
+  font-size: 12px;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid #e4e4e4;
+  border-radius: 999px;
+  background: #fff;
+}
+
 .thinking { margin-bottom: 0.5rem; font-size: 13px; color: #777; }
 .thinking summary { cursor: pointer; color: #999; font-size: 12px; }
 .thinking pre { margin: 0.4rem 0 0; white-space: pre-wrap; font: inherit; }

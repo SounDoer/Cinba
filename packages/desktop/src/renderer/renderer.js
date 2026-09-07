@@ -129,6 +129,14 @@ function updateTool(entry) {
   existing.node.replaceWith(fresh);
 }
 
+function renderNotice(entry) {
+  const box = document.createElement("div");
+  box.className = "notice";
+  box.textContent = entry.text;
+  transcript.append(box);
+  return box;
+}
+
 function scrollToBottom() {
   transcript.scrollTop = transcript.scrollHeight;
 }
@@ -180,6 +188,10 @@ function applyAction(action) {
       break;
     }
 
+    case "notice":
+      renderNotice(action);
+      break;
+
     case "usage_changed":
       usageLabel.textContent = `${action.totalTokens} tokens · $${action.totalCost.toFixed(4)}`;
       break;
@@ -199,6 +211,7 @@ function renderSnapshot(snapshot) {
 
   for (const entry of snapshot.entries) {
     if (entry.kind === "message") renderMessage(entry);
+    else if (entry.kind === "notice") renderNotice(entry);
     else renderTool(entry);
   }
 
@@ -216,6 +229,15 @@ function send() {
 
 sendButton.addEventListener("click", send);
 abortButton.addEventListener("click", () => void window.cinba.abort());
+
+// Esc 中止。挂在 document 上而不是输入框上——回答期间输入框是禁用的，
+// 焦点不在它身上，挂那儿收不到。用「中止按钮是否可见」判断当前忙不忙，
+// 免得在渲染层再存一份状态。
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || abortButton.hidden) return;
+  event.preventDefault();
+  void window.cinba.abort();
+});
 
 input.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {

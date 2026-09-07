@@ -9,6 +9,6 @@ export type {
 export { createEventFolder, foldUiRequest } from "./events.ts";
 export type { ToolStatus, ViewAction } from "./events.ts";
 export { createSession } from "./session.ts";
-export type { Entry, MessageEntry, Session, Snapshot, ToolEntry } from "./session.ts";
+export type { Entry, MessageEntry, NoticeEntry, Session, Snapshot, ToolEntry } from "./session.ts";
 export { StdioTransport } from "./transport.ts";
 export type { Transport } from "./transport.ts";
