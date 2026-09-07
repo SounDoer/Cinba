@@ -1,7 +1,7 @@
 # Cinba 设计文档
 
 日期：2026-09-06（最后更新 2026-09-07）
-状态：阶段 0 / 1a / 1b / 2 已完成，阶段 3 进行中。第 8 节记录了各阶段实测确认与新暴露的问题。
+状态：阶段 0 / 1a / 1b / 2 / 3a 已完成，阶段 3b 待开始。第 8 节记录了各阶段实测确认与新暴露的问题。
 
 ## 1. 目标
 
@@ -176,6 +176,12 @@ Cinba/
 
 因此**权限门是阶段 1 的硬需求**，不是可选项：`packages/extensions/` 中第一个要实现的就是它（`pi.on("tool_call")` 拦截 + `ctx.ui.confirm()`）。在此之前不得在含重要文件的目录中运行，也不得用可能触发写操作的 prompt。
 
+### 已解决（阶段 3a）
+
+- ~~**`desktop` 包同时扮演了前端与核心侧。**~~ 3a 把 Pi 与账本搬进独立的 `core-server` 进程，
+  `desktop` 改为通过 WebSocket 连接它，依赖只剩 `@cinba/core-client`——第 5 节的依赖规则
+  回到设计原样。选的是「薄前端 + 独立核心进程」那条路。
+
 ### 已解决（阶段 1 期间）
 
 - ~~**`ctx.ui.confirm()` 如何穿过 RPC 边界。**~~ Pi 的 extension UI protocol 已经定义好了这条往返通道（`extension_ui_request` / `extension_ui_response`，按 `id` 配对），不需要自造。但 Pi 内置的 `RpcClient` 用不了——它的 `send()` 是 private，没法把回应写回 stdin，所以 `core-client` 自己实现。详见 `docs/notes/2026-09-06-rpc-protocol-findings.md` 第 9 节。
@@ -184,10 +190,6 @@ Cinba/
 ### 待解问题
 
 - **Pi 的 extension API 稳定性。** 文档路径带 `/latest`，项目迭代快。因此不把大量逻辑压在 extension API 上。
-
-- **`desktop` 包同时扮演了前端与核心侧。** 第 5 节的依赖规则说前端只依赖 `core-client`，但 `packages/desktop` 也依赖 `core-host`——因为它的主进程负责起 Pi、管进程，那是核心侧的活。渲染层本身是干净的（零 import），所以这不是渗透性的问题。
-
-  阶段 3 需要决定：是把 `desktop` 拆成「薄前端 + 独立的本机核心进程」，还是让它保留「本机模式 / 远程模式」两种形态——后者的话，依赖 `core-host` 就是正当的，规则该改的是文字而不是代码。**这是取舍，不是缺陷。**
 
 - **⚠️ 切换项目这条路假设了核心与界面共享文件系统。** 第 7 节明确警告过「前两阶段不要假设核心与 UI 同进程、同机器、同文件系统」，**而这一条我们踩了**：
 

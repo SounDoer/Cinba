@@ -20,7 +20,7 @@
 | 2. 账本可从快照重建 | ✅ 完成，2 个测试通过（合计 45）|
 | 3. core-server | ✅ 完成，探针验证收发正常 |
 | 4. GUI 改成客户端 | ✅ 完成，七项行为全部无退化 |
-| 5. 多客户端与生命周期验收 | 未开始 |
+| 5. 多客户端与生命周期验收 | ✅ 全部通过 |
 
 ---
 
@@ -72,7 +72,7 @@ packages/desktop/src/
 - Create: `packages/core-client/src/remote.ts`
 - Test: `packages/core-client/src/remote.test.ts`
 
-- [ ] **Step 1: 写协议校验的失败测试**
+- [x] **Step 1: 写协议校验的失败测试**
 
 `packages/core-client/src/protocol.test.ts`：
 
@@ -120,7 +120,7 @@ test("不认识的东西丢掉，不崩", () => {
 });
 ```
 
-- [ ] **Step 2: 运行，确认失败**
+- [x] **Step 2: 运行，确认失败**
 
 ```powershell
 node --test "packages/core-client/src/protocol.test.ts"
@@ -128,7 +128,7 @@ node --test "packages/core-client/src/protocol.test.ts"
 
 期望：FAIL，报找不到模块 `./protocol.ts`。
 
-- [ ] **Step 3: 写 protocol.ts**
+- [x] **Step 3: 写 protocol.ts**
 
 ```typescript
 // 服务器与客户端之间的线上协议。
@@ -190,7 +190,7 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
 }
 ```
 
-- [ ] **Step 4: 运行，确认通过**
+- [x] **Step 4: 运行，确认通过**
 
 ```powershell
 node --test "packages/core-client/src/protocol.test.ts"
@@ -198,7 +198,7 @@ node --test "packages/core-client/src/protocol.test.ts"
 
 期望：4 个测试全部 pass。
 
-- [ ] **Step 5: 写 RemoteSession 的失败测试**
+- [x] **Step 5: 写 RemoteSession 的失败测试**
 
 `packages/core-client/src/remote.test.ts`：
 
@@ -271,7 +271,7 @@ test("坏消息被忽略，不崩", () => {
 });
 ```
 
-- [ ] **Step 6: 运行，确认失败**
+- [x] **Step 6: 运行，确认失败**
 
 ```powershell
 node --test "packages/core-client/src/remote.test.ts"
@@ -279,7 +279,7 @@ node --test "packages/core-client/src/remote.test.ts"
 
 期望：FAIL，报找不到模块 `./remote.ts`。
 
-- [ ] **Step 7: 写 remote.ts**
+- [x] **Step 7: 写 remote.ts**
 
 ```typescript
 // 客户端这一侧的连接。
@@ -365,7 +365,7 @@ export class RemoteSession {
 }
 ```
 
-- [ ] **Step 8: 运行，确认通过**
+- [x] **Step 8: 运行，确认通过**
 
 ```powershell
 node --test "packages/core-client/src/remote.test.ts"
@@ -373,7 +373,7 @@ node --test "packages/core-client/src/remote.test.ts"
 
 期望：3 个测试全部 pass。
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 ```powershell
 git add -A
@@ -393,7 +393,7 @@ git commit -m "feat(core-client): wire protocol and RemoteSession"
 渲染层会向主进程索取快照——主进程必须能给出**当前**的，而不是连接那一刻的。所以主进程要持有
 一份镜像账本：用初始快照开局，之后把收到的动作照样 apply 一遍。
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 在 `packages/core-client/src/session.test.ts` 末尾追加：
 
@@ -421,7 +421,7 @@ test("重建出来的账本能继续接收动作", () => {
 });
 ```
 
-- [ ] **Step 2: 运行，确认失败**
+- [x] **Step 2: 运行，确认失败**
 
 ```powershell
 node --test "packages/core-client/src/session.test.ts"
@@ -429,7 +429,7 @@ node --test "packages/core-client/src/session.test.ts"
 
 期望：FAIL，「可以从一份快照重建账本」那条报 entries 不相等（`createSession` 忽略了参数）。
 
-- [ ] **Step 3: 改实现**
+- [x] **Step 3: 改实现**
 
 把 `packages/core-client/src/session.ts` 里的 `createSession` 开头三行：
 
@@ -456,7 +456,7 @@ export function createSession(initial?: Snapshot): Session {
   let busy = initial?.busy ?? false;
 ```
 
-- [ ] **Step 4: 运行，确认通过**
+- [x] **Step 4: 运行，确认通过**
 
 ```powershell
 node --test "packages/core-client/src/session.test.ts"
@@ -464,7 +464,7 @@ node --test "packages/core-client/src/session.test.ts"
 
 期望：13 个测试全部 pass。
 
-- [ ] **Step 5: 更新对外导出**
+- [x] **Step 5: 更新对外导出**
 
 把 `packages/core-client/src/index.ts` 整个替换为：
 
@@ -496,7 +496,7 @@ export { StdioTransport } from "./transport.ts";
 export type { Transport } from "./transport.ts";
 ```
 
-- [ ] **Step 6: 跑全部测试**
+- [x] **Step 6: 跑全部测试**
 
 ```powershell
 node --test "packages/core-host/src/*.test.ts" "packages/core-client/src/*.test.ts"
@@ -504,7 +504,7 @@ node --test "packages/core-host/src/*.test.ts" "packages/core-client/src/*.test.
 
 期望：45 个测试全部 pass（原 36 个 + Task 1 的 7 个 + 本任务的 2 个）。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```powershell
 git add -A
@@ -523,7 +523,7 @@ git commit -m "feat(core-client): rebuild a session ledger from a snapshot"
 输出从「发 IPC 给窗口」变成「广播给所有连接」，配置文件位置从 Electron 的 userData
 变成 `~/.cinba/`。
 
-- [ ] **Step 1: 创建包**
+- [x] **Step 1: 创建包**
 
 `packages/core-server/package.json`：
 
@@ -541,7 +541,7 @@ git commit -m "feat(core-client): rebuild a session ledger from a snapshot"
 }
 ```
 
-- [ ] **Step 2: 写服务器**
+- [x] **Step 2: 写服务器**
 
 `packages/core-server/src/index.ts`：
 
@@ -780,7 +780,7 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 ```
 
-- [ ] **Step 3: 安装**
+- [x] **Step 3: 安装**
 
 ```powershell
 npm install
@@ -794,7 +794,7 @@ Test-Path node_modules\ws\index.js
 
 期望 `True`。
 
-- [ ] **Step 4: 起服务，确认能听**
+- [x] **Step 4: 起服务，确认能听**
 
 ```powershell
 node packages\core-server\src\index.ts
@@ -809,7 +809,7 @@ node packages\core-server\src\index.ts
 
 **先别关掉**，下一步要用。
 
-- [ ] **Step 5: 另开一个终端，用一次性脚本验证收发**
+- [x] **Step 5: 另开一个终端，用一次性脚本验证收发**
 
 **用文件，不要用 `node -e`。** 阶段 1b 实测过：PowerShell 5.1 会吃掉命令行字符串里的双引号，
 `-e` 传长代码必然出错。
@@ -842,7 +842,7 @@ node packages\core-server\tmp-probe.mjs
 Remove-Item packages\core-server\tmp-probe.mjs
 ```
 
-- [ ] **Step 6: Ctrl+C 停掉服务器，确认没有残留**
+- [x] **Step 6: Ctrl+C 停掉服务器，确认没有残留**
 
 ```powershell
 Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like '*rpc-entry*' } | Measure-Object | Select-Object -ExpandProperty Count
@@ -850,7 +850,7 @@ Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.Comm
 
 期望 `0`。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```powershell
 git add -A
@@ -866,7 +866,7 @@ git commit -m "feat(core-server): local core service over loopback WebSocket"
 - Modify: `packages/desktop/src/main.ts`（整份重写）
 - 不动：`preload.js`、`renderer/`（**IPC 契约完全不变**）
 
-- [ ] **Step 1: 先验证 Electron 主进程有没有全局 WebSocket**
+- [x] **Step 1: 先验证 Electron 主进程有没有全局 WebSocket**
 
 这是本任务唯一的未知数，先拆雷。临时把 `packages/desktop/src/main.ts` 第一行改成：
 
@@ -888,7 +888,7 @@ npm start --workspace @cinba/desktop
 
 验证完把这行 `console.log` 删掉。
 
-- [ ] **Step 2: 改 desktop 的依赖**
+- [x] **Step 2: 改 desktop 的依赖**
 
 `packages/desktop/package.json` 整份替换为：
 
@@ -914,7 +914,7 @@ npm start --workspace @cinba/desktop
 `@cinba/core-host` 被移除了——Pi 不再归 GUI 管。**这一步让 `desktop` 回到设计文档
 第 5 节要求的形状：它只是前端。**
 
-- [ ] **Step 3: 整份重写 main.ts**
+- [x] **Step 3: 整份重写 main.ts**
 
 ```typescript
 // Electron 主进程。
@@ -1046,7 +1046,7 @@ ipcMain.handle("cinba:chooseProject", async () => {
 });
 ```
 
-- [ ] **Step 4: 验证行为与之前完全一致**
+- [x] **Step 4: 验证行为与之前完全一致**
 
 先起服务（一个终端）：
 
@@ -1062,15 +1062,15 @@ npm start --workspace @cinba/desktop
 
 逐项确认——**这些全是阶段 1b 已经验收过的行为，3a 不该让任何一条退化**：
 
-- [ ] 纯对话能问能答，逐字流式显示，输入框在回答期间锁定
-- [ ] 费用与 token 随对话增长
-- [ ] 触发 bash 时出现待批准卡片，点「允许」执行、点「拒绝」不执行且模型知道被拒
-- [ ] Esc 与「中止」按钮都能打断，出现「已中止」胶囊
-- [ ] thinking 默认收起可展开
-- [ ] 切换项目后对话清空，新目录生效
-- [ ] **按 Ctrl+R 刷新后对话完整恢复**（这条验的是镜像账本）
+- [x] 纯对话能问能答，逐字流式显示，输入框在回答期间锁定
+- [x] 费用与 token 随对话增长
+- [x] 触发 bash 时出现待批准卡片，点「允许」执行、点「拒绝」不执行且模型知道被拒
+- [x] Esc 与「中止」按钮都能打断，出现「已中止」胶囊
+- [x] thinking 默认收起可展开
+- [x] 切换项目后对话清空，新目录生效
+- [x] **按 Ctrl+R 刷新后对话完整恢复**（这条验的是镜像账本）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```powershell
 git add -A
@@ -1084,7 +1084,7 @@ git commit -m "feat(desktop): become a client of core-server"
 **Files:**
 - Create: `scripts/watch.ts`
 
-- [ ] **Step 1: 写一个旁观客户端**
+- [x] **Step 1: 写一个旁观客户端**
 
 它既是多客户端的验证工具，也留作以后调试用——跟 `scripts/probe.ts` 一个性质。
 
@@ -1127,7 +1127,7 @@ new RemoteSession(socket, {
 console.log("旁观中，Ctrl+C 退出");
 ```
 
-- [ ] **Step 2: 验证多客户端**
+- [x] **Step 2: 验证多客户端**
 
 三个终端：服务器、GUI、旁观者。
 
@@ -1143,17 +1143,17 @@ node scripts\watch.ts
 
 这验证了动作广播给所有连接——**3b 手机接入靠的就是这条**。
 
-- [ ] **Step 3: 验证中途接入能看到历史**
+- [x] **Step 3: 验证中途接入能看到历史**
 
 先关掉旁观者（Ctrl+C），在 GUI 里再问一两句，然后重新启动旁观者。
 
 期望：`[快照]` 那行的条目数包含了刚才新增的对话——**中途连进来的客户端能补上错过的内容**。
 
-- [ ] **Step 4: 验证生命周期**
+- [x] **Step 4: 验证生命周期**
 
-- [ ] 关掉 GUI 窗口 → 服务器窗口打出「客户端断开」，**服务器继续运行**，旁观者也继续
-- [ ] 重新启动 GUI → 能看到关窗口之前的完整对话
-- [ ] Ctrl+C 停掉服务器 → 打出「正在关闭，回收 Pi 子进程」
+- [x] 关掉 GUI 窗口 → 服务器窗口打出「客户端断开」，**服务器继续运行**，旁观者也继续
+- [x] 重新启动 GUI → 能看到关窗口之前的完整对话
+- [x] Ctrl+C 停掉服务器 → 打出「正在关闭，回收 Pi 子进程」
 
 停掉之后：
 
@@ -1163,7 +1163,7 @@ Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.Comm
 
 期望 `0`。
 
-- [ ] **Step 5: 确认 TUI 未受影响**
+- [x] **Step 5: 确认 TUI 未受影响**
 
 TUI 走的是自己的 stdio 链路，与 core-server 无关，但共用 `core-client`，仍需确认一次。
 
@@ -1173,7 +1173,7 @@ node packages\tui\src\index.ts
 
 问一句话，权限确认试一次，Ctrl+C 退出。
 
-- [ ] **Step 6: 跑全部测试**
+- [x] **Step 6: 跑全部测试**
 
 ```powershell
 node --test "packages/core-host/src/*.test.ts" "packages/core-client/src/*.test.ts"
@@ -1181,7 +1181,7 @@ node --test "packages/core-host/src/*.test.ts" "packages/core-client/src/*.test.
 
 期望：45 个全部 pass。
 
-- [ ] **Step 7: 更新文档并提交**
+- [x] **Step 7: 更新文档并提交**
 
 把本文件的进度表标为完成，勾上设计文档第 7 节的清单，并在设计文档
 `docs/specs/2026-09-06-cinba-design.md` 第 8 节把待解问题「`desktop` 同时扮演前端与核心侧」
@@ -1196,11 +1196,11 @@ git commit -m "docs: mark phase 3a complete"
 
 ## 阶段 3a 完成标准
 
-- [ ] `node --test` 45 个全绿
-- [ ] Task 4 Step 4 的七项行为与阶段 1b 完全一致，无退化
-- [ ] Task 5 的多客户端与生命周期各项通过
-- [ ] `desktop` 不再依赖 `core-host`
-- [ ] 服务只监听 `127.0.0.1`
-- [ ] 渲染层与 `preload.js` 一行未改
+- [x] `node --test` 45 个全绿
+- [x] Task 4 Step 4 的七项行为与阶段 1b 完全一致，无退化
+- [x] Task 5 的多客户端与生命周期各项通过
+- [x] `desktop` 不再依赖 `core-host`
+- [x] 服务只监听 `127.0.0.1`
+- [x] 渲染层与 `preload.js` 一行未改
 
 达成后进阶段 3b：网页界面、构建步骤、远程接入。
