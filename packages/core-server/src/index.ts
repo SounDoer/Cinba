@@ -265,7 +265,9 @@ startSession();
 
 // WebSocket 与静态文件共用一个端口：界面从这里加载，也从这里连回来。
 const httpServer = createServer((request, response) => void serveStatic(request, response));
-const server = new WebSocketServer({ server: httpServer });
+// 给 WebSocket 一个专属路径，静态文件走其余路径。
+// 这样开发时 Vite 只需把 /ws 代理到这里，页面本身仍由 Vite 提供（保留热更新）。
+const server = new WebSocketServer({ server: httpServer, path: "/ws" });
 
 httpServer.listen(PORT, HOST, () => {
   console.log(`[cinba] 界面 http://${HOST}:${PORT}`);

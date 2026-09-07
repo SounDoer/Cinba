@@ -7,10 +7,10 @@
 
 import { RemoteSession } from "@cinba/core-client";
 
-const socket = new WebSocket("ws://127.0.0.1:4517");
+const socket = new WebSocket("ws://127.0.0.1:4517/ws");
 
 socket.addEventListener("error", () => {
-  console.error("连不上 ws://127.0.0.1:4517，core-server 起了吗？");
+  console.error("连不上 ws://127.0.0.1:4517/ws，core-server 起了吗？");
   process.exit(1);
 });
 

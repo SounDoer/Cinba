@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { createSession, RemoteSession } from "@cinba/core-client";
 import type { Session } from "@cinba/core-client";
 
-const SERVER_URL = "ws://127.0.0.1:4517";
+const SERVER_URL = "ws://127.0.0.1:4517/ws";
 
 let window: BrowserWindow | undefined;
 let remote: RemoteSession | undefined;
