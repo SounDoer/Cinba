@@ -11,10 +11,11 @@ import {
   Input,
   matchesKey,
   ProcessTerminal,
+  SelectList,
   TuiMainScreen,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import type { Component, TUI } from "@earendil-works/pi-tui";
+import type { Component, SelectListTheme, TUI } from "@earendil-works/pi-tui";
 import { startCore } from "@cinba/core-host";
 import { CoreClient, createEventFolder, StdioTransport } from "@cinba/core-client";
 import type { ViewAction } from "@cinba/core-client";
@@ -24,7 +25,17 @@ const BOLD = "\x1b[1m";
 const GREEN = "\x1b[32m";
 const BLUE = "\x1b[34m";
 const RED = "\x1b[31m";
+const YELLOW = "\x1b[33m";
+const MAGENTA = "\x1b[35m";
 const RESET = "\x1b[0m";
+
+const SELECT_THEME: SelectListTheme = {
+  selectedPrefix: (text) => `${MAGENTA}${text}${RESET}`,
+  selectedText: (text) => `${MAGENTA}${text}${RESET}`,
+  description: (text) => `${DIM}${text}${RESET}`,
+  scrollInfo: (text) => `${DIM}${text}${RESET}`,
+  noMatch: (text) => `${YELLOW}${text}${RESET}`,
+};
 
 /**
  * 输出区。追加式：画过的行不再改动。
@@ -82,6 +93,44 @@ class PromptInput implements Component {
   }
 }
 
+/** 权限确认。确认期间它临时顶替底部的输入框。 */
+class ConfirmDialog implements Component {
+  #list: SelectList;
+  #title: string;
+  onAnswer?: (confirmed: boolean) => void;
+
+  constructor(title: string) {
+    this.#title = title;
+    this.#list = new SelectList(
+      [
+        { value: "yes", label: "允许执行" },
+        { value: "no", label: "拒绝" },
+      ],
+      2,
+      SELECT_THEME,
+    );
+    this.#list.onSelect = (item) => this.onAnswer?.(item.value === "yes");
+    // Esc 取消等同于拒绝——默认从严。
+    this.#list.onCancel = () => this.onAnswer?.(false);
+  }
+
+  handleInput(data: string): void {
+    this.#list.handleInput(data);
+  }
+
+  invalidate(): void {
+    this.#list.invalidate();
+  }
+
+  render(width: number): string[] {
+    return [
+      ...wrapTextWithAnsi(`${YELLOW}${BOLD}${this.#title}${RESET}`, width),
+      ...this.#list.render(width),
+      `${DIM}↑↓ 选择，Enter 确认，Esc 拒绝${RESET}`,
+    ];
+  }
+}
+
 // ---- 组装 ----
 
 const terminal = new ProcessTerminal();
@@ -95,6 +144,33 @@ root.addChild(transcript);
 root.addChild(promptInput);
 tui.addChild(root);
 tui.setFocus(promptInput.input);
+
+/** 底部要么是输入框，要么是确认对话框。切换时整个重组一次。 */
+function setBottom(component: Component): void {
+  root.clear();
+  root.addChild(transcript);
+  root.addChild(component);
+  tui.requestRender();
+}
+
+function showPrompt(): void {
+  setBottom(promptInput);
+  tui.setFocus(promptInput.input);
+}
+
+/** 弹出确认，等用户选完再 resolve。核心此刻正阻塞等着这个答案。 */
+function ask(title: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const dialog = new ConfirmDialog(title);
+    dialog.onAnswer = (confirmed) => {
+      transcript.append(confirmed ? `${DIM}   → 已允许${RESET}` : `${DIM}   → 已拒绝${RESET}`);
+      showPrompt();
+      resolve(confirmed);
+    };
+    setBottom(dialog);
+    tui.setFocus(dialog);
+  });
+}
 
 // ---- 起核心 ----
 
@@ -132,6 +208,30 @@ function applyAction(action: ViewAction): void {
       break;
     }
 
+    case "tool_changed": {
+      if (action.status === "pending") {
+        transcript.append("");
+        transcript.append(`${YELLOW}🔧 ${action.toolName}${RESET} ${DIM}待批准${RESET}`);
+        if (action.args !== undefined) {
+          for (const line of JSON.stringify(action.args, null, 2).split("\n")) {
+            transcript.append(`${DIM}   ${line}${RESET}`);
+          }
+        }
+      } else if (action.status === "done" || action.status === "error") {
+        transcript.append(
+          action.status === "done"
+            ? `   ${GREEN}✅ 完成${RESET}`
+            : `   ${RED}❌ 被拒绝或出错${RESET}`,
+        );
+        // 工具输出可能很长，截前 20 行——终端里刷屏比信息少更难受。
+        for (const line of (action.result ?? "").split("\n").slice(0, 20)) {
+          transcript.append(`${DIM}   ${line}${RESET}`);
+        }
+      }
+      // running 不画：确认框消失本身就是「开始执行了」的信号。
+      break;
+    }
+
     case "busy_changed":
       busy = action.busy;
       break;
@@ -147,8 +247,16 @@ client.onEvent((event) => {
   for (const action of fold(event)) applyAction(action);
 });
 
-// 本阶段还没接权限确认，先一律拒绝，免得工具在无人看管下执行。
-client.onUiRequest(async () => ({ confirmed: false }));
+client.onUiRequest(async (request) => {
+  // 只有 confirm 需要回话；notify 之类是广播式的，本阶段不显示。
+  //
+  // 注意这里没有用 foldUiRequest：那个函数的用处是把 UI 请求变成一个能跨边界传输的
+  // 动作（GUI 里要过 IPC）。TUI 是单进程，直接拿 request 用即可——与不使用
+  // session.ts 是同一个理由。
+  if (request.method !== "confirm") return { cancelled: true };
+  const confirmed = await ask(String(request.title ?? "允许执行这个工具？"));
+  return { confirmed };
+});
 
 // ---- 交互 ----
 
