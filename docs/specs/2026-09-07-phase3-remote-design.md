@@ -35,7 +35,7 @@
 
 一次做完的话，出问题时无法判断是哪一块。沿用阶段 1 拆成 1a/1b 的做法。
 
-**阶段 3a：本机拆分。** core-server + WebSocketTransport + GUI 改成客户端。
+**阶段 3a：本机拆分。** core-server + 客户端连接层 + GUI 改成客户端。
 **全程只监听 `127.0.0.1`，没有任何网络安全面**，可以快跑。
 
 **阶段 3b：网页界面与远程接入。** 构建步骤、共用界面代码、Tailscale、令牌、断线处理、
@@ -109,6 +109,22 @@ TUI 不变：自己 startCore()，走 stdio，独立会话
 
 服务器把客户端来的消息一律当作不可信输入处理：校验类型与取值。
 
+### 5.2.1 为什么不复用 `Transport` 抽象
+
+`Transport` / `StdioTransport` 是为 **Pi 的 JSONL 协议**设计的——「一行行收发文本，不理解内容」。
+而服务器与客户端之间说的是**另一套协议**（`prompt` / `actions` / `snapshot`），层级更高：
+它携带的是已经折叠好的界面动作，不是 Pi 的原始事件。
+
+所以客户端这侧新增 `RemoteSession`，与 `CoreClient` 并列而不是叠加：
+
+```
+core-server 内部：  CoreClient + StdioTransport  ──→ Pi（JSONL 协议）
+客户端这一侧：      RemoteSession                ──→ core-server（本项目协议）
+```
+
+线上消息类型定义在 `core-client/src/protocol.ts`，服务器与客户端共用同一份，避免两边各写一遍
+而慢慢对不上。
+
 ### 5.3 多客户端
 
 同时连多个是**常态**（GUI 开着、手机也连着）。
@@ -126,8 +142,9 @@ core-server → @cinba/core-host      startCore
             → ws                    WebSocket 服务端
 
 core-client → 无依赖（保持）
-              WebSocketTransport 用**原生 WebSocket**——浏览器、Electron 渲染层、
-              Node 24 都内置，因此不引入任何依赖
+              新增 protocol.ts（线上消息类型 + 校验）与 remote.ts（RemoteSession），
+              用**原生 WebSocket**——浏览器、Electron 渲染层、Node 24 都内置，
+              因此不引入任何依赖
 
 desktop     → 不再依赖 core-host（Pi 不归它管了）
             → 仍依赖 core-client（主进程用 CoreClient + WebSocketTransport 连服务器）
@@ -159,8 +176,8 @@ desktop     → 不再依赖 core-host（Pi 不归它管了）
 
 | 层 | 手段 |
 |---|---|
-| `WebSocketTransport` | `node --test`，用假的 WebSocket 测收发与断线 |
-| 服务器消息处理 | `node --test`，纯函数部分（消息校验、快照组装） |
+| `protocol.ts` 的消息校验 | `node --test`，纯函数 |
+| `RemoteSession` | `node --test`，喂一个假的 socket |
 | 端到端 | 手工验收清单 |
 
 手工验收清单：
