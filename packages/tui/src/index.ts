@@ -297,8 +297,8 @@ promptInput.input.onSubmit = (value: string) => {
   if (text === "") return;
   promptInput.input.setValue("");
 
-  // 本地补发「忙起来了」。事件流里没有这个信号——createEventFolder 只在
-  // agent_settled 时发 busy:false，没有对应的 true。GUI 的主进程也是这样自己补的。
+  // 立刻置忙，不等 agent_start 从管道那头回来。事件流本身也会发这个信号
+  // （见 events.ts 的 agent_start），这里只是为了输入框马上锁住。
   applyAction({ type: "busy_changed", busy: true });
 
   void client.prompt(text);

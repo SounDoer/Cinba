@@ -141,6 +141,8 @@ ipcMain.handle("cinba:getSnapshot", () => session.snapshot());
 
 ipcMain.handle("cinba:prompt", (_event: IpcMainInvokeEvent, text: unknown) => {
   if (typeof text !== "string" || text.trim() === "") return;
+  // 立刻置忙，不等 agent_start 从 Pi 那头回来。事件流本身也会发这个信号
+  // （见 events.ts 的 agent_start），这里只是为了输入框马上锁住。
   emit([{ type: "busy_changed", busy: true }]);
   void client?.prompt(text);
 });

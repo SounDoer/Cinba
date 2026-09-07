@@ -128,6 +128,12 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
           },
         ];
 
+      // 忙 / 不忙完全能从事件流推出来，两半都在这里发，前端就不必各自补。
+      // 前端仍可以在按下发送时自己先置一次 busy:true——那是为了立刻锁住输入框，
+      // 不用等这个事件从管道那头回来；但即使忘了，行为也只是慢一拍，不会坏掉。
+      case "agent_start":
+        return [{ type: "busy_changed", busy: true }];
+
       case "agent_settled":
         return [{ type: "busy_changed", busy: false }];
 

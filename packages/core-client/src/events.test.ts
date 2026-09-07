@@ -137,6 +137,14 @@ test("费用与 token 逐条累加", () => {
   assert.deepEqual(second, [{ type: "usage_changed", totalTokens: 150, totalCost: 0.003 }]);
 });
 
+test("agent_start 就是「开始忙」", () => {
+  // 忙 / 不忙本来就能从事件流推出来。少了这一半，每个前端都得自己补一句
+  // busy:true——GUI 补过、TUI 补过、网页版还要再补。三遍就是抽象漏了一块。
+  const fold = createEventFolder();
+
+  assert.deepEqual(fold({ type: "agent_start" }), [{ type: "busy_changed", busy: true }]);
+});
+
 test("agent_settled 解除忙碌", () => {
   const fold = createEventFolder();
 
