@@ -12,6 +12,7 @@ import {
   matchesKey,
   ProcessTerminal,
   SelectList,
+  truncateToWidth,
   TuiMainScreen,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
@@ -93,6 +94,25 @@ class PromptInput implements Component {
   }
 }
 
+/** 底部一行：累计用量与当前可用的按键。 */
+class StatusBar implements Component {
+  totalTokens = 0;
+  totalCost = 0;
+  busy = false;
+
+  invalidate(): void {}
+
+  render(width: number): string[] {
+    const usage = `${DIM}${this.totalTokens} tokens · $${this.totalCost.toFixed(4)}${RESET}`;
+    // 忙的时候用高亮：这一行钉在飞速滚动的屏幕最底部，全暗灰的话等于隐形。
+    const hint = this.busy
+      ? `${YELLOW}${BOLD}⏳ 回答中——按 Esc 中止${RESET}`
+      : `${DIM}Ctrl+C 退出${RESET}`;
+    // 同样按显示列数截断，理由见 Transcript.render 里的说明。
+    return [truncateToWidth(`${usage}    ${hint}`, width)];
+  }
+}
+
 /** 权限确认。确认期间它临时顶替底部的输入框。 */
 class ConfirmDialog implements Component {
   #list: SelectList;
@@ -138,10 +158,12 @@ const tui: TUI = new TuiMainScreen(terminal);
 
 const transcript = new Transcript();
 const promptInput = new PromptInput();
+const statusBar = new StatusBar();
 
 const root = new Container();
 root.addChild(transcript);
 root.addChild(promptInput);
+root.addChild(statusBar);
 tui.addChild(root);
 tui.setFocus(promptInput.input);
 
@@ -150,6 +172,7 @@ function setBottom(component: Component): void {
   root.clear();
   root.addChild(transcript);
   root.addChild(component);
+  root.addChild(statusBar);
   tui.requestRender();
 }
 
@@ -232,8 +255,14 @@ function applyAction(action: ViewAction): void {
       break;
     }
 
+    case "usage_changed":
+      statusBar.totalTokens = action.totalTokens;
+      statusBar.totalCost = action.totalCost;
+      break;
+
     case "busy_changed":
       busy = action.busy;
+      statusBar.busy = action.busy;
       break;
 
     // thinking 本阶段不显示；工具与费用在后续 task 接上。
@@ -267,7 +296,21 @@ promptInput.input.onSubmit = (value: string) => {
   const text = value.trim();
   if (text === "") return;
   promptInput.input.setValue("");
+
+  // 本地补发「忙起来了」。事件流里没有这个信号——createEventFolder 只在
+  // agent_settled 时发 busy:false，没有对应的 true。GUI 的主进程也是这样自己补的。
+  applyAction({ type: "busy_changed", busy: true });
+
   void client.prompt(text);
+};
+
+// Esc 中止进行中的回答。不忙的时候按它没有副作用——退出用 Ctrl+C，
+// 免得手滑一下就把会话关了。
+promptInput.input.onEscape = () => {
+  if (!busy) return;
+  void client.abort();
+  transcript.append(`${YELLOW}[已中止]${RESET}`);
+  tui.requestRender();
 };
 
 function exit(): void {
