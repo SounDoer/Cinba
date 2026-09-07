@@ -7,6 +7,8 @@ import { createRoot } from "react-dom/client";
 import { createSession, RemoteSession } from "@cinba/core-client";
 import type { Session, Snapshot } from "@cinba/core-client";
 import { Transcript } from "./Transcript.tsx";
+import { ProjectPicker } from "./ProjectPicker.tsx";
+import type { Listing } from "./ProjectPicker.tsx";
 import "./style.css";
 
 const EMPTY: Snapshot = { entries: [], totalTokens: 0, totalCost: 0, busy: false };
@@ -18,6 +20,8 @@ function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>(EMPTY);
   const [cwd, setCwd] = useState("");
   const [draft, setDraft] = useState("");
+  const [picking, setPicking] = useState(false);
+  const [listing, setListing] = useState<Listing | undefined>(undefined);
 
   const remoteRef = useRef<RemoteSession | undefined>(undefined);
   const mirrorRef = useRef<Session>(createSession());
@@ -37,6 +41,7 @@ function App() {
         setSnapshot(mirrorRef.current.snapshot());
       },
       onReset: (nextCwd) => setCwd(nextCwd),
+      onDirListing: (next) => setListing(next),
     });
 
     return () => socket.close();
@@ -69,7 +74,9 @@ function App() {
   return (
     <>
       <header>
-        <button>项目：{cwd.split(/[\\/]/).pop() || "…"}</button>
+        <button onClick={() => setPicking(true)}>
+          项目：{cwd.split(/[\\/]/).pop() || "…"}
+        </button>
         <span>
           {snapshot.totalTokens} tokens · ${snapshot.totalCost.toFixed(4)}
         </span>
@@ -104,8 +111,22 @@ function App() {
         </button>
         {snapshot.busy ? <button onClick={() => remoteRef.current?.abort()}>中止</button> : null}
       </footer>
+
+      {picking ? (
+        <ProjectPicker
+          remote={remoteRef.current}
+          listing={listing}
+          startPath={cwd}
+          onClose={() => setPicking(false)}
+        />
+      ) : null}
     </>
   );
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+// 热更新会重新执行本模块，而同一个容器不能重复 createRoot——
+// 复用已有的 root，否则开发时会出现「点了没反应」这类状态错乱。
+const container = document.getElementById("root")!;
+const globals = globalThis as { __cinbaRoot?: ReturnType<typeof createRoot> };
+globals.__cinbaRoot ??= createRoot(container);
+globals.__cinbaRoot.render(<App />);
