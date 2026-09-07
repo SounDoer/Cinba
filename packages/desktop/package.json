@@ -8,8 +8,7 @@
     "start": "electron ."
   },
   "dependencies": {
-    "@cinba/core-client": "*",
-    "@cinba/core-host": "*"
+    "@cinba/core-client": "*"
   },
   "devDependencies": {
     "electron": "^44.2.0"
