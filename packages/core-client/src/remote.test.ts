@@ -37,6 +37,29 @@ test("四种命令都按协议发出去", () => {
   );
 });
 
+test("listDir 按协议发出去，目录列表交给处理器", () => {
+  const fake = createFakeSocket();
+  const listings: unknown[] = [];
+
+  const remote = new RemoteSession(fake.socket, {
+    onDirListing: (listing) => listings.push(listing),
+  });
+
+  remote.listDir("C:\\Users");
+  assert.deepEqual(JSON.parse(fake.sent[0]!), { type: "list_dir", path: "C:\\Users" });
+
+  fake.receive({
+    type: "dir_listing",
+    path: "C:\\Users",
+    parent: "C:\\",
+    dirs: ["shenxichen", "Public"],
+  });
+
+  assert.deepEqual(listings, [
+    { path: "C:\\Users", parent: "C:\\", dirs: ["shenxichen", "Public"] },
+  ]);
+});
+
 test("快照与动作分别交给对应的处理器", () => {
   const fake = createFakeSocket();
   const snapshots: unknown[] = [];

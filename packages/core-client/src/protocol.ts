@@ -11,13 +11,16 @@ export type ClientMessage =
   | { type: "prompt"; text: string }
   | { type: "abort" }
   | { type: "respond_confirm"; requestId: string; confirmed: boolean }
-  | { type: "set_project"; cwd: string };
+  | { type: "set_project"; cwd: string }
+  | { type: "list_dir"; path: string };
 
 /** 服务器 → 客户端。 */
 export type ServerMessage =
   | { type: "snapshot"; snapshot: Snapshot; cwd: string }
   | { type: "actions"; actions: ViewAction[] }
-  | { type: "reset"; cwd: string };
+  | { type: "reset"; cwd: string }
+  /** parent 为上一级路径；已在根目录时为 null。dirs 只含子目录名，不含文件。 */
+  | { type: "dir_listing"; path: string; parent: string | null; dirs: string[] };
 
 /**
  * 校验客户端来的消息，不认识就返回 undefined 让调用方丢掉。
@@ -50,6 +53,10 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
     case "set_project":
       if (typeof message.cwd !== "string" || message.cwd === "") return undefined;
       return { type: "set_project", cwd: message.cwd };
+
+    case "list_dir":
+      if (typeof message.path !== "string" || message.path === "") return undefined;
+      return { type: "list_dir", path: message.path };
 
     default:
       return undefined;

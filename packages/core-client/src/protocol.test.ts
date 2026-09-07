@@ -18,6 +18,19 @@ test("认得四种客户端消息", () => {
   });
 });
 
+test("认得 list_dir", () => {
+  assert.deepEqual(parseClientMessage({ type: "list_dir", path: "C:\\Users" }), {
+    type: "list_dir",
+    path: "C:\\Users",
+  });
+});
+
+test("list_dir 的 path 必须是非空字符串", () => {
+  assert.equal(parseClientMessage({ type: "list_dir" }), undefined);
+  assert.equal(parseClientMessage({ type: "list_dir", path: "" }), undefined);
+  assert.equal(parseClientMessage({ type: "list_dir", path: 42 }), undefined);
+});
+
 test("字段类型不对的一律丢掉", () => {
   // 网络来的东西不可信。宁可丢掉也不能带着错的类型往下走。
   assert.equal(parseClientMessage({ type: "prompt", text: 123 }), undefined);

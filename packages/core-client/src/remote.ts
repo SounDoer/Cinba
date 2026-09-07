@@ -22,6 +22,7 @@ export type RemoteHandlers = {
   onSnapshot?: (snapshot: Snapshot, cwd: string) => void;
   onActions?: (actions: ViewAction[]) => void;
   onReset?: (cwd: string) => void;
+  onDirListing?: (listing: { path: string; parent: string | null; dirs: string[] }) => void;
 };
 
 export class RemoteSession {
@@ -50,6 +51,10 @@ export class RemoteSession {
     this.#send({ type: "set_project", cwd });
   }
 
+  listDir(path: string): void {
+    this.#send({ type: "list_dir", path });
+  }
+
   #send(message: ClientMessage): void {
     this.#socket.send(JSON.stringify(message));
   }
@@ -73,6 +78,13 @@ export class RemoteSession {
         return;
       case "reset":
         this.#handlers.onReset?.(message.cwd);
+        return;
+      case "dir_listing":
+        this.#handlers.onDirListing?.({
+          path: message.path,
+          parent: message.parent,
+          dirs: message.dirs,
+        });
         return;
       default:
         return;
