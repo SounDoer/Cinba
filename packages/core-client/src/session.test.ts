@@ -140,3 +140,25 @@ test("快照是副本，改它不影响账本", () => {
 
   assert.equal(session.snapshot().entries.length, 1);
 });
+
+test("可以从一份快照重建账本", () => {
+  // 客户端侧持有的是镜像：拿服务器给的快照开局，之后跟着动作走。
+  const origin = createSession();
+  origin.apply({ type: "message_added", messageId: "m1", role: "user" });
+  origin.apply({ type: "text_appended", messageId: "m1", text: "你好" });
+  origin.apply({ type: "usage_changed", totalTokens: 120, totalCost: 0.004 });
+
+  const mirror = createSession(origin.snapshot());
+
+  assert.deepEqual(mirror.snapshot(), origin.snapshot());
+});
+
+test("重建出来的账本能继续接收动作", () => {
+  const origin = createSession();
+  origin.apply({ type: "message_added", messageId: "m1", role: "assistant" });
+
+  const mirror = createSession(origin.snapshot());
+  mirror.apply({ type: "text_appended", messageId: "m1", text: "继续" });
+
+  assert.equal(mirror.snapshot().entries[0].text, "继续");
+});

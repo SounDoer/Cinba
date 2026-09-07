@@ -45,11 +45,16 @@ export type Session = {
   snapshot(): Snapshot;
 };
 
-export function createSession(): Session {
-  const entries: Entry[] = [];
-  let totalTokens = 0;
-  let totalCost = 0;
-  let busy = false;
+/**
+ * @param initial 用一份快照开局。客户端侧持有镜像账本时用得上：
+ *                连上服务器先拿一份快照，之后跟着增量动作走。
+ */
+export function createSession(initial?: Snapshot): Session {
+  // 复制一份，免得调用方后续改动那个快照影响到这里。
+  const entries: Entry[] = (initial?.entries ?? []).map((entry) => ({ ...entry }));
+  let totalTokens = initial?.totalTokens ?? 0;
+  let totalCost = initial?.totalCost ?? 0;
+  let busy = initial?.busy ?? false;
 
   function findMessage(messageId: string): MessageEntry | undefined {
     for (let i = entries.length - 1; i >= 0; i--) {
