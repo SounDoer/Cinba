@@ -16,7 +16,7 @@
 
 | Task | 状态 |
 |---|---|
-| 1. Vite 能否编译 core-client（拆雷） | 未开始 |
+| 1. Vite 能否编译 core-client（拆雷） | ✅ 通过，无需退路；安装脚本未增加 |
 | 2. 协议加 list_dir | 未开始 |
 | 3. core-server 提供静态文件与目录列表 | 未开始 |
 | 4. React 界面：消息流与 Markdown | 未开始 |
