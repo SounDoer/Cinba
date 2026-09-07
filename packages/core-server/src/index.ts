@@ -9,9 +9,13 @@
 
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, extname, join, normalize, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { startCore } from "@cinba/core-host";
 import {
   CoreClient,
@@ -28,6 +32,44 @@ const PORT = 4517;
 
 /** 文字增量逐 token 到达，攒一批再发，避免每个字一次网络往返。 */
 const FLUSH_INTERVAL_MS = 30;
+
+/** 界面构建产物的所在目录。按仓库布局相对定位，不经过包解析。 */
+const WEB_DIST = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
+
+const MIME: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".woff2": "font/woff2",
+};
+
+/** 提供界面的静态文件。 */
+async function serveStatic(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const url = new URL(request.url ?? "/", "http://localhost");
+  const requested = url.pathname === "/" ? "/index.html" : url.pathname;
+
+  // 防目录穿越：拼完再检查是否仍在 WEB_DIST 之下。
+  // 现在只监听回环地址，但这道检查该在 3b-2 开对外通道之前就位。
+  const filePath = normalize(join(WEB_DIST, requested));
+  if (!filePath.startsWith(WEB_DIST + sep) && filePath !== WEB_DIST) {
+    response.writeHead(403).end("forbidden");
+    return;
+  }
+
+  try {
+    const body = await readFile(filePath);
+    response.writeHead(200, {
+      "content-type": MIME[extname(filePath)] ?? "application/octet-stream",
+    });
+    response.end(body);
+  } catch {
+    response
+      .writeHead(404)
+      .end("界面还没构建。请先跑：npm run build --workspace @cinba/web");
+  }
+}
 
 const clients = new Set<WebSocket>();
 
@@ -191,6 +233,28 @@ function handle(raw: string): void {
       broadcast({ type: "snapshot", snapshot: session.snapshot(), cwd });
       broadcast({ type: "reset", cwd });
       return;
+
+    case "list_dir": {
+      // 浏览器拿不到本地路径（刻意的安全限制），所以由服务器列目录、界面只负责画。
+      // 「能列目录」没有增加新能力——这个服务本来就能执行任意命令。
+      let dirs: string[] = [];
+      try {
+        dirs = readdirSync(message.path, { withFileTypes: true })
+          .filter((item) => item.isDirectory() && !item.name.startsWith("."))
+          .map((item) => item.name)
+          .sort();
+      } catch {
+        // 读不了（不存在、没权限）就当空目录，界面显示为空即可。
+      }
+      const parent = dirname(message.path);
+      broadcast({
+        type: "dir_listing",
+        path: message.path,
+        parent: parent === message.path ? null : parent,
+        dirs,
+      });
+      return;
+    }
   }
 }
 
@@ -199,10 +263,12 @@ function handle(raw: string): void {
 cwd = loadCwd();
 startSession();
 
-const server = new WebSocketServer({ host: HOST, port: PORT });
+// WebSocket 与静态文件共用一个端口：界面从这里加载，也从这里连回来。
+const httpServer = createServer((request, response) => void serveStatic(request, response));
+const server = new WebSocketServer({ server: httpServer });
 
-server.on("listening", () => {
-  console.log(`[cinba] 服务已启动 ws://${HOST}:${PORT}`);
+httpServer.listen(PORT, HOST, () => {
+  console.log(`[cinba] 界面 http://${HOST}:${PORT}`);
   console.log(`[cinba] 工作目录 ${cwd}`);
 });
 
@@ -225,6 +291,7 @@ function shutdown(): void {
   console.log("\n[cinba] 正在关闭，回收 Pi 子进程");
   void client?.close();
   server.close();
+  httpServer.close();
   process.exit(0);
 }
 
