@@ -95,6 +95,31 @@ export class CoreClient {
     return this.#send({ type: "set_model", provider, modelId });
   }
 
+  /**
+   * The conversation as Pi has stored it.
+   *
+   * @param since Return only what follows this entry id. This is how the server
+   *              reconciles cheaply at the end of each turn instead of pulling
+   *              a long conversation back every time.
+   */
+  getEntries(since?: string): Promise<CoreResponse> {
+    return this.#send(since === undefined ? { type: "get_entries" } : { type: "get_entries", since });
+  }
+
+  /** Start a fresh conversation in this process, leaving the previous one on disk. */
+  newSession(): Promise<CoreResponse> {
+    return this.#send({ type: "new_session" });
+  }
+
+  /** Point this process at an existing session file. */
+  switchSession(sessionPath: string): Promise<CoreResponse> {
+    return this.#send({ type: "switch_session", sessionPath });
+  }
+
+  setSessionName(name: string): Promise<CoreResponse> {
+    return this.#send({ type: "set_session_name", name });
+  }
+
   close(): Promise<void> {
     return this.#transport.close();
   }

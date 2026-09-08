@@ -124,3 +124,27 @@ test("the model commands go out in the shape Pi expects", async () => {
   const ids = new Set(commands.map((command) => command.id));
   assert.equal(ids.size, 3);
 });
+
+test("the session commands go out in the shape Pi expects", () => {
+  const fake = createFakeTransport();
+  const client = new CoreClient(fake.transport);
+
+  void client.getEntries();
+  void client.getEntries("e42");
+  void client.newSession();
+  void client.switchSession("C:/sessions/a.jsonl");
+  void client.setSessionName("refactor the parser");
+
+  const commands = fake.sent.map((line) => JSON.parse(line));
+  assert.deepEqual(
+    commands.map((command) => command.type),
+    ["get_entries", "get_entries", "new_session", "switch_session", "set_session_name"],
+  );
+
+  // Omitted rather than sent as undefined: Pi treats a present "since" as a
+  // filter and errors when the id is unknown.
+  assert.equal("since" in commands[0], false);
+  assert.equal(commands[1].since, "e42");
+  assert.equal(commands[3].sessionPath, "C:/sessions/a.jsonl");
+  assert.equal(commands[4].name, "refactor the parser");
+});

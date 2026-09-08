@@ -17,14 +17,13 @@ function createFakeSocket(): { socket: Socket; sent: string[]; receive: (obj: un
   };
 }
 
-test("all four commands go out in protocol form", () => {
+test("the conversation commands go out in protocol form", () => {
   const fake = createFakeSocket();
   const remote = new RemoteSession(fake.socket, {});
 
   remote.prompt("hello");
   remote.abort();
   remote.respondConfirm("u1", false);
-  remote.setProject("/tmp");
 
   assert.deepEqual(
     fake.sent.map((line) => JSON.parse(line)),
@@ -32,7 +31,6 @@ test("all four commands go out in protocol form", () => {
       { type: "prompt", text: "hello" },
       { type: "abort" },
       { type: "respond_confirm", requestId: "u1", confirmed: false },
-      { type: "set_project", cwd: "/tmp" },
     ],
   );
 });
@@ -64,22 +62,18 @@ test("snapshots and actions reach their respective handlers", () => {
   const fake = createFakeSocket();
   const snapshots: unknown[] = [];
   const batches: unknown[] = [];
-  const resets: string[] = [];
 
   new RemoteSession(fake.socket, {
-    onSnapshot: (snapshot, cwd) => snapshots.push([snapshot, cwd]),
+    onSnapshot: (state) => snapshots.push([state.snapshot, state.cwd]),
     onActions: (actions) => batches.push(actions),
-    onReset: (cwd) => resets.push(cwd),
   });
 
   const snapshot = { entries: [], totalTokens: 0, totalCost: 0, busy: false };
-  fake.receive({ type: "snapshot", snapshot, cwd: "/home/me" });
+  fake.receive({ type: "snapshot", snapshot, cwd: "/home/me", sessionId: "s1" });
   fake.receive({ type: "actions", actions: [{ type: "busy_changed", busy: true }] });
-  fake.receive({ type: "reset", cwd: "/tmp" });
 
   assert.deepEqual(snapshots, [[snapshot, "/home/me"]]);
   assert.deepEqual(batches, [[{ type: "busy_changed", busy: true }]]);
-  assert.deepEqual(resets, ["/tmp"]);
 });
 
 test("malformed messages are ignored rather than crashing", () => {
@@ -123,8 +117,8 @@ test("a snapshot carries the current model alongside the working directory", () 
   const fake = createFakeSocket();
   let got: unknown;
   const remote = new RemoteSession(fake.socket, {
-    onSnapshot: (_snapshot, cwd, model) => {
-      got = { cwd, model };
+    onSnapshot: (state) => {
+      got = { cwd: state.cwd, model: state.model, sessionId: state.sessionId };
     },
   });
   void remote;
@@ -133,8 +127,44 @@ test("a snapshot carries the current model alongside the working directory", () 
     type: "snapshot",
     snapshot: { entries: [], totalTokens: 0, totalCost: 0, busy: false },
     cwd: "/tmp",
+    sessionId: "s1",
     model: { provider: "deepseek", id: "deepseek-v4-pro" },
   });
 
-  assert.deepEqual(got, { cwd: "/tmp", model: { provider: "deepseek", id: "deepseek-v4-pro" } });
+  assert.deepEqual(got, {
+    cwd: "/tmp",
+    sessionId: "s1",
+    model: { provider: "deepseek", id: "deepseek-v4-pro" },
+  });
+});
+
+test("the session commands go out, and both session messages reach their handlers", () => {
+  const fake = createFakeSocket();
+  const seen: unknown[] = [];
+  const remote = new RemoteSession(fake.socket, {
+    onSessionListing: (sessions) => seen.push(sessions),
+    onSessionOpened: (id) => seen.push(id),
+  });
+
+  remote.listSessions();
+  remote.listSessions("C:/p");
+  remote.openSession("s1");
+  remote.createSession("C:/p");
+  remote.deleteSession("s2");
+
+  assert.deepEqual(
+    fake.sent.map((line) => JSON.parse(line)),
+    [
+      { type: "list_sessions" },
+      { type: "list_sessions", cwd: "C:/p" },
+      { type: "open_session", sessionId: "s1" },
+      { type: "create_session", cwd: "C:/p" },
+      { type: "delete_session", sessionId: "s2" },
+    ],
+  );
+
+  fake.receive({ type: "session_listing", sessions: [{ id: "s1" }] });
+  fake.receive({ type: "session_opened", sessionId: "s1" });
+
+  assert.deepEqual(seen, [[{ id: "s1" }], "s1"]);
 });

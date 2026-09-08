@@ -11,27 +11,55 @@ import type { Snapshot } from "./session.ts";
 /** Points at one model. Provider and id together, because ids are only unique within a provider. */
 export type ModelRef = { provider: string; id: string };
 
+/**
+ * One row of the session list.
+ *
+ * Straight out of Pi's SessionInfo, trimmed to what a picker draws. firstMessage
+ * is the opening line of the conversation and serves as the title: Pi already
+ * has it, so nothing has to invent one.
+ */
+export type SessionSummary = {
+  id: string;
+  cwd: string;
+  name?: string;
+  messageCount: number;
+  firstMessage: string;
+  /** ISO 8601. A Date does not survive JSON. */
+  modified: string;
+};
+
 /** Client to server. */
 export type ClientMessage =
   | { type: "prompt"; text: string }
   | { type: "abort" }
   | { type: "respond_confirm"; requestId: string; confirmed: boolean }
-  | { type: "set_project"; cwd: string }
   | { type: "list_dir"; path: string }
   | { type: "list_models" }
-  | { type: "set_model"; provider: string; modelId: string };
+  | { type: "set_model"; provider: string; modelId: string }
+  /** cwd absent means every directory. */
+  | { type: "list_sessions"; cwd?: string }
+  | { type: "open_session"; sessionId: string }
+  | { type: "create_session"; cwd: string }
+  | { type: "delete_session"; sessionId: string };
 
 /** Server to client. */
 export type ServerMessage =
-  /** model is absent only in the moment before the server has asked Pi which one it picked. */
-  | { type: "snapshot"; snapshot: Snapshot; cwd: string; model?: ModelRef }
+  /**
+   * The state of one session. sessionId says which, because a client may be
+   * looking at a different one from its neighbour.
+   *
+   * model is absent only in the moment before the server has asked Pi which one it picked.
+   */
+  | { type: "snapshot"; snapshot: Snapshot; cwd: string; sessionId: string; model?: ModelRef }
   | { type: "actions"; actions: ViewAction[] }
-  | { type: "reset"; cwd: string }
   /** parent is the path one level up, or null at the root. dirs holds subdirectory names only, no files. */
   | { type: "dir_listing"; path: string; parent: string | null; dirs: string[] }
   /** Only the models with credentials configured on the core's machine; the rest are unusable anyway. */
   | { type: "model_listing"; models: ModelRef[] }
-  | { type: "model_changed"; model: ModelRef };
+  | { type: "model_changed"; model: ModelRef }
+  | { type: "session_listing"; sessions: SessionSummary[] }
+  /** Which session this client is now looking at. The snapshot for it follows. */
+  | { type: "session_opened"; sessionId: string };
 
 /**
  * Validate a message from a client; return undefined for anything unrecognized
@@ -63,10 +91,6 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
         confirmed: message.confirmed,
       };
 
-    case "set_project":
-      if (typeof message.cwd !== "string" || message.cwd === "") return undefined;
-      return { type: "set_project", cwd: message.cwd };
-
     case "list_dir":
       if (typeof message.path !== "string" || message.path === "") return undefined;
       return { type: "list_dir", path: message.path };
@@ -84,6 +108,23 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
         return undefined;
       }
       return { type: "set_model", provider: message.provider, modelId: message.modelId };
+
+    case "list_sessions":
+      if (message.cwd === undefined) return { type: "list_sessions" };
+      if (typeof message.cwd !== "string" || message.cwd === "") return undefined;
+      return { type: "list_sessions", cwd: message.cwd };
+
+    case "open_session":
+      if (typeof message.sessionId !== "string" || message.sessionId === "") return undefined;
+      return { type: "open_session", sessionId: message.sessionId };
+
+    case "create_session":
+      if (typeof message.cwd !== "string" || message.cwd === "") return undefined;
+      return { type: "create_session", cwd: message.cwd };
+
+    case "delete_session":
+      if (typeof message.sessionId !== "string" || message.sessionId === "") return undefined;
+      return { type: "delete_session", sessionId: message.sessionId };
 
     default:
       return undefined;

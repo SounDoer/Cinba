@@ -36,17 +36,16 @@ function App() {
     const socket = new WebSocket(SERVER_URL);
 
     remoteRef.current = new RemoteSession(socket, {
-      onSnapshot: (next, nextCwd, nextModel) => {
-        mirrorRef.current = createSession(next);
-        setSnapshot(next);
-        setCwd(nextCwd);
-        setModel(nextModel);
+      onSnapshot: (state) => {
+        mirrorRef.current = createSession(state.snapshot);
+        setSnapshot(state.snapshot);
+        setCwd(state.cwd);
+        setModel(state.model);
       },
       onActions: (actions) => {
         for (const action of actions) mirrorRef.current.apply(action);
         setSnapshot(mirrorRef.current.snapshot());
       },
-      onReset: (nextCwd) => setCwd(nextCwd),
       onDirListing: (next) => setListing(next),
       onModelListing: (next) => setModels(next),
       onModelChanged: (next) => setModel(next),

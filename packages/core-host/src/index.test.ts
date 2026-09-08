@@ -52,3 +52,18 @@ test("the environment must carry ELECTRON_RUN_AS_NODE", () => {
   assert.equal(plan.env.ELECTRON_RUN_AS_NODE, "1");
   assert.equal(plan.env.PATH, "/usr/bin", "the existing environment must be preserved");
 });
+
+test("a session path is passed through so a stored conversation can be resumed", () => {
+  const plan = buildSpawnPlan("entry.js", "gate.ts", {
+    sessionPath: "C:/sessions/a.jsonl",
+  });
+
+  const at = plan.args.indexOf("--session");
+  assert.ok(at > 0, "the session flag has to be there for the history to come back");
+  assert.equal(plan.args[at + 1], "C:/sessions/a.jsonl");
+});
+
+test("no session path means a fresh conversation", () => {
+  const plan = buildSpawnPlan("entry.js", "gate.ts", {});
+  assert.equal(plan.args.includes("--session"), false);
+});

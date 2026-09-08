@@ -12,10 +12,6 @@ test("the four client messages are recognized", () => {
     parseClientMessage({ type: "respond_confirm", requestId: "u1", confirmed: true }),
     { type: "respond_confirm", requestId: "u1", confirmed: true },
   );
-  assert.deepEqual(parseClientMessage({ type: "set_project", cwd: "/tmp" }), {
-    type: "set_project",
-    cwd: "/tmp",
-  });
 });
 
 test("list_dir is recognized", () => {
@@ -39,7 +35,7 @@ test("anything with a wrong field type is dropped", () => {
     parseClientMessage({ type: "respond_confirm", requestId: 1, confirmed: true }),
     undefined,
   );
-  assert.equal(parseClientMessage({ type: "set_project", cwd: "" }), undefined);
+  assert.equal(parseClientMessage({ type: "create_session", cwd: "" }), undefined);
 });
 
 test("a blank prompt does not count", () => {
@@ -63,4 +59,31 @@ test("the model messages parse, and a half-filled set_model does not", () => {
   assert.equal(parseClientMessage({ type: "set_model", provider: "deepseek" }), undefined);
   assert.equal(parseClientMessage({ type: "set_model", provider: "", modelId: "x" }), undefined);
   assert.equal(parseClientMessage({ type: "set_model", provider: "x", modelId: 7 }), undefined);
+});
+
+test("the session messages parse, and bad ids are dropped", () => {
+  assert.deepEqual(parseClientMessage({ type: "list_sessions" }), { type: "list_sessions" });
+  assert.deepEqual(parseClientMessage({ type: "list_sessions", cwd: "C:/p" }), {
+    type: "list_sessions",
+    cwd: "C:/p",
+  });
+  assert.deepEqual(parseClientMessage({ type: "open_session", sessionId: "s1" }), {
+    type: "open_session",
+    sessionId: "s1",
+  });
+  assert.deepEqual(parseClientMessage({ type: "create_session", cwd: "C:/p" }), {
+    type: "create_session",
+    cwd: "C:/p",
+  });
+  assert.deepEqual(parseClientMessage({ type: "delete_session", sessionId: "s1" }), {
+    type: "delete_session",
+    sessionId: "s1",
+  });
+
+  // delete acts on a file, so a malformed id must never reach the handler.
+  assert.equal(parseClientMessage({ type: "delete_session", sessionId: "" }), undefined);
+  assert.equal(parseClientMessage({ type: "delete_session", sessionId: 7 }), undefined);
+  assert.equal(parseClientMessage({ type: "open_session" }), undefined);
+  assert.equal(parseClientMessage({ type: "create_session", cwd: "" }), undefined);
+  assert.equal(parseClientMessage({ type: "list_sessions", cwd: 7 }), undefined);
 });

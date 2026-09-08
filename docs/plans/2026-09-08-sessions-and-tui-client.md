@@ -1,7 +1,7 @@
 # 多会话 + TUI 改成客户端
 
 日期：2026-09-08
-状态：执行中（阶段 A Task 1 完成）
+状态：执行中（阶段 A Task 1-4 完成，5、6 待做）
 
 这是 3a 之后最大的一次结构改动，分两阶段，各自可独立验收：
 
@@ -258,3 +258,50 @@ viewing: Map<WebSocket, sessionId>   // 每个客户端在看哪个
 **4. 模型标记用了新的界面动作 `model_in_use` + 账本条目 `kind: "model"`,不是复用 `notice`。**
 因为 `notice` 已经被定义成「易失的界面提示,重载后消失」,而模型标记要能从 Pi 的
 `model_change` 条目重建出来——两者身份不同,混用会把刚理清的 SSOT 关系又搅浑。
+
+### Task 2-3
+
+**5. `onSnapshot` 的参数涨到四个,改成一个对象。** 原来是 `(snapshot, cwd, model)`,
+加上 `sessionId` 就四个了,位置参数开始难读。改成 `SnapshotState` 对象。
+
+**6. `set_project` 和 `reset` 两条协议消息删掉了。** 它们的语义是「整个服务处于某个项目
+模式」,而多会话之后每条对话自带工作目录,这个模式不存在了。选目录现在的含义是
+`create_session`,`ProjectPicker` 的按钮也改成了「Start a conversation here」。
+留着它们就等于同一件事有两条路。
+
+### Task 4
+
+**7. ⚠️ 一次 spawn 失败会把整个服务干掉——所有会话陪葬。**
+实测撞到 `Error: spawn ... node.exe ENOENT`(Windows 上这个报错通常意味着**工作目录
+不存在**,而不是 node 不见了),子进程的 `error` 事件没人监听,直接 unhandled 崩了整个
+core-server。单会话时代这个风险也在,只是一个进程死了本来也就全死了;多会话之后
+**一条对话起不来绝不能拖垮别人**。
+
+已修:`open()` 先查目录是否存在,给子进程挂 `error` 监听,并让 `getState()` 和失败事件
+赛跑——否则进程已死,调用方会永远等一个不会来的回复。
+
+**根因没能复现**,当时的状态已经没了。修的是后果(服务不再整体崩溃)和诊断(现在会打印
+`starting Pi in <目录>`,失败时打印目录名),不是根因——这点如实记下。
+
+**8. 新建的会话不落盘,说第一句话之后才出现在列表里。**
+实测:`create_session` 之后文件数 39 → 39,发一次 prompt 之后 → 40。Pi 的
+`SessionManager` 是延迟写的。
+
+**决定:接受,不做处理。** 空对话不进列表反而更干净。副作用是「新建之后还没说话就刷新
+页面,这条会话就没了」——但退路是通的:`lastSessionId` 指向一个不存在的文件时,
+`findSessionPath` 返回 undefined,自动落到最近一条真实会话。
+
+**9. core-server 一度要直接 import Pi(`SessionManager`),改成放进 core-host。**
+理由是设计文档第 6 节那条:「`core-host` 单独成包,保证『我的 agent』只有一处定义」。
+Pi 的接触面留在一个包里,Task 10 那张接口依赖清单才列得清楚。
+core-host 因此新增 `listSessions()` / `findSessionPath()` / `CoreOptions.sessionPath`。
+
+**10. 实测确认(阶段 A 的核心功能)**
+
+```
+连上 → 自动打开上次那条会话，从磁盘重建（你早上那条游戏能力翻译的对话，含 thinking 和表格）
+list_sessions(Cinba) → 38 条，标题用 firstMessage
+open_session(那条 42 的) → 10 条记录，"42" 在里面
+两个客户端各看各的会话，互不干扰
+新会话里发一句 → user/assistant 一问一答正常
+```

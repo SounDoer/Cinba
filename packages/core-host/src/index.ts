@@ -5,6 +5,7 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 export type CoreOptions = {
   /** Working directory. Pi isolates sessions by it, so this decides which project is current. */
@@ -13,6 +14,14 @@ export type CoreOptions = {
   provider?: string;
   /** Model id. Left out, the provider's default model is used. */
   model?: string;
+  /**
+   * Path of an existing session file to carry on from. Left out, Pi starts a
+   * fresh conversation.
+   *
+   * This is what makes a closed conversation reopenable: Pi stores the history
+   * itself, so pointing a new process at the file brings the context back.
+   */
+  sessionPath?: string;
   /** Absolute paths of extra extension files to load. The permission gate comes built in and must not be passed here. */
   extensions?: string[];
 };
@@ -42,6 +51,10 @@ export function buildSpawnPlan(
 
   if (options.model) {
     args.push("--model", options.model);
+  }
+
+  if (options.sessionPath) {
+    args.push("--session", options.sessionPath);
   }
 
   // The permission gate always comes first and never travels through options:
@@ -94,4 +107,48 @@ export function startCore(options: CoreOptions = {}): ChildProcess {
     stdio: ["pipe", "pipe", "pipe"],
     env: plan.env,
   });
+}
+
+/**
+ * One conversation Pi has stored.
+ *
+ * Pi keeps every conversation as an append-only JSONL file under
+ * ~/.pi/agent/sessions/, one directory per working directory. We do not keep a
+ * store of our own: reading these back is what lets a closed conversation be
+ * reopened, and it means the `pi` command line and Cinba see the same history.
+ */
+export type StoredSession = {
+  id: string;
+  path: string;
+  cwd: string;
+  name?: string;
+  messageCount: number;
+  /** The opening line of the conversation. Pi already has it, so nothing has to invent a title. */
+  firstMessage: string;
+  modified: Date;
+};
+
+/**
+ * List stored conversations, newest first. Reads session files only — no Pi is
+ * started, which is what makes a session list cheap enough to show on demand.
+ *
+ * @param cwd Restrict to conversations from this directory. Omitted, everything.
+ */
+export async function listSessions(cwd?: string): Promise<StoredSession[]> {
+  const infos = cwd === undefined ? await SessionManager.listAll() : await SessionManager.list(cwd);
+  return infos.map((info) => ({
+    id: info.id,
+    path: info.path,
+    cwd: info.cwd,
+    name: info.name,
+    messageCount: info.messageCount,
+    firstMessage: info.firstMessage,
+    modified: info.modified,
+  }));
+}
+
+/** Where one stored conversation lives, or undefined if it is gone. */
+export async function findSessionPath(id: string): Promise<string | undefined> {
+  const sessions = await listSessions();
+  return sessions.find((session) => session.id === id)?.path;
 }

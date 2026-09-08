@@ -2,7 +2,10 @@
 //
 // A browser cannot see local paths, which is a deliberate security limit, so
 // the server lists directories and this only draws them. The desktop and web
-// builds share it, and that still holds for remote access in 3b-2.
+// builds share it, and that still holds for remote access later.
+//
+// Picking a directory starts a new conversation in it. Choosing a directory is
+// no longer a mode the whole service is in: each conversation carries its own.
 
 import { useEffect, useState } from "react";
 import type { RemoteSession } from "@cinba/core-client";
@@ -65,11 +68,11 @@ export function ProjectPicker({
           <button onClick={onClose}>Cancel</button>
           <button
             onClick={() => {
-              remote?.setProject(current);
+              remote?.createSession(current);
               onClose();
             }}
           >
-            Use this directory
+            Start a conversation here
           </button>
         </div>
       </div>

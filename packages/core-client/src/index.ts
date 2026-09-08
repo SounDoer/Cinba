@@ -10,9 +10,9 @@ export { foldSessionEntries } from "./entries.ts";
 export { createEventFolder, foldUiRequest } from "./events.ts";
 export type { ToolStatus, ViewAction } from "./events.ts";
 export { parseClientMessage } from "./protocol.ts";
-export type { ClientMessage, ModelRef, ServerMessage } from "./protocol.ts";
+export type { ClientMessage, ModelRef, ServerMessage, SessionSummary } from "./protocol.ts";
 export { RemoteSession } from "./remote.ts";
-export type { RemoteHandlers, Socket } from "./remote.ts";
+export type { RemoteHandlers, SnapshotState, Socket } from "./remote.ts";
 export { createSession } from "./session.ts";
 export type {
   Entry,

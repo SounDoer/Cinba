@@ -6,7 +6,7 @@
 
 import type { ViewAction } from "./events.ts";
 import type { Snapshot } from "./session.ts";
-import type { ClientMessage, ModelRef, ServerMessage } from "./protocol.ts";
+import type { ClientMessage, ModelRef, ServerMessage, SessionSummary } from "./protocol.ts";
 
 /**
  * A connection that can send and receive text messages.
@@ -20,13 +20,22 @@ export type Socket = {
   onmessage: ((event: { data: unknown }) => void) | null;
 };
 
+/** Everything a snapshot says about the session it describes. An object rather than four positional arguments, which this had grown to. */
+export type SnapshotState = {
+  snapshot: Snapshot;
+  cwd: string;
+  sessionId: string;
+  model: ModelRef | undefined;
+};
+
 export type RemoteHandlers = {
-  onSnapshot?: (snapshot: Snapshot, cwd: string, model: ModelRef | undefined) => void;
+  onSnapshot?: (state: SnapshotState) => void;
   onActions?: (actions: ViewAction[]) => void;
-  onReset?: (cwd: string) => void;
   onDirListing?: (listing: { path: string; parent: string | null; dirs: string[] }) => void;
   onModelListing?: (models: ModelRef[]) => void;
   onModelChanged?: (model: ModelRef) => void;
+  onSessionListing?: (sessions: SessionSummary[]) => void;
+  onSessionOpened?: (sessionId: string) => void;
 };
 
 export class RemoteSession {
@@ -51,10 +60,6 @@ export class RemoteSession {
     this.#send({ type: "respond_confirm", requestId, confirmed });
   }
 
-  setProject(cwd: string): void {
-    this.#send({ type: "set_project", cwd });
-  }
-
   listDir(path: string): void {
     this.#send({ type: "list_dir", path });
   }
@@ -65,6 +70,22 @@ export class RemoteSession {
 
   setModel(provider: string, modelId: string): void {
     this.#send({ type: "set_model", provider, modelId });
+  }
+
+  listSessions(cwd?: string): void {
+    this.#send(cwd === undefined ? { type: "list_sessions" } : { type: "list_sessions", cwd });
+  }
+
+  openSession(sessionId: string): void {
+    this.#send({ type: "open_session", sessionId });
+  }
+
+  createSession(cwd: string): void {
+    this.#send({ type: "create_session", cwd });
+  }
+
+  deleteSession(sessionId: string): void {
+    this.#send({ type: "delete_session", sessionId });
   }
 
   #send(message: ClientMessage): void {
@@ -83,13 +104,21 @@ export class RemoteSession {
 
     switch (message.type) {
       case "snapshot":
-        this.#handlers.onSnapshot?.(message.snapshot, message.cwd, message.model);
+        this.#handlers.onSnapshot?.({
+          snapshot: message.snapshot,
+          cwd: message.cwd,
+          sessionId: message.sessionId,
+          model: message.model,
+        });
         return;
       case "actions":
         this.#handlers.onActions?.(message.actions);
         return;
-      case "reset":
-        this.#handlers.onReset?.(message.cwd);
+      case "session_listing":
+        this.#handlers.onSessionListing?.(message.sessions);
+        return;
+      case "session_opened":
+        this.#handlers.onSessionOpened?.(message.sessionId);
         return;
       case "model_listing":
         this.#handlers.onModelListing?.(message.models);
