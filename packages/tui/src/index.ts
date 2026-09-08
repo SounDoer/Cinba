@@ -20,13 +20,19 @@ import {
   Container,
   Input,
   matchesKey,
+  Markdown,
   ProcessTerminal,
   SelectList,
   truncateToWidth,
   TuiMainScreen,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import type { Component, SelectListTheme, TUI } from "@earendil-works/pi-tui";
+import type {
+  Component,
+  MarkdownTheme,
+  SelectListTheme,
+  TUI,
+} from "@earendil-works/pi-tui";
 import { createSession, RemoteSession } from "@cinba/core-client";
 import type {
   Entry,
@@ -58,49 +64,106 @@ const SELECT_THEME: SelectListTheme = {
 };
 
 /**
- * The output area. Append-only: a line, once drawn, is never changed.
+ * Markdown styling for the terminal, in the colours already used here.
  *
- * Why not update in place: TuiMainScreen renders the main screen and diffs it
- * against the previous frame, so only lines still on screen can be redrawn and
- * anything scrolled past is out of reach. Append-only also suits a terminal
- * better, where this is a log to begin with.
+ * Written out rather than borrowed from pi-coding-agent's getMarkdownTheme:
+ * this package must not depend on Pi, which is the dependency rule the whole
+ * design rests on.
  */
-class Transcript implements Component {
-  #lines: string[] = [];
-  #max = 2000;
+const MARKDOWN_THEME: MarkdownTheme = {
+  heading: (text) => `${BOLD}${BLUE}${text}${RESET}`,
+  link: (text) => `${BLUE}${text}${RESET}`,
+  linkUrl: (text) => `${DIM}${text}${RESET}`,
+  code: (text) => `${YELLOW}${text}${RESET}`,
+  codeBlock: (text) => `${YELLOW}${text}${RESET}`,
+  codeBlockBorder: (text) => `${DIM}${text}${RESET}`,
+  quote: (text) => `${DIM}${text}${RESET}`,
+  quoteBorder: (text) => `${DIM}${text}${RESET}`,
+  hr: (text) => `${DIM}${text}${RESET}`,
+  listBullet: (text) => `${MAGENTA}${text}${RESET}`,
+  bold: (text) => `${BOLD}${text}${RESET}`,
+  italic: (text) => `${DIM}${text}${RESET}`,
+  strikethrough: (text) => `${DIM}${text}${RESET}`,
+  underline: (text) => `${BOLD}${text}${RESET}`,
+};
 
-  append(line: string): void {
-    this.#lines.push(line);
-    if (this.#lines.length > this.#max) this.#lines = this.#lines.slice(-this.#max);
+/**
+ * The output area.
+ *
+ * It holds blocks rather than bare lines. Most blocks are plain lines, but a
+ * finished message is kept as its Markdown source and rendered at draw time,
+ * because Markdown only makes sense once the width is known and once the text
+ * has stopped growing. While an answer streams it is plain lines; the redraw at
+ * the end of the turn turns it into Markdown.
+ *
+ * Still append-only in spirit: TuiMainScreen diffs against the previous frame,
+ * so only what is still on screen can change. A whole conversation arriving at
+ * once is handled by clearing and drawing again, not by editing in place.
+ */
+type Block = { kind: "lines"; lines: string[] } | { kind: "markdown"; source: Markdown };
+
+class Transcript implements Component {
+  #blocks: Block[] = [];
+  #max = 400;
+
+  #tail(): string[] {
+    const last = this.#blocks.at(-1);
+    if (last?.kind === "lines") return last.lines;
+    const lines: string[] = [];
+    this.#blocks.push({ kind: "lines", lines });
+    this.#trim();
+    return lines;
   }
 
-  /** Start over. Needed now that a whole conversation can arrive at once, on opening one or after a correction. */
-  clear(): void {
-    this.#lines = [];
+  #trim(): void {
+    if (this.#blocks.length > this.#max) this.#blocks = this.#blocks.slice(-this.#max);
+  }
+
+  append(line: string): void {
+    this.#tail().push(line);
   }
 
   /** Append to the end of the last line. This is how streaming text grows character by character. */
   appendInline(text: string): void {
-    if (this.#lines.length === 0) this.#lines.push("");
-    this.#lines[this.#lines.length - 1] += text;
+    const lines = this.#tail();
+    if (lines.length === 0) lines.push("");
+    lines[lines.length - 1] += text;
+  }
+
+  /** Add a block of Markdown, rendered when the width is known. */
+  appendMarkdown(text: string): void {
+    this.#blocks.push({
+      kind: "markdown",
+      source: new Markdown(text, 0, 0, MARKDOWN_THEME),
+    });
+    this.#trim();
+  }
+
+  /** Start over. A whole conversation arrives at once when one is opened, and when the server corrects the transcript. */
+  clear(): void {
+    this.#blocks = [];
   }
 
   invalidate(): void {}
 
   render(width: number): string[] {
-    // line.slice(0, width) will not do: it counts characters, while a terminal
-    // cares about display columns. A CJK character takes 2 columns and an ANSI
-    // escape takes 0, so either one puts the counts out of step -- and pi-tui
-    // throws outright when a rendered line comes out too wide.
-    // wrapTextWithAnsi wraps by column count, and wrapping suits a transcript
-    // better than truncation anyway.
     const out: string[] = [];
-    for (const line of this.#lines) {
-      if (line === "") {
-        out.push(""); // A blank line separates paragraphs and must not be swallowed by the wrapper
+    for (const block of this.#blocks) {
+      if (block.kind === "markdown") {
+        out.push(...block.source.render(width));
         continue;
       }
-      out.push(...wrapTextWithAnsi(line, width));
+      for (const line of block.lines) {
+        if (line === "") {
+          out.push(""); // A blank line separates paragraphs and must not be swallowed by the wrapper
+          continue;
+        }
+        // line.slice(0, width) will not do: it counts characters, while a
+        // terminal cares about display columns. A CJK character takes 2 columns
+        // and an ANSI escape takes 0, so either one puts the counts out of step
+        // -- and pi-tui throws outright when a rendered line comes out too wide.
+        out.push(...wrapTextWithAnsi(line, width));
+      }
     }
     return out;
   }
@@ -127,6 +190,7 @@ class StatusBar implements Component {
   totalTokens = 0;
   totalCost = 0;
   busy = false;
+  model = "";
 
   invalidate(): void {}
 
@@ -135,9 +199,10 @@ class StatusBar implements Component {
     // Highlight while busy: this line sits pinned at the bottom of a fast-scrolling screen, and all-dim means invisible.
     const hint = this.busy
       ? `${YELLOW}${BOLD}⏳ answering - press Esc to stop${RESET}`
-      : `${DIM}Ctrl+C to exit${RESET}`;
+      : `${DIM}^O conv · ^P model · ^C exit${RESET}`;
+    const model = this.model ? `${DIM} · ${this.model}${RESET}` : "";
     // Truncated by display columns as well; see the note in Transcript.render.
-    return [truncateToWidth(`${usage}    ${hint}`, width)];
+    return [truncateToWidth(`${usage}${model}    ${hint}`, width)];
   }
 }
 
@@ -177,6 +242,57 @@ class ConfirmDialog implements Component {
       `${DIM}↑↓ to choose, Enter to confirm, Esc to deny${RESET}`,
     ];
   }
+}
+
+/**
+ * A list to choose from, standing in for the input at the bottom.
+ *
+ * The same shape as the confirmation dialog, which is the only other thing that
+ * takes over the bottom of the screen.
+ */
+class ChoiceDialog implements Component {
+  #list: SelectList;
+  #title: string;
+
+  constructor(title: string, items: { value: string; label: string; description?: string }[]) {
+    this.#title = title;
+    this.#list = new SelectList(items, 10, SELECT_THEME);
+    this.#list.onSelect = (item) => this.onAnswer?.(item.value);
+    this.#list.onCancel = () => this.onAnswer?.(undefined);
+  }
+
+  onAnswer?: (value: string | undefined) => void;
+
+  handleInput(data: string): void {
+    this.#list.handleInput(data);
+  }
+
+  invalidate(): void {
+    this.#list.invalidate();
+  }
+
+  render(width: number): string[] {
+    return [
+      ...wrapTextWithAnsi(`${YELLOW}${BOLD}${this.#title}${RESET}`, width),
+      ...this.#list.render(width),
+      `${DIM}up/down to choose, Enter to confirm, Esc to cancel${RESET}`,
+    ];
+  }
+}
+
+/** Put a chooser at the bottom and hand the answer back. */
+function choose(
+  title: string,
+  items: { value: string; label: string; description?: string }[],
+  onAnswer: (value: string | undefined) => void,
+): void {
+  const dialog = new ChoiceDialog(title, items);
+  dialog.onAnswer = (value) => {
+    showPrompt();
+    onAnswer(value);
+  };
+  setBottom(dialog);
+  tui.setFocus(dialog);
 }
 
 // ---- Assembly ----
@@ -233,6 +349,22 @@ const socket = new WebSocket(SERVER_URL);
 let mirror: Session = createSession();
 let busy = false;
 let sessionId = "";
+let statusModel = "";
+
+/**
+ * Redraw the whole transcript from the mirror, once the current burst of
+ * actions has been applied. Deferred by a tick because a batch arrives as
+ * several actions and redrawing on the first would draw a half-applied state.
+ */
+let redrawQueued = false;
+function queueRedraw(): void {
+  if (redrawQueued) return;
+  redrawQueued = true;
+  setTimeout(() => {
+    redrawQueued = false;
+    drawSnapshot(mirror.snapshot());
+  }, 0);
+}
 
 /** Set while a confirmation dialog is up, so Enter in the input cannot jump the queue. */
 let confirming = false;
@@ -301,6 +433,10 @@ function applyAction(action: ViewAction): void {
     case "busy_changed":
       busy = action.busy;
       statusBar.busy = action.busy;
+      // A finished turn is the moment the text stops growing, so this is when
+      // it can be laid out as Markdown. Redrawing from the mirror also brings
+      // the terminal back in step after the server corrects anything.
+      if (!action.busy) queueRedraw();
       break;
 
     // thinking stays hidden in the terminal: it is long and rarely what you came for.
@@ -319,6 +455,7 @@ function drawSnapshot(snapshot: Snapshot): void {
 
   statusBar.totalTokens = snapshot.totalTokens;
   statusBar.totalCost = snapshot.totalCost;
+  statusBar.model = statusModel;
   busy = snapshot.busy;
   statusBar.busy = snapshot.busy;
   tui.requestRender();
@@ -329,7 +466,9 @@ function drawEntry(entry: Entry): void {
     case "message":
       transcript.append("");
       transcript.append(roleHeading(entry.role));
-      for (const line of entry.text.split("\n")) transcript.append(line);
+      // Markdown, not raw lines: the text has stopped growing, so it can be
+      // laid out. While it was streaming it was drawn as it arrived.
+      transcript.appendMarkdown(entry.text);
       break;
 
     case "tool": {
@@ -387,6 +526,7 @@ const remote = new RemoteSession(socket as unknown as Socket, {
   onSnapshot: (state) => {
     mirror = createSession(state.snapshot);
     sessionId = state.sessionId;
+    statusModel = state.model?.id ?? "";
     drawSnapshot(state.snapshot);
   },
   onActions: (actions) => {
@@ -395,7 +535,41 @@ const remote = new RemoteSession(socket as unknown as Socket, {
       applyAction(action);
     }
   },
-  onSessionListing: (sessions) => land(sessions),
+  onSessionListing: (sessions) => {
+    if (!landed) {
+      land(sessions);
+      return;
+    }
+    choose(
+      "Open which conversation?",
+      sessions.map((session) => ({
+        value: session.id,
+        label: session.firstMessage || "(nothing said yet)",
+        description: `${session.cwd} - ${session.messageCount} messages`,
+      })),
+      (id) => {
+        if (id) remote.openSession(id);
+      },
+    );
+  },
+  onModelListing: (models) => {
+    choose(
+      "Switch to which model?",
+      models.map((model) => ({
+        value: `${model.provider}/${model.id}`,
+        label: `${model.provider} / ${model.id}`,
+      })),
+      (picked) => {
+        if (!picked) return;
+        const [provider, ...rest] = picked.split("/");
+        remote.setModel(provider ?? "", rest.join("/"));
+      },
+    );
+  },
+  onModelChanged: (model) => {
+    statusModel = `${model.id}`;
+    tui.requestRender();
+  },
 });
 
 // ---- Landing in the right conversation ----
@@ -475,6 +649,17 @@ function exit(): void {
 
 tui.addInputListener((data: string) => {
   if (matchesKey(data, "ctrl+c")) exit();
+
+  // The two things the GUI puts in its header. Not available mid-answer, for
+  // the same reason the GUI disables them: do not swap brains mid-sentence.
+  if (matchesKey(data, "ctrl+o") && !busy && !confirming) {
+    remote.listSessions();
+    return true;
+  }
+  if (matchesKey(data, "ctrl+p") && !busy && !confirming) {
+    remote.listModels();
+    return true;
+  }
   return undefined;
 });
 

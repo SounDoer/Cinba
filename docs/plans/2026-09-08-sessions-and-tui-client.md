@@ -1,7 +1,7 @@
 # 多会话 + TUI 改成客户端
 
 日期：2026-09-08
-状态：阶段 A 完成；阶段 B 的 Task 8 完成，Task 9-11 待做
+状态：已完成（阶段 A + 阶段 B，2026-09-08）
 
 这是 3a 之后最大的一次结构改动，分两阶段，各自可独立验收：
 
@@ -381,3 +381,56 @@ Start it first: double-click cinba.cmd in the repository root.
 **未验证的部分要说清楚:在 TUI 里打字发送这条路没能自动化验证**——它要一个真的终端
 (pty),脚本喂 stdin 驱动不了。发送走的是 `remote.prompt()`,和网页端同一条已验证的路径,
 但 `onSubmit` 那十行是新写的,**需要人工在真终端里敲一次确认**。
+
+### Task 9-11
+
+**22. TUI 的 `Transcript` 从"行缓冲"改成了"块"。**
+`Markdown` 是个按宽度渲染的组件,而宽度只有渲染时才知道;文本也只有说完了才排得了版。
+所以 Transcript 现在存的是块:普通块是若干行,消息块存的是 Markdown 源码,画的时候才渲染。
+**流式期间按行追加,一轮结束整段重画成 Markdown。**
+
+重画的时机是 `busy_changed:false`,而且要延后一个 tick——一批动作是分条到达的,
+在第一条上就重画会画出半应用的状态。
+
+**23. ⚠️ 反斜杠又被吃了一层,和记忆里那条一模一样。**
+python 脚本里写 `split("\n")`,到 python 手里变成了真换行,替换于是匹配不上。
+这次幸好断言拦住了(而且写盘在最后,所以是原子的)。**结论仍然是:带反斜杠的编辑用 Edit
+工具或 Write,不要穿过 shell。**
+
+**24. 状态栏的提示在 80 列下被截断了**(`Ctrl+P m...`)。功能对但看不全,和阶段 2
+「暗灰色状态栏等于隐形」是同一类问题。缩短成 `^O conv · ^P model · ^C exit`。
+
+**25. Markdown 主题是自己写的十几行,没有借 `pi-coding-agent` 的 `getMarkdownTheme()`。**
+因为 `@cinba/tui` 不能依赖 Pi——那正是第 5 节的依赖规则,而这次改造的全部意义就是让 TUI
+第一次真正满足它。为了省十几行去破规则不划算。
+
+**26. 权限门重验,两条路都过了。**
+
+设计文档第 9 节规定的原路(`scripts/repl.ts` 答 n):
+
+```
+⚠️  Allow bash?  {"command": "ls"}
+Allow? (y/N) n
+thinking: "The user denied the tool call..."
+text: "I wasn't able to run the `ls` command — the tool call was denied."
+```
+
+以及走 core-server 的那条(因为 `pendingConfirms` 挪进了会话):工具卡片 error、
+结果为「The user denied this tool call」、模型明确说自己被拒。
+
+**两条硬性条件都满足:命令没执行,模型知道自己被拒了。**
+
+**27. 阶段 B 实测**
+
+```
+cd Cinba && 起 TUI
+  → 落在本目录最近那条会话，整段历史画出来
+  → `ls` 渲染成行内代码，长段落按宽度折行     ← Markdown 生效
+  → 工具卡片：[tool] bash  denied or failed
+  → 状态栏：13310 tokens · $0.0011 · deepseek-v4-flash    ^O conv · ^P model · ^C exit
+服务没起时 → 一行提示 + exit 1，不自动拉起
+```
+
+**仍未自动化验证:在 TUI 里打字发送、以及 Ctrl+O / Ctrl+P 两个选择器的交互。**
+它们要一个真终端(pty),脚本喂 stdin 驱动不了。走的都是已验证过的协议路径,
+但**需要人工在真终端里各点一次**。

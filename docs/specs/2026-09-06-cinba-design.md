@@ -138,7 +138,10 @@ Cinba/
 
 **阶段 0 交付物**：`scripts/probe.ts`，几十行。spawn Pi 的 RPC 模式，把所有 JSONL 事件原样打印。仓库此时只有 `package.json` 和这一个文件。
 
-**阶段 2 刻意做朴素**：一个输入框、一条消息流、Ctrl+C 退出。不做模型选择器、不做会话浏览器——服务器上要的是能用，不是好看。那些留到阶段 4。
+**~~阶段 2 刻意做朴素~~（2026-09-08 作废）**：原文是「一个输入框、一条消息流、Ctrl+C 退出，
+不做模型选择器、不做会话浏览器」。那是在「TUI 只在服务器上凑合用」的前提下写的，
+而 2026-09-08 确定的要求是**两端功能一致、都由自己设计**。TUI 已改成 core-server 的客户端，
+并补上了 Markdown、模型选择器、会话列表。见 `docs/plans/2026-09-08-sessions-and-tui-client.md`。
 
 **阶段 4 可能同时引入构建步骤**：GUI 侧现在是手写 DOM、无框架，TUI 侧用 pi-tui。打磨期两边都可能想换——GUI 换成前端框架，TUI 换成 Ink（终端里的 React，Claude Code 与 Codex 都在用）。届时理由会比现在充分：需要构建步骤的地方不止一处，且对两个界面都已有实感。现在不做，是因为为了单个界面库去改整个仓库「不编译」的性质，代价与收益不成比例。换界面层的成本始终很低——它是整个系统里最容易推倒重写的一层。
 
@@ -252,7 +255,12 @@ VPS      ─► core-server（听 Tailscale 内网）      ─► 管 VPS
 
 ### 待解问题
 
-- **⚠️ TUI 是第二个核心宿主，不是 core-server 的客户端。** `packages/tui/src/index.ts:207`
+- ~~**⚠️ TUI 是第二个核心宿主，不是 core-server 的客户端。**~~ **2026-09-08 已解决**：
+  TUI 改成了 core-server 的客户端，不再自己起 Pi，`@cinba/tui` 的依赖只剩
+  `@cinba/core-client`——第 5 节对前端的依赖要求，TUI 第一次真正满足。
+  它与 GUI 现在看到同一批会话、同一套配置。以下为原记录。
+
+- **（已解决，存档）TUI 曾是第二个核心宿主，不是 core-server 的客户端。** `packages/tui/src/index.ts:207`
   是裸的 `startCore()`：它自己拉起一个 Pi、自己折叠事件，连账本（`session.ts`）都没用。
   后果已经能看到了——**TUI 不读 `~/.cinba/config.json`，GUI 里切的模型它完全不知道**。
   这正是第 5 节担心的「长出两份互相不一致的 agent」。
@@ -267,6 +275,10 @@ VPS      ─► core-server（听 Tailscale 内网）      ─► 管 VPS
   而 TUI 现在的用法是多开几个各干各的，不先补多会话会明确变难用。
 
 - **Pi 的 extension API 稳定性。** 文档路径带 `/latest`，项目迭代快。因此不把大量逻辑压在 extension API 上。**升级 Pi 后的重验步骤见第 9 节。**
+
+  ⚠️ **2026-09-08 更新**：多会话改造之后，接触面从「三个扩展接口」扩大到「会话存储 + 一批
+  RPC 命令」。代价是有意付的（自己造会话存储要写的代码远多于接线），但第 9 节的重验步骤
+  已相应扩成一张**接口依赖清单**。
 
 - ~~**⚠️ 切换项目这条路假设了核心与界面共享文件系统。**~~ **阶段 3b-1 已解决**：
   改为服务器列目录、界面只负责画，浏览器与桌面共用一套，远程时同样成立。以下为原记录。
@@ -319,6 +331,39 @@ node scripts/repl.ts "运行 ls 命令，告诉我当前目录下有什么"
 用 `repl.ts` 而不是 GUI/TUI，是因为它是纯 Node 的，不用起服务器和界面，一分钟能跑完。
 
 **为什么不做成自动化测试：** 要真正验证拦截，就得启动 Pi 并让模型真的去调用工具——慢，而且每跑一次都要花钱。这件事发生的频率（几个月一次）配一份检查单更合适。
+
+### Pi 接口依赖清单（2026-09-08 建立）
+
+原本这一节只有一条重验步骤（权限门）。**2026-09-08 的多会话改造大幅扩大了接触面**：
+我们开始依赖 Pi 的会话存储和一批 RPC 命令，而不再只依赖那三个扩展接口。
+
+这个代价是有意付的——自己造会话存储要写的代码远多于接线，而且不会做得比 Pi 好——
+但防御必须跟上。**升级 Pi 之后照这张表过一遍。**
+
+| 依赖的接口 | 用在哪 | 怎么验 | 失效时的症状 |
+|---|---|---|---|
+| `pi.on("tool_call")` / `ctx.ui.confirm()` / `{ block: true }` | `extensions/permission-gate.ts` | **手工跑拒绝路径**（见下） | ⚠️ **可能安静失效**：界面照样问，你答拒绝，命令却已执行 |
+| `rpc-entry` 入口 + `--provider` / `--model` / `--session` / `-e` | `core-host` | 起 GUI，能对话即通过 | 吵闹：Pi 起不来 |
+| `SessionManager.list()` / `.listAll()` / `SessionInfo` 字段 | `core-host` 的 `listSessions()` | 打开会话列表，有内容且标题正确 | 吵闹：列表空或报错 |
+| 会话文件的条目结构（`message` / `model_change` / `toolCall` / `toolResult`） | `core-client/entries.ts` | `node --test packages/core-client/src/entries.test.ts` + 打开一条旧会话看是否完整 | **半吵闹**：旧对话画不全或画错 |
+| RPC 命令 `prompt` / `abort` | `core-client/client.ts` | 起 GUI 对话一次、按一次 Stop | 吵闹 |
+| RPC 命令 `get_state` | 打开会话时问模型与会话 id | 顶栏显示模型名 | 吵闹：会话开不出来 |
+| RPC 命令 `get_available_models` / `set_model` | 模型切换 | 切一次模型，对话仍延续 | 吵闹：列表空 / 切换报错 |
+| RPC 命令 `get_entries`（含 `since`） | 打开会话重建 + 每轮对账 | 打开一条有历史的会话 | 半吵闹：历史空白，或对账每轮报漂移 |
+| RPC 命令 `new_session` / `switch_session` / `set_session_name` | 新建会话 | 新建一条会话并说一句 | 吵闹 |
+| 事件流 `agent_start` / `agent_settled` / `message_*` / `tool_execution_*` | `core-client/events.ts` | 对话一次，看流式与忙碌状态 | 半吵闹：输入框不解锁，或不流式 |
+
+**唯一会安静失效的仍然只有权限门**，所以那一条永远排第一，且必须手工做：
+
+```bash
+node scripts/repl.ts "run the ls command"     # 出现确认时答 n
+```
+
+必须同时看到：命令没执行（`isError` 为 true），且模型知道自己被拒了。
+
+其余各条的失败都是吵闹的——起不来、列表空、历史白——跑一遍 GUI 就会撞见。
+`node --test "packages/*/src/*.test.ts"` 覆盖的是我们自己那一半（折叠、协议、拼参数），
+**覆盖不到 Pi 那一半**，所以这张表不能用测试代替。
 
 ### 权限门必须 fail-closed
 
