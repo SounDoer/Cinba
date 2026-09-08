@@ -6,10 +6,11 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createSession, RemoteSession } from "@cinba/core-client";
-import type { Session, Snapshot } from "@cinba/core-client";
+import type { ModelRef, Session, Snapshot } from "@cinba/core-client";
 import { Transcript } from "./Transcript.tsx";
 import { ProjectPicker } from "./ProjectPicker.tsx";
 import type { Listing } from "./ProjectPicker.tsx";
+import { ModelPicker } from "./ModelPicker.tsx";
 import "./style.css";
 
 const EMPTY: Snapshot = { entries: [], totalTokens: 0, totalCost: 0, busy: false };
@@ -23,6 +24,9 @@ function App() {
   const [draft, setDraft] = useState("");
   const [picking, setPicking] = useState(false);
   const [listing, setListing] = useState<Listing | undefined>(undefined);
+  const [pickingModel, setPickingModel] = useState(false);
+  const [model, setModel] = useState<ModelRef | undefined>(undefined);
+  const [models, setModels] = useState<ModelRef[] | undefined>(undefined);
 
   const remoteRef = useRef<RemoteSession | undefined>(undefined);
   const mirrorRef = useRef<Session>(createSession());
@@ -32,10 +36,11 @@ function App() {
     const socket = new WebSocket(SERVER_URL);
 
     remoteRef.current = new RemoteSession(socket, {
-      onSnapshot: (next, nextCwd) => {
+      onSnapshot: (next, nextCwd, nextModel) => {
         mirrorRef.current = createSession(next);
         setSnapshot(next);
         setCwd(nextCwd);
+        setModel(nextModel);
       },
       onActions: (actions) => {
         for (const action of actions) mirrorRef.current.apply(action);
@@ -43,6 +48,8 @@ function App() {
       },
       onReset: (nextCwd) => setCwd(nextCwd),
       onDirListing: (next) => setListing(next),
+      onModelListing: (next) => setModels(next),
+      onModelChanged: (next) => setModel(next),
     });
 
     return () => socket.close();
@@ -78,6 +85,10 @@ function App() {
       <header>
         <button onClick={() => setPicking(true)}>
           Project: {cwd.split(/[\\/]/).pop() || "..."}
+        </button>
+        {/* Disabled while busy for the same reason as the input box: do not swap brains mid-sentence. */}
+        <button onClick={() => setPickingModel(true)} disabled={snapshot.busy}>
+          Model: {model?.id ?? "..."}
         </button>
         <span>
           {snapshot.totalTokens} tokens · ${snapshot.totalCost.toFixed(4)}
@@ -120,6 +131,15 @@ function App() {
           listing={listing}
           startPath={cwd}
           onClose={() => setPicking(false)}
+        />
+      ) : null}
+
+      {pickingModel ? (
+        <ModelPicker
+          remote={remoteRef.current}
+          models={models}
+          current={model}
+          onClose={() => setPickingModel(false)}
         />
       ) : null}
     </>

@@ -28,7 +28,7 @@ import {
   parseClientMessage,
   StdioTransport,
 } from "@cinba/core-client";
-import type { ServerMessage, Session, ViewAction } from "@cinba/core-client";
+import type { ModelRef, ServerMessage, Session, ViewAction } from "@cinba/core-client";
 
 const HOST = "127.0.0.1";
 const PORT = 4517;
@@ -80,6 +80,8 @@ const clients = new Set<WebSocket>();
 let client: CoreClient | undefined;
 let session: Session = createSession();
 let cwd = homedir();
+/** The model in use. Undefined only until the first get_state comes back. */
+let model: ModelRef | undefined;
 
 /** Outstanding permission confirmations: requestId to the function that hands the answer back to CoreClient. */
 const pendingConfirms = new Map<string, (confirmed: boolean) => void>();
@@ -87,7 +89,7 @@ const pendingConfirms = new Map<string, (confirmed: boolean) => void>();
 let outbox: ViewAction[] = [];
 let flushTimer: NodeJS.Timeout | undefined;
 
-// ---- Remembering the working directory ----
+// ---- Remembering the working directory and the model ----
 
 const configDir = join(homedir(), ".cinba");
 
@@ -95,20 +97,28 @@ function configPath(): string {
   return join(configDir, "config.json");
 }
 
-function loadCwd(): string {
+/** Read the remembered settings into cwd and model. */
+function loadConfig(): void {
   try {
-    const parsed = JSON.parse(readFileSync(configPath(), "utf8")) as { cwd?: unknown };
-    if (typeof parsed.cwd === "string" && existsSync(parsed.cwd)) return parsed.cwd;
+    const parsed = JSON.parse(readFileSync(configPath(), "utf8")) as {
+      cwd?: unknown;
+      provider?: unknown;
+      modelId?: unknown;
+    };
+    if (typeof parsed.cwd === "string" && existsSync(parsed.cwd)) cwd = parsed.cwd;
+    if (typeof parsed.provider === "string" && typeof parsed.modelId === "string") {
+      model = { provider: parsed.provider, id: parsed.modelId };
+    }
   } catch {
     // On first start the file does not exist, which is normal.
   }
-  return homedir();
 }
 
-function saveCwd(next: string): void {
+function saveConfig(): void {
   try {
     mkdirSync(configDir, { recursive: true });
-    writeFileSync(configPath(), JSON.stringify({ cwd: next }, null, 2), "utf8");
+    const body = { cwd, provider: model?.provider, modelId: model?.id };
+    writeFileSync(configPath(), JSON.stringify(body, null, 2), "utf8");
   } catch {
     // Failing to remember does not affect this run, and is not worth interrupting the service for.
   }
@@ -149,7 +159,9 @@ function startSession(): void {
   session = createSession();
 
   const fold = createEventFolder();
-  const child = startCore({ cwd });
+  // With no model remembered these stay undefined and core-host falls back to
+  // its default, which is what a first run should do.
+  const child = startCore({ cwd, provider: model?.provider, model: model?.id });
 
   child.stderr?.setEncoding("utf8");
   child.stderr?.on("data", (chunk: string) => console.error("[pi]", chunk.trimEnd()));
@@ -173,6 +185,18 @@ function startSession(): void {
   });
 
   client = next;
+
+  // Ask which model Pi actually settled on. When nothing is configured it picks
+  // its own default, and only asking reveals which one — the header should show
+  // what is true, not what we guessed.
+  void next.getState().then((response) => {
+    if (client !== next) return; // A newer session has already replaced this one
+    const picked = (response.data as { model?: { provider?: unknown; id?: unknown } } | undefined)
+      ?.model;
+    if (typeof picked?.provider !== "string" || typeof picked.id !== "string") return;
+    model = { provider: picked.provider, id: picked.id };
+    broadcast({ type: "model_changed", model });
+  });
 }
 
 // ---- Messages from clients ----
@@ -232,12 +256,51 @@ function handle(raw: string): void {
 
     case "set_project":
       cwd = message.cwd;
-      saveCwd(cwd);
+      saveConfig();
       startSession();
       // Snapshot first, then reset: by the time a client sees reset, the snapshot it holds must already be the new one.
-      broadcast({ type: "snapshot", snapshot: session.snapshot(), cwd });
+      broadcast({ type: "snapshot", snapshot: session.snapshot(), cwd, model });
       broadcast({ type: "reset", cwd });
       return;
+
+    case "list_models":
+      // Pi returns only the models this machine has credentials for, which is
+      // exactly the list worth showing. Everything but provider and id is
+      // dropped: the picker needs no more than that.
+      void client?.getAvailableModels().then((response) => {
+        const raw = (response.data as { models?: unknown } | undefined)?.models;
+        const models: ModelRef[] = (Array.isArray(raw) ? raw : []).flatMap((entry) => {
+          const candidate = entry as { provider?: unknown; id?: unknown };
+          return typeof candidate.provider === "string" && typeof candidate.id === "string"
+            ? [{ provider: candidate.provider, id: candidate.id }]
+            : [];
+        });
+        // Broadcast rather than answering the asker alone, the same as
+        // dir_listing does: handle() has no socket to reply on, and a list of
+        // model names is not private.
+        broadcast({ type: "model_listing", models });
+      });
+      return;
+
+    case "set_model": {
+      // No restart and no clearing of the ledger: Pi switches models on the
+      // running process, so the conversation carries on with its context. That
+      // is the point — a weak answer can be handed straight to a better model.
+      const target: ModelRef = { provider: message.provider, id: message.modelId };
+      void client?.setModel(target.provider, target.id).then((response) => {
+        if (!response.success) {
+          emit([{ type: "notice", text: `model not switched: ${String(response.error)}` }]);
+          return;
+        }
+        model = target;
+        saveConfig();
+        // Into the ledger too, so reading the transcript back later shows which
+        // model said what.
+        emit([{ type: "notice", text: `model → ${target.provider}/${target.id}` }]);
+        broadcast({ type: "model_changed", model: target });
+      });
+      return;
+    }
 
     case "list_dir": {
       // A browser cannot see local paths, deliberately, so the server lists
@@ -266,7 +329,7 @@ function handle(raw: string): void {
 
 // ---- Starting the service ----
 
-cwd = loadCwd();
+loadConfig();
 startSession();
 
 // The WebSocket and the static files share one port: the UI loads from here and connects back here.
@@ -279,6 +342,7 @@ const server = new WebSocketServer({ server: httpServer, path: "/ws" });
 httpServer.listen(PORT, HOST, () => {
   console.log(`[cinba] UI at http://${HOST}:${PORT}`);
   console.log(`[cinba] working directory ${cwd}`);
+  if (model) console.log(`[cinba] model ${model.provider}/${model.id}`);
 });
 
 server.on("connection", (socket: WebSocket) => {
@@ -288,7 +352,7 @@ server.on("connection", (socket: WebSocket) => {
   // A new connection gets a full snapshot first. That is how a client joining
   // midway catches up on what it missed: events already streamed cannot be
   // recovered, which is precisely why the ledger has to live on the server.
-  sendTo(socket, { type: "snapshot", snapshot: session.snapshot(), cwd });
+  sendTo(socket, { type: "snapshot", snapshot: session.snapshot(), cwd, model });
 
   socket.on("message", (data: unknown) => handle(String(data)));
   socket.on("close", () => {

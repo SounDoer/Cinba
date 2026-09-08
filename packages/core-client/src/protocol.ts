@@ -8,21 +8,30 @@
 import type { ViewAction } from "./events.ts";
 import type { Snapshot } from "./session.ts";
 
+/** Points at one model. Provider and id together, because ids are only unique within a provider. */
+export type ModelRef = { provider: string; id: string };
+
 /** Client to server. */
 export type ClientMessage =
   | { type: "prompt"; text: string }
   | { type: "abort" }
   | { type: "respond_confirm"; requestId: string; confirmed: boolean }
   | { type: "set_project"; cwd: string }
-  | { type: "list_dir"; path: string };
+  | { type: "list_dir"; path: string }
+  | { type: "list_models" }
+  | { type: "set_model"; provider: string; modelId: string };
 
 /** Server to client. */
 export type ServerMessage =
-  | { type: "snapshot"; snapshot: Snapshot; cwd: string }
+  /** model is absent only in the moment before the server has asked Pi which one it picked. */
+  | { type: "snapshot"; snapshot: Snapshot; cwd: string; model?: ModelRef }
   | { type: "actions"; actions: ViewAction[] }
   | { type: "reset"; cwd: string }
   /** parent is the path one level up, or null at the root. dirs holds subdirectory names only, no files. */
-  | { type: "dir_listing"; path: string; parent: string | null; dirs: string[] };
+  | { type: "dir_listing"; path: string; parent: string | null; dirs: string[] }
+  /** Only the models with credentials configured on the core's machine; the rest are unusable anyway. */
+  | { type: "model_listing"; models: ModelRef[] }
+  | { type: "model_changed"; model: ModelRef };
 
 /**
  * Validate a message from a client; return undefined for anything unrecognized
@@ -61,6 +70,20 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
     case "list_dir":
       if (typeof message.path !== "string" || message.path === "") return undefined;
       return { type: "list_dir", path: message.path };
+
+    case "list_models":
+      return { type: "list_models" };
+
+    case "set_model":
+      if (
+        typeof message.provider !== "string" ||
+        message.provider === "" ||
+        typeof message.modelId !== "string" ||
+        message.modelId === ""
+      ) {
+        return undefined;
+      }
+      return { type: "set_model", provider: message.provider, modelId: message.modelId };
 
     default:
       return undefined;

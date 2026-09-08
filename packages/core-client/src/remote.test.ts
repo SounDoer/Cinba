@@ -90,3 +90,51 @@ test("malformed messages are ignored rather than crashing", () => {
   fake.socket.onmessage?.({ data: 42 });
   fake.receive({ type: "never heard of this type" });
 });
+
+test("the model commands go out, and both model messages reach their handlers", () => {
+  const fake = createFakeSocket();
+  const seen: unknown[] = [];
+  const remote = new RemoteSession(fake.socket, {
+    onModelListing: (models) => seen.push(models),
+    onModelChanged: (model) => seen.push(model),
+  });
+
+  remote.listModels();
+  remote.setModel("deepseek", "deepseek-v4-pro");
+
+  assert.deepEqual(
+    fake.sent.map((line) => JSON.parse(line)),
+    [
+      { type: "list_models" },
+      { type: "set_model", provider: "deepseek", modelId: "deepseek-v4-pro" },
+    ],
+  );
+
+  fake.receive({ type: "model_listing", models: [{ provider: "deepseek", id: "a" }] });
+  fake.receive({ type: "model_changed", model: { provider: "deepseek", id: "a" } });
+
+  assert.deepEqual(seen, [
+    [{ provider: "deepseek", id: "a" }],
+    { provider: "deepseek", id: "a" },
+  ]);
+});
+
+test("a snapshot carries the current model alongside the working directory", () => {
+  const fake = createFakeSocket();
+  let got: unknown;
+  const remote = new RemoteSession(fake.socket, {
+    onSnapshot: (_snapshot, cwd, model) => {
+      got = { cwd, model };
+    },
+  });
+  void remote;
+
+  fake.receive({
+    type: "snapshot",
+    snapshot: { entries: [], totalTokens: 0, totalCost: 0, busy: false },
+    cwd: "/tmp",
+    model: { provider: "deepseek", id: "deepseek-v4-pro" },
+  });
+
+  assert.deepEqual(got, { cwd: "/tmp", model: { provider: "deepseek", id: "deepseek-v4-pro" } });
+});

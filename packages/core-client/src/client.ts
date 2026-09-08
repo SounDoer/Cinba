@@ -69,6 +69,32 @@ export class CoreClient {
     return this.#send({ type: "abort" });
   }
 
+  /** Session state, including which model is currently in use. */
+  getState(): Promise<CoreResponse> {
+    return this.#send({ type: "get_state" });
+  }
+
+  /**
+   * The models this machine can actually use.
+   *
+   * Pi knows of dozens of providers but only returns the ones with credentials
+   * configured, which is exactly the list worth offering. It reads local files
+   * only, so this is cheap and works offline.
+   */
+  getAvailableModels(): Promise<CoreResponse> {
+    return this.#send({ type: "get_available_models" });
+  }
+
+  /**
+   * Switch models on the running process.
+   *
+   * No restart is involved and the conversation carries on, which is the point:
+   * a weak answer can be handed to a stronger model with its context intact.
+   */
+  setModel(provider: string, modelId: string): Promise<CoreResponse> {
+    return this.#send({ type: "set_model", provider, modelId });
+  }
+
   close(): Promise<void> {
     return this.#transport.close();
   }

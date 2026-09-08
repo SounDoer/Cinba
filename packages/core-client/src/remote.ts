@@ -6,7 +6,7 @@
 
 import type { ViewAction } from "./events.ts";
 import type { Snapshot } from "./session.ts";
-import type { ClientMessage, ServerMessage } from "./protocol.ts";
+import type { ClientMessage, ModelRef, ServerMessage } from "./protocol.ts";
 
 /**
  * A connection that can send and receive text messages.
@@ -21,10 +21,12 @@ export type Socket = {
 };
 
 export type RemoteHandlers = {
-  onSnapshot?: (snapshot: Snapshot, cwd: string) => void;
+  onSnapshot?: (snapshot: Snapshot, cwd: string, model: ModelRef | undefined) => void;
   onActions?: (actions: ViewAction[]) => void;
   onReset?: (cwd: string) => void;
   onDirListing?: (listing: { path: string; parent: string | null; dirs: string[] }) => void;
+  onModelListing?: (models: ModelRef[]) => void;
+  onModelChanged?: (model: ModelRef) => void;
 };
 
 export class RemoteSession {
@@ -57,6 +59,14 @@ export class RemoteSession {
     this.#send({ type: "list_dir", path });
   }
 
+  listModels(): void {
+    this.#send({ type: "list_models" });
+  }
+
+  setModel(provider: string, modelId: string): void {
+    this.#send({ type: "set_model", provider, modelId });
+  }
+
   #send(message: ClientMessage): void {
     this.#socket.send(JSON.stringify(message));
   }
@@ -73,13 +83,19 @@ export class RemoteSession {
 
     switch (message.type) {
       case "snapshot":
-        this.#handlers.onSnapshot?.(message.snapshot, message.cwd);
+        this.#handlers.onSnapshot?.(message.snapshot, message.cwd, message.model);
         return;
       case "actions":
         this.#handlers.onActions?.(message.actions);
         return;
       case "reset":
         this.#handlers.onReset?.(message.cwd);
+        return;
+      case "model_listing":
+        this.#handlers.onModelListing?.(message.models);
+        return;
+      case "model_changed":
+        this.#handlers.onModelChanged?.(message.model);
         return;
       case "dir_listing":
         this.#handlers.onDirListing?.({

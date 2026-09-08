@@ -52,3 +52,15 @@ test("unknown input is dropped rather than crashing", () => {
   assert.equal(parseClientMessage("prompt"), undefined);
   assert.equal(parseClientMessage(42), undefined);
 });
+
+test("the model messages parse, and a half-filled set_model does not", () => {
+  assert.deepEqual(parseClientMessage({ type: "list_models" }), { type: "list_models" });
+  assert.deepEqual(
+    parseClientMessage({ type: "set_model", provider: "deepseek", modelId: "deepseek-v4-pro" }),
+    { type: "set_model", provider: "deepseek", modelId: "deepseek-v4-pro" },
+  );
+
+  assert.equal(parseClientMessage({ type: "set_model", provider: "deepseek" }), undefined);
+  assert.equal(parseClientMessage({ type: "set_model", provider: "", modelId: "x" }), undefined);
+  assert.equal(parseClientMessage({ type: "set_model", provider: "x", modelId: 7 }), undefined);
+});

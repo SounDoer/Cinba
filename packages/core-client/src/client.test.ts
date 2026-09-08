@@ -103,3 +103,24 @@ test("a broadcast UI request writes nothing back", async () => {
 
   assert.equal(fake.sent.length, 0, "notify is a broadcast and must not be answered");
 });
+
+test("the model commands go out in the shape Pi expects", async () => {
+  const fake = createFakeTransport();
+  const client = new CoreClient(fake.transport);
+
+  void client.getState();
+  void client.getAvailableModels();
+  void client.setModel("deepseek", "deepseek-v4-flash");
+
+  const commands = fake.sent.map((line) => JSON.parse(line));
+  assert.deepEqual(
+    commands.map((command) => command.type),
+    ["get_state", "get_available_models", "set_model"],
+  );
+  assert.equal(commands[2].provider, "deepseek");
+  assert.equal(commands[2].modelId, "deepseek-v4-flash");
+
+  // Every command needs its own id, or the replies cannot be told apart.
+  const ids = new Set(commands.map((command) => command.id));
+  assert.equal(ids.size, 3);
+});
