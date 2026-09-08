@@ -40,7 +40,9 @@ export type ClientMessage =
   | { type: "list_sessions"; cwd?: string }
   | { type: "open_session"; sessionId: string }
   | { type: "create_session"; cwd: string }
-  | { type: "delete_session"; sessionId: string };
+  | { type: "delete_session"; sessionId: string }
+  /** Names the conversation this client is in, the same as prompt and set_model act on it. */
+  | { type: "rename_session"; name: string };
 
 /** Server to client. */
 export type ServerMessage =
@@ -125,6 +127,10 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
     case "delete_session":
       if (typeof message.sessionId !== "string" || message.sessionId === "") return undefined;
       return { type: "delete_session", sessionId: message.sessionId };
+
+    case "rename_session":
+      if (typeof message.name !== "string" || message.name.trim() === "") return undefined;
+      return { type: "rename_session", name: message.name.trim() };
 
     default:
       return undefined;

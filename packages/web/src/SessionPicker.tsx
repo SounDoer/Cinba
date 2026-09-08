@@ -27,6 +27,8 @@ export function SessionPicker({
   onClose: () => void;
 }) {
   const [confirming, setConfirming] = useState<string | undefined>(undefined);
+  /** The draft name while renaming the current conversation; undefined when not renaming. */
+  const [renaming, setRenaming] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     remote?.listSessions();
@@ -45,6 +47,36 @@ export function SessionPicker({
 
           {sessions?.map((session) => {
             const active = session.id === currentId;
+
+            if (active && renaming !== undefined) {
+              return (
+                <div className="picker-item session-row" key={session.id}>
+                  <input
+                    className="session-rename"
+                    autoFocus
+                    value={renaming}
+                    onChange={(event) => setRenaming(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && renaming.trim() !== "") {
+                        remote?.renameSession(renaming.trim());
+                        setRenaming(undefined);
+                      }
+                      if (event.key === "Escape") setRenaming(undefined);
+                    }}
+                  />
+                  <button
+                    disabled={renaming.trim() === ""}
+                    onClick={() => {
+                      remote?.renameSession(renaming.trim());
+                      setRenaming(undefined);
+                    }}
+                  >
+                    Save
+                  </button>
+                  <button onClick={() => setRenaming(undefined)}>Cancel</button>
+                </div>
+              );
+            }
 
             if (confirming === session.id) {
               return (
@@ -80,6 +112,11 @@ export function SessionPicker({
                     {sessionSubtitle(session)} · {when(session.modified)}
                   </span>
                 </button>
+                {/* Only the conversation you are in: renaming goes through its
+                    own Pi, and the others do not have one running. */}
+                {active ? (
+                  <button onClick={() => setRenaming(sessionTitle(session))}>Rename</button>
+                ) : null}
                 <button className="session-delete" onClick={() => setConfirming(session.id)}>
                   Delete
                 </button>

@@ -36,6 +36,7 @@ import type {
 } from "@earendil-works/pi-tui";
 import {
   COMMANDS,
+  commandArgument,
   createSession,
   isCommand,
   matchCommands,
@@ -713,8 +714,18 @@ socket.addEventListener("close", () => {
 // ---- Interaction ----
 
 /** Carry out one of Cinba's own commands. What it means here; the catalogue says which exist. */
-function runCommand(command: Command): void {
+function runCommand(command: Command, line: string): void {
   switch (command.id) {
+    case "name": {
+      const name = commandArgument(line);
+      if (name === "") {
+        applyAction({ type: "notice", text: "give it a name, e.g. /name parser work" });
+        return;
+      }
+      remote.renameSession(name);
+      return;
+    }
+
     case "sessions":
       remote.listSessions();
       return;
@@ -750,7 +761,7 @@ promptInput.input.onSubmit = (value: string) => {
     promptInput.input.setValue("");
     promptInput.clearHints();
     if (command) {
-      runCommand(command);
+      runCommand(command, text);
     } else {
       // Say so rather than sending it to the model: a mistyped command is not a question.
       applyAction({ type: "notice", text: `no such command: ${text}` });

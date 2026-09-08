@@ -12,7 +12,7 @@
 // get_commands call) which are per-session and would have to arrive over the
 // wire rather than be listed here.
 
-export type CommandId = "model" | "sessions" | "new" | "help";
+export type CommandId = "model" | "sessions" | "new" | "name" | "help";
 
 export type Command = {
   id: CommandId;
@@ -28,9 +28,27 @@ export type Command = {
 export const COMMANDS: readonly Command[] = [
   { id: "help", name: "help", summary: "list these commands" },
   { id: "model", name: "model", summary: "switch model, keeping this conversation" },
+  { id: "name", name: "name", summary: "name this conversation, e.g. /name parser work" },
   { id: "new", name: "new", summary: "start a conversation here" },
   { id: "sessions", name: "sessions", summary: "switch to another conversation" },
 ];
+
+/** The command word: what follows the slash, up to the first space. */
+function commandWord(input: string): string {
+  return input.trimStart().slice(1).trim().toLowerCase().split(/\s+/)[0] ?? "";
+}
+
+/**
+ * Whatever followed the command word, trimmed. Empty when nothing did.
+ *
+ * "/name parser work" gives "parser work", and the spacing inside it is kept:
+ * only the ends are trimmed, because the rest is the user's text.
+ */
+export function commandArgument(input: string): string {
+  const rest = input.trimStart().slice(1).trim();
+  const space = rest.search(/\s/);
+  return space === -1 ? "" : rest.slice(space + 1).trim();
+}
 
 /** Does this input line look like a command rather than something to say? */
 export function isCommand(input: string): boolean {
@@ -49,7 +67,9 @@ export function isCommand(input: string): boolean {
  */
 export function matchCommands(input: string): Command[] {
   if (!isCommand(input)) return [];
-  const typed = input.trimStart().slice(1).trim().toLowerCase();
+  // Only the first word names the command; the rest is its argument, so
+  // "/name parser work" keeps matching "name" as it is typed.
+  const typed = commandWord(input);
 
   return COMMANDS.filter((command) => command.name.startsWith(typed)).sort((a, b) => {
     const exact = Number(b.name === typed) - Number(a.name === typed);

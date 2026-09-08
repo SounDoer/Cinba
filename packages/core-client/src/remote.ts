@@ -88,6 +88,10 @@ export class RemoteSession {
     this.#send({ type: "delete_session", sessionId });
   }
 
+  renameSession(name: string): void {
+    this.#send({ type: "rename_session", name });
+  }
+
   #send(message: ClientMessage): void {
     this.#socket.send(JSON.stringify(message));
   }

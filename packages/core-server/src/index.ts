@@ -559,6 +559,22 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
       return;
     }
 
+    case "rename_session": {
+      if (!current) return;
+      // Through the conversation's own Pi rather than by writing its file from
+      // out here: Pi holds that session open and would not see an outside
+      // append, so the two would disagree about what it is called.
+      const response = await current.pi.setSessionName(message.name);
+      if (!response.success) {
+        emit(current, [{ type: "notice", text: `not renamed: ${String(response.error)}` }]);
+        return;
+      }
+      emit(current, [{ type: "notice", text: `named "${message.name}"` }]);
+      // The name lives in the session file, so a fresh listing picks it up.
+      sendTo(socket, { type: "session_listing", sessions: await listSessions() });
+      return;
+    }
+
     case "delete_session": {
       const path = (await findSession(message.sessionId))?.path;
       stop(message.sessionId);
