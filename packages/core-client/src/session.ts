@@ -1,11 +1,15 @@
 // The session ledger: consumes view actions and maintains what the UI should
 // currently look like.
 //
-// This is the single source of truth. The view holds only a copy and can be
-// rebuilt from snapshot() at any time, so reloading the UI during development
-// does not lose the conversation.
-// Basis: VS Code's official webview guidance — the view is stateless, the host
-// owns the state.
+// It is a projection, not a source of truth. Pi's session file holds the
+// history; this holds a rendering of that history plus the part of the present
+// that is not stored yet — the half-streamed answer, the tool card still
+// awaiting approval. Nothing lives only here beyond a reload.
+//
+// The view in turn holds only a copy of this and can be rebuilt from snapshot()
+// at any time, so reloading the UI during development does not lose the
+// conversation. Basis: VS Code's official webview guidance — the view is
+// stateless, the host owns the state.
 
 import type { ToolStatus, ViewAction } from "./events.ts";
 
@@ -28,13 +32,27 @@ export type ToolEntry = {
   confirmRequestId?: string;
 };
 
-/** A system notice such as "aborted". Nobody said it, so it gets its own kind. */
+/**
+ * A system notice such as "aborted".
+ *
+ * Deliberately ephemeral: it is not stored anywhere and does not come back when
+ * a session is reopened. That is what keeps the ledger free of any lasting data
+ * of its own, and therefore a projection of Pi's session file rather than a
+ * second source of truth competing with it.
+ */
 export type NoticeEntry = {
   kind: "notice";
   text: string;
 };
 
-export type Entry = MessageEntry | ToolEntry | NoticeEntry;
+/** Marks the point from which a given model was answering. Rebuilt from Pi's model_change entries. */
+export type ModelEntry = {
+  kind: "model";
+  provider: string;
+  modelId: string;
+};
+
+export type Entry = MessageEntry | ToolEntry | NoticeEntry | ModelEntry;
 
 export type Snapshot = {
   entries: Entry[];
@@ -139,6 +157,14 @@ export function createSession(initial?: Snapshot): Session {
 
         case "notice":
           entries.push({ kind: "notice", text: action.text });
+          return;
+
+        case "model_in_use":
+          entries.push({
+            kind: "model",
+            provider: action.provider,
+            modelId: action.modelId,
+          });
           return;
 
         case "usage_changed":

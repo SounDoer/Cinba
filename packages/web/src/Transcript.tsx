@@ -1,11 +1,11 @@
-// The transcript. Three kinds of entry: messages, tool cards, system notices.
+// The transcript. Four kinds of entry: messages, tool cards, model markers, system notices.
 //
 // The big difference from the hand-written DOM version in phase 1b: nothing
 // updates incrementally here. The whole thing renders from the snapshot and
 // React does the diffing, so the textNodes / toolNodes bookkeeping is gone.
 
 import Markdown from "react-markdown";
-import type { Entry, MessageEntry, NoticeEntry, ToolEntry } from "@cinba/core-client";
+import type { Entry, MessageEntry, ModelEntry, NoticeEntry, ToolEntry } from "@cinba/core-client";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "awaiting approval",
@@ -84,10 +84,23 @@ export function Transcript({
     <>
       {entries.map((entry, index) => {
         if (entry.kind === "message") {
+          // An assistant turn that goes straight to a tool has no text at all;
+          // drawing an empty bubble in front of the tool card says nothing. The
+          // same holds for the instant before the first token arrives.
+          if (entry.text === "" && entry.thinking === "") return null;
           return <Message key={entry.messageId} entry={entry} />;
         }
         if (entry.kind === "tool") {
           return <ToolCard key={entry.toolCallId} entry={entry} onRespond={onRespond} />;
+        }
+        if (entry.kind === "model") {
+          const model = entry as ModelEntry;
+          // Same index-as-key reasoning as notices below.
+          return (
+            <div className="notice" key={`model-${index}`}>
+              {model.provider} / {model.modelId}
+            </div>
+          );
         }
         const notice = entry as NoticeEntry;
         // A notice has no natural id, so fall back to its index: notices are only appended, never edited, so the index is stable.

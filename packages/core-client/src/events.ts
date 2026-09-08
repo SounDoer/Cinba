@@ -25,6 +25,13 @@ export type ViewAction =
     }
   | { type: "confirm_requested"; requestId: string }
   /**
+   * Marks the point from which a given model was answering.
+   *
+   * Not invented here: Pi writes a model_change entry into its session file, so
+   * this is a projection of that, both live and when a session is reopened.
+   */
+  | { type: "model_in_use"; provider: string; modelId: string }
+  /**
    * A system notice such as "aborted".
    *
    * The folder never produces one: it does not come from Pi's event stream but
@@ -38,9 +45,12 @@ export type ViewAction =
 
 /**
  * Pull the text out of { content: [{ type: "text", text: "..." }] }.
+ *
  * Tool results and message bodies share this shape, so they share this helper.
+ * Exported within the package because entries.ts folds the same shape out of
+ * Pi's stored session entries.
  */
-function extractText(carrier: unknown): string {
+export function extractText(carrier: unknown): string {
   const content = (carrier as { content?: unknown })?.content;
   if (!Array.isArray(content)) return "";
   return content

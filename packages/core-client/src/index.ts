@@ -6,6 +6,7 @@ export type {
   UiRequest,
   UiRequestHandler,
 } from "./client.ts";
+export { foldSessionEntries } from "./entries.ts";
 export { createEventFolder, foldUiRequest } from "./events.ts";
 export type { ToolStatus, ViewAction } from "./events.ts";
 export { parseClientMessage } from "./protocol.ts";
@@ -16,6 +17,7 @@ export { createSession } from "./session.ts";
 export type {
   Entry,
   MessageEntry,
+  ModelEntry,
   NoticeEntry,
   Session,
   Snapshot,
