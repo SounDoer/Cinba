@@ -134,4 +134,10 @@ button:disabled { color: #bbb; cursor: default; }
 .picker-list { overflow-y: auto; border: 1px solid #eee; border-radius: 6px; }
 .picker-item { display: block; width: 100%; text-align: left; border: none; border-bottom: 1px solid #f2f2f2; border-radius: 0; padding: 0.5rem 0.8rem; background: #fff; }
 .picker-item:hover { background: #f6f8ff; }
+.session-row { display: flex; align-items: center; gap: 0.5rem; padding: 0; }
+.session-open { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem; border: none; border-radius: 0; background: none; text-align: left; padding: 0.5rem 0.8rem; }
+.session-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.session-meta { color: #888; font-size: 11px; }
+.session-delete { margin-right: 0.6rem; color: #a33; }
+
 .picker-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }

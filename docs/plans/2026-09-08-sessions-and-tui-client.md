@@ -1,7 +1,7 @@
 # 多会话 + TUI 改成客户端
 
 日期：2026-09-08
-状态：执行中（阶段 A Task 1-4 完成，5、6 待做）
+状态：阶段 A 完成（Task 1-7），阶段 B 待做
 
 这是 3a 之后最大的一次结构改动，分两阶段，各自可独立验收：
 
@@ -304,4 +304,47 @@ list_sessions(Cinba) → 38 条，标题用 firstMessage
 open_session(那条 42 的) → 10 条记录，"42" 在里面
 两个客户端各看各的会话，互不干扰
 新会话里发一句 → user/assistant 一问一答正常
+```
+
+### Task 5-6
+
+**11. 对账不能按 id 比,只能按内容比。** 实时折叠用的是我们自己发的消息 id(`m1`、`m2`),
+从磁盘重建用的是 Pi 的 id。直接深比较会**每一轮都报"不一致"**,对账就成了摆设。
+因此新增 `sameTranscript()`,按 role/文本/思考/工具名/状态/结果比,忽略 id。
+
+**12. 对账改成「一致就不动」,而不是无条件替换。** 无条件替换的话,每轮结束都会把易失的
+`notice`(比如「aborted」)冲掉——你刚点了 Stop,提示闪一下就没了。改成先比对,一致就
+什么都不做,notice 保住原位;真有偏差才以 Pi 为准整体替换,并打一条 warning。
+实测一轮正常对话:**没有漂移警告**,对账安静通过。
+
+**13. ⚠️ 真 bug:打开别的目录的会话时,Pi 起在了错误的工作目录。**
+`open_session` 用的是模块级的默认 `cwd`,不是那条会话自己的 `cwd`。后果是一条关于 Desktop
+的对话,恢复之后它的工具会跑在 Cinba 目录里——**在一个项目里执行另一个项目的命令**。
+
+已修:`core-host` 的 `findSessionPath()` 改成 `findSession()`,连 `cwd` 一起返回;
+`show()` 里顺带把默认 cwd 跟到当前会话,新建对话就落在你刚看的那个项目里。
+
+**14. 批量替换漏了一条,而 `assert` 被其他成功的替换掩盖了。**
+顶栏按钮那条没匹配上,结果是「会话列表根本打不开」——组件、协议、服务端全做好了,
+就是没有入口。正是「逐条替换成功掩盖了整体没做完」这个老问题;改完之后要扫一遍
+「该消失的东西是不是真消失了」。
+
+**15. 权限门拒绝路径已重验(通过 core-server,因为改动在 `pendingConfirms` 的归属)。**
+
+```
+confirmation raised -> answering NO
+tool card status: error | result: "The user denied this tool call"
+model's reply: "I attempted to run `ls`, but the tool call was denied, so I couldn't see
+                the directory contents..."
+```
+
+两条硬性条件都满足:命令没执行,且模型知道自己被拒了。
+
+**16. 阶段 A 的界面实测**
+
+```
+顶栏「Cinba — conversations」→ 51 条会话，当前那条标 ●
+每行：标题（firstMessage）· 项目名 · 消息数 · 时间 · Delete（两步确认）
+切到 Desktop 那条 → 顶栏变「Desktop — conversations」，正文换成那条对话
+切回 Cinba 那条   → 顶栏和正文都跟着回来
 ```

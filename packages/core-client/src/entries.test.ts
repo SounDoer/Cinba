@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { foldSessionEntries } from "./entries.ts";
+import { foldSessionEntries, sameTranscript } from "./entries.ts";
 import { createSession } from "./session.ts";
 
 /**
@@ -128,4 +128,48 @@ test("message ids come from Pi, so a rebuild lands on the same ids", () => {
     { type: "message_added", messageId: "d1", role: "user" },
     { type: "text_appended", messageId: "d1", text: "hi" },
   ]);
+});
+
+test("two tellings of the same conversation match despite different ids", () => {
+  // What the live path produces: ids this project made up while streaming.
+  const live = createSession();
+  live.apply({ type: "message_added", messageId: "m1", role: "user" });
+  live.apply({ type: "text_appended", messageId: "m1", text: "hi" });
+  live.apply({ type: "message_added", messageId: "m2", role: "assistant" });
+  live.apply({ type: "text_appended", messageId: "m2", text: "hello" });
+  live.apply({ type: "notice", text: "aborted" });
+
+  // What a rebuild produces: Pi's ids.
+  const rebuilt = createSession();
+  for (const action of foldSessionEntries([
+    { type: "message", id: "x9", message: { role: "user", content: [{ type: "text", text: "hi" }] } },
+    {
+      type: "message",
+      id: "y8",
+      message: { role: "assistant", content: [{ type: "text", text: "hello" }] },
+    },
+  ])) {
+    rebuilt.apply(action);
+  }
+
+  assert.equal(sameTranscript(live.snapshot().entries, rebuilt.snapshot().entries), true);
+});
+
+test("a difference in what was actually said is caught", () => {
+  const one = createSession();
+  one.apply({ type: "message_added", messageId: "m1", role: "assistant" });
+  one.apply({ type: "text_appended", messageId: "m1", text: "the answer is 42" });
+
+  const other = createSession();
+  other.apply({ type: "message_added", messageId: "z1", role: "assistant" });
+  other.apply({ type: "text_appended", messageId: "z1", text: "the answer is 43" });
+
+  assert.equal(sameTranscript(one.snapshot().entries, other.snapshot().entries), false);
+});
+
+test("a missing tool card counts as a difference", () => {
+  const withTool = createSession();
+  withTool.apply({ type: "tool_changed", toolCallId: "c1", toolName: "bash", status: "done" });
+
+  assert.equal(sameTranscript(withTool.snapshot().entries, []), false);
 });

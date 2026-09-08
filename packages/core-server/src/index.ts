@@ -25,7 +25,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { findSessionPath, listSessions as storedSessions, startCore } from "@cinba/core-host";
+import { findSession, listSessions as storedSessions, startCore } from "@cinba/core-host";
 import {
   CoreClient,
   createEventFolder,
@@ -33,6 +33,7 @@ import {
   foldSessionEntries,
   foldUiRequest,
   parseClientMessage,
+  sameTranscript,
   StdioTransport,
 } from "@cinba/core-client";
 import type {
@@ -109,6 +110,10 @@ type Live = {
   pendingConfirms: Map<string, (confirmed: boolean) => void>;
   outbox: ViewAction[];
   flushTimer: NodeJS.Timeout | undefined;
+  /** Everything Pi has stored so far, already folded. The authoritative telling of the past. */
+  storedActions: ViewAction[];
+  /** Last entry id pulled from Pi, so the next pull asks only for what followed. */
+  reconciledUpTo: string | undefined;
 };
 
 const live = new Map<string, Live>();
@@ -276,9 +281,16 @@ async function open(options: { sessionPath?: string; cwd: string }): Promise<Liv
     pendingConfirms: new Map(),
     outbox: [],
     flushTimer: undefined,
+    storedActions: [],
+    reconciledUpTo: undefined,
   };
 
-  pi.onEvent((event) => emit(session, session.fold(event)));
+  pi.onEvent((event) => {
+    emit(session, session.fold(event));
+    // A settled turn is the moment everything of it has been written, and the
+    // only moment when nothing is in flight to compare against.
+    if (event.type === "agent_settled") void reconcile(session);
+  });
 
   pi.onUiRequest(async (request) => {
     const action = foldUiRequest(request);
@@ -297,14 +309,49 @@ async function open(options: { sessionPath?: string; cwd: string }): Promise<Liv
 
   // Replay what Pi already stored. This is the whole reason a closed
   // conversation can be reopened without a store of our own.
-  const stored = await pi.getEntries();
-  const entries = (stored.data as { entries?: unknown } | undefined)?.entries;
-  if (Array.isArray(entries)) {
-    for (const action of foldSessionEntries(entries)) session.ledger.apply(action);
-  }
+  await absorb(session);
+  for (const action of session.storedActions) session.ledger.apply(action);
 
   live.set(session.id, session);
   return session;
+}
+
+/** Pull whatever Pi has stored since the last pull and fold it onto storedActions. */
+async function absorb(session: Live): Promise<void> {
+  const response = await session.pi.getEntries(session.reconciledUpTo);
+  const entries = (response.data as { entries?: unknown } | undefined)?.entries;
+  if (!Array.isArray(entries) || entries.length === 0) return;
+
+  session.storedActions.push(...foldSessionEntries(entries));
+
+  const last = entries.at(-1) as { id?: unknown } | undefined;
+  if (typeof last?.id === "string") session.reconciledUpTo = last.id;
+}
+
+/**
+ * Check the ledger against Pi's file at the end of a turn, and take Pi's word
+ * where they disagree.
+ *
+ * The ledger is built twice by different routes: live, from the event stream,
+ * and on reopening, from the stored entries. Only one of them is authoritative.
+ * Without this check a misread event would sit in the transcript unnoticed
+ * until the conversation was next reopened; with it, any drift lasts one turn.
+ *
+ * A matching transcript is left alone rather than replaced wholesale, so the
+ * ephemeral notices keep their place in it.
+ */
+async function reconcile(session: Live): Promise<void> {
+  await absorb(session);
+
+  const truth = createSession();
+  for (const action of session.storedActions) truth.apply(action);
+
+  const current = session.ledger.snapshot();
+  if (sameTranscript(current.entries, truth.snapshot().entries)) return;
+
+  console.warn(`[cinba] transcript drifted in ${session.id}; taking Pi's copy`);
+  session.ledger = truth;
+  toViewers(session.id, snapshotOf(session));
 }
 
 function stop(sessionId: string): void {
@@ -336,16 +383,16 @@ async function resolveDefaultSession(): Promise<Live | undefined> {
   if (lastSessionId) {
     const existing = live.get(lastSessionId);
     if (existing) return existing;
-    const path = await findSessionPath(lastSessionId);
-    if (path) return await open({ sessionPath: path, cwd });
+    const stored = await findSession(lastSessionId);
+    if (stored) return await open({ sessionPath: stored.path, cwd: stored.cwd || cwd });
   }
 
   const [recent] = await listSessions(cwd);
   if (recent) {
     const existing = live.get(recent.id);
     if (existing) return existing;
-    const path = await findSessionPath(recent.id);
-    if (path) return await open({ sessionPath: path, cwd: recent.cwd || cwd });
+    const stored = await findSession(recent.id);
+    if (stored) return await open({ sessionPath: stored.path, cwd: stored.cwd || cwd });
   }
 
   return await open({ cwd });
@@ -355,6 +402,8 @@ async function resolveDefaultSession(): Promise<Live | undefined> {
 function show(socket: WebSocket, session: Live): void {
   viewing.set(socket, session.id);
   lastSessionId = session.id;
+  // New conversations start where the last one you looked at lives.
+  cwd = session.cwd;
   saveConfig();
   sendTo(socket, { type: "session_opened", sessionId: session.id });
   sendTo(socket, snapshotOf(session));
@@ -494,9 +543,11 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
         show(socket, already);
         return;
       }
-      const path = await findSessionPath(message.sessionId);
-      if (!path) return; // Deleted from under us; the client's next listing will show that
-      const opened = await open({ sessionPath: path, cwd });
+      const stored = await findSession(message.sessionId);
+      if (!stored) return; // Deleted from under us; the client's next listing will show that
+      // Its own directory, not whichever one is current: a conversation about
+      // one project must not resume with its tools pointed at another.
+      const opened = await open({ sessionPath: stored.path, cwd: stored.cwd || cwd });
       if (opened) show(socket, opened);
       return;
     }
@@ -509,7 +560,7 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
     }
 
     case "delete_session": {
-      const path = await findSessionPath(message.sessionId);
+      const path = (await findSession(message.sessionId))?.path;
       stop(message.sessionId);
       if (path) {
         try {

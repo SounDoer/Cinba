@@ -6,11 +6,12 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createSession, RemoteSession } from "@cinba/core-client";
-import type { ModelRef, Session, Snapshot } from "@cinba/core-client";
+import type { ModelRef, Session, SessionSummary, Snapshot } from "@cinba/core-client";
 import { Transcript } from "./Transcript.tsx";
 import { ProjectPicker } from "./ProjectPicker.tsx";
 import type { Listing } from "./ProjectPicker.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
+import { SessionPicker } from "./SessionPicker.tsx";
 import "./style.css";
 
 const EMPTY: Snapshot = { entries: [], totalTokens: 0, totalCost: 0, busy: false };
@@ -27,6 +28,9 @@ function App() {
   const [pickingModel, setPickingModel] = useState(false);
   const [model, setModel] = useState<ModelRef | undefined>(undefined);
   const [models, setModels] = useState<ModelRef[] | undefined>(undefined);
+  const [pickingSession, setPickingSession] = useState(false);
+  const [sessionId, setSessionId] = useState("");
+  const [sessions, setSessions] = useState<SessionSummary[] | undefined>(undefined);
 
   const remoteRef = useRef<RemoteSession | undefined>(undefined);
   const mirrorRef = useRef<Session>(createSession());
@@ -41,6 +45,7 @@ function App() {
         setSnapshot(state.snapshot);
         setCwd(state.cwd);
         setModel(state.model);
+        setSessionId(state.sessionId);
       },
       onActions: (actions) => {
         for (const action of actions) mirrorRef.current.apply(action);
@@ -49,6 +54,8 @@ function App() {
       onDirListing: (next) => setListing(next),
       onModelListing: (next) => setModels(next),
       onModelChanged: (next) => setModel(next),
+      onSessionListing: (next) => setSessions(next),
+      onSessionOpened: (id) => setSessionId(id),
     });
 
     return () => socket.close();
@@ -82,8 +89,9 @@ function App() {
   return (
     <>
       <header>
-        <button onClick={() => setPicking(true)}>
-          Project: {cwd.split(/[\\/]/).pop() || "..."}
+        {/* The way in to every conversation, so it carries the current one's project as its label. */}
+        <button onClick={() => setPickingSession(true)}>
+          {cwd.split(/[\\/]/).pop() || "..."} — conversations
         </button>
         {/* Disabled while busy for the same reason as the input box: do not swap brains mid-sentence. */}
         <button onClick={() => setPickingModel(true)} disabled={snapshot.busy}>
@@ -123,6 +131,19 @@ function App() {
         </button>
         {snapshot.busy ? <button onClick={() => remoteRef.current?.abort()}>Stop</button> : null}
       </footer>
+
+      {pickingSession ? (
+        <SessionPicker
+          remote={remoteRef.current}
+          sessions={sessions}
+          currentId={sessionId}
+          onNewHere={() => {
+            setPickingSession(false);
+            setPicking(true);
+          }}
+          onClose={() => setPickingSession(false)}
+        />
+      ) : null}
 
       {picking ? (
         <ProjectPicker

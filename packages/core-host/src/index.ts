@@ -147,8 +147,14 @@ export async function listSessions(cwd?: string): Promise<StoredSession[]> {
   }));
 }
 
-/** Where one stored conversation lives, or undefined if it is gone. */
-export async function findSessionPath(id: string): Promise<string | undefined> {
+/**
+ * Look up one stored conversation, or undefined if it is gone.
+ *
+ * It carries its own working directory, and resuming it has to use that rather
+ * than whatever directory happens to be current: a conversation about one
+ * project must not come back with its tools pointed at another.
+ */
+export async function findSession(id: string): Promise<StoredSession | undefined> {
   const sessions = await listSessions();
-  return sessions.find((session) => session.id === id)?.path;
+  return sessions.find((session) => session.id === id);
 }
