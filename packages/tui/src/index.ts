@@ -180,16 +180,21 @@ class Transcript implements Component {
 }
 
 /**
- * The input line, plus the command menu that appears above it.
+ * The input line, plus the command menu above it.
  *
  * Input has no hook for "the text changed", so the menu is refreshed here,
  * where keystrokes already pass through on their way in. That is cheaper than
  * swapping in Editor, which does support completion providers but brings a lot
  * else with it.
+ *
+ * While the menu is up it takes the arrow keys and Tab for itself: it looks
+ * like a list to choose from, so it has to behave like one. Everything else
+ * still reaches the input, so typing keeps narrowing the list.
  */
 class PromptInput implements Component, Focusable {
   readonly input = new Input();
   #hints: Command[] = [];
+  #selected = 0;
   #focused = false;
 
   /**
@@ -208,18 +213,38 @@ class PromptInput implements Component, Focusable {
   }
 
   handleInput(data: string): void {
+    if (this.#hints.length > 0) {
+      if (matchesKey(data, "up")) {
+        // Wrapping, so a list of four is never more than two presses away.
+        this.#selected = (this.#selected + this.#hints.length - 1) % this.#hints.length;
+        return;
+      }
+      if (matchesKey(data, "down") || matchesKey(data, "tab")) {
+        this.#selected = (this.#selected + 1) % this.#hints.length;
+        return;
+      }
+    }
+
     this.input.handleInput(data);
+
     // Typing a slash opens the menu; typing on narrows it; deleting the slash closes it.
+    const before = this.#hints[this.#selected]?.id;
     this.#hints = matchCommands(this.input.getValue());
+
+    // Keep the highlight on the same command if it survived the narrowing,
+    // otherwise start again at the top rather than pointing somewhere arbitrary.
+    const stillThere = this.#hints.findIndex((command) => command.id === before);
+    this.#selected = stillThere >= 0 ? stillThere : 0;
   }
 
   /** The command Enter would run, if any. */
   pending(): Command | undefined {
-    return this.#hints[0];
+    return this.#hints[this.#selected];
   }
 
   clearHints(): void {
     this.#hints = [];
+    this.#selected = 0;
   }
 
   invalidate(): void {
@@ -229,13 +254,15 @@ class PromptInput implements Component, Focusable {
   render(width: number): string[] {
     const menu: string[] = [];
     for (const [index, command] of this.#hints.entries()) {
-      // The first is what Enter takes, so it is marked: otherwise the effect of
-      // pressing Enter would be guesswork.
-      const line =
-        index === 0
-          ? `${MAGENTA}> /${command.name}${RESET}  ${DIM}${command.summary}${RESET}`
-          : `${DIM}  /${command.name}  ${command.summary}${RESET}`;
+      const chosen = index === this.#selected;
+      const line = chosen
+        ? `${MAGENTA}> /${command.name}${RESET}  ${DIM}${command.summary}${RESET}`
+        : `${DIM}  /${command.name}  ${command.summary}${RESET}`;
       menu.push(...wrapTextWithAnsi(line, width));
+    }
+
+    if (menu.length > 0) {
+      menu.push(`${DIM}  up/down to choose, Enter to run${RESET}`);
     }
 
     return [...menu, `${GREEN}${BOLD}You:${RESET}`, ...this.input.render(width)];
@@ -708,7 +735,9 @@ promptInput.input.onSubmit = (value: string) => {
   if (text === "") return;
 
   if (isCommand(text)) {
-    const command = matchCommands(text)[0];
+    // What the menu is pointing at, which is not the first match once the
+    // arrows have been used.
+    const command = promptInput.pending();
     promptInput.input.setValue("");
     promptInput.clearHints();
     if (command) {
