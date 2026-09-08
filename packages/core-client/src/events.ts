@@ -1,11 +1,11 @@
-// 把 Pi 的原始事件折叠成界面才关心的动作。
+// Folds Pi's raw events into the actions a UI actually cares about.
 //
-// 原始事件外面裹着一层信封，真正有用的在内层：
-//   { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "好" } }
-// 前端不该关心这层信封，所以在这里拆掉。
+// Raw events arrive wrapped in an envelope, with the useful part nested inside:
+//   { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hi" } }
+// A frontend should not have to know about that envelope, so it comes off here.
 //
-// 这个模块不依赖 Electron，也不依赖传输方式，因此能用 node --test 直接覆盖，
-// 并且阶段 2 的 TUI、阶段 3 的网页版可以原样复用。
+// This module depends on neither Electron nor any transport, so node --test can
+// cover it directly, and the phase 2 TUI and phase 3 web UI reuse it as is.
 
 import type { CoreEvent, UiRequest } from "./client.ts";
 
@@ -25,19 +25,20 @@ export type ViewAction =
     }
   | { type: "confirm_requested"; requestId: string }
   /**
-   * 系统提示，例如「已中止」。
+   * A system notice such as "aborted".
    *
-   * 折叠器不产生它——它不来自 Pi 的事件流，而是宿主侧或前端在用户操作后自己发出的。
-   * 走这条通道而不是直接往界面上打一行，是为了让它跟别的内容一样进账本，
-   * 刷新界面后还在。
+   * The folder never produces one: it does not come from Pi's event stream but
+   * from the host or a frontend after the user acts. It travels this channel
+   * rather than being printed straight to the screen so that it enters the
+   * ledger like everything else and survives a reload.
    */
   | { type: "notice"; text: string }
   | { type: "usage_changed"; totalTokens: number; totalCost: number }
   | { type: "busy_changed"; busy: boolean };
 
 /**
- * 抽出 { content: [{ type: "text", text: "..." }] } 里的文本。
- * 工具结果与消息正文用的是同一种形状，所以共用这一个。
+ * Pull the text out of { content: [{ type: "text", text: "..." }] }.
+ * Tool results and message bodies share this shape, so they share this helper.
  */
 function extractText(carrier: unknown): string {
   const content = (carrier as { content?: unknown })?.content;
@@ -52,10 +53,10 @@ function extractText(carrier: unknown): string {
 }
 
 /**
- * 造一个折叠器。每收到一个原始事件调用一次，返回 0 到多个界面动作。
+ * Make a folder. Call it once per raw event; it returns zero or more view actions.
  *
- * 有状态是必要的：Pi 的 message_start 不带 id，消息 id 得我们自己发；
- * 费用也需要跨事件累加。
+ * Keeping state is necessary: Pi's message_start carries no id, so we issue
+ * message ids ourselves, and cost has to accumulate across events.
  */
 export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
   let messageCount = 0;
@@ -68,7 +69,7 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
       case "message_start": {
         const message = event.message as { role?: string; content?: unknown } | undefined;
         const role = message?.role;
-        // toolResult 不进消息流：它的内容已经贴在工具卡片上了，再渲染一遍是重复。
+        // toolResult stays out of the transcript: its content is already on the tool card.
         if (role !== "user" && role !== "assistant") return [];
 
         currentMessageId = `m${++messageCount}`;
@@ -76,8 +77,9 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
           { type: "message_added", messageId: currentMessageId, role },
         ];
 
-        // 用户消息的正文在这里就已经完整了，不像助手消息靠后续的 text_delta 一点点填。
-        // 助手消息此刻的 content 是空的，所以这段对它是空转。
+        // A user message is already complete here, unlike an assistant message
+        // that fills in through later text_delta events. An assistant message
+        // has empty content at this point, so this block is a no-op for it.
         const text = extractText(message);
         if (text) {
           actions.push({ type: "text_appended", messageId: currentMessageId, text });
@@ -113,8 +115,9 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
       }
 
       case "tool_execution_start":
-        // 注意：这只表示「开始处理」。真正执行发生在权限确认之后，
-        // 所以这里只能是 pending，渲染成「已执行」会给用户错误的安全感。
+        // Note: this only means processing started. Execution happens after the
+        // permission confirmation, so the status here can only be pending —
+        // rendering it as executed would give the user false reassurance.
         return [
           {
             type: "tool_changed",
@@ -136,9 +139,11 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
           },
         ];
 
-      // 忙 / 不忙完全能从事件流推出来，两半都在这里发，前端就不必各自补。
-      // 前端仍可以在按下发送时自己先置一次 busy:true——那是为了立刻锁住输入框，
-      // 不用等这个事件从管道那头回来；但即使忘了，行为也只是慢一拍，不会坏掉。
+      // Busy and idle are both derivable from the event stream, and emitting
+      // both halves here saves every frontend from patching it in itself.
+      // A frontend may still set busy:true when send is pressed, to lock the
+      // input immediately instead of waiting for this event to come back down
+      // the pipe; forgetting to costs a beat of latency, nothing more.
       case "agent_start":
         return [{ type: "busy_changed", busy: true }];
 
@@ -151,7 +156,7 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
   };
 }
 
-/** UI 请求里只有 confirm 需要变成界面动作，其余（notify 等）本阶段不渲染。 */
+/** Of the UI requests only confirm becomes a view action; the rest (notify and friends) are not rendered in this phase. */
 export function foldUiRequest(request: UiRequest): ViewAction | undefined {
   if (request.method !== "confirm") return undefined;
   return { type: "confirm_requested", requestId: request.id };

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { RemoteSession } from "./remote.ts";
 import type { Socket } from "./remote.ts";
 
-/** 假的连接，用来在不起服务器的情况下测协议逻辑。 */
+/** A fake connection, for testing protocol logic without starting a server. */
 function createFakeSocket(): { socket: Socket; sent: string[]; receive: (obj: unknown) => void } {
   const sent: string[] = [];
   const socket: Socket = {
@@ -17,11 +17,11 @@ function createFakeSocket(): { socket: Socket; sent: string[]; receive: (obj: un
   };
 }
 
-test("四种命令都按协议发出去", () => {
+test("all four commands go out in protocol form", () => {
   const fake = createFakeSocket();
   const remote = new RemoteSession(fake.socket, {});
 
-  remote.prompt("你好");
+  remote.prompt("hello");
   remote.abort();
   remote.respondConfirm("u1", false);
   remote.setProject("/tmp");
@@ -29,7 +29,7 @@ test("四种命令都按协议发出去", () => {
   assert.deepEqual(
     fake.sent.map((line) => JSON.parse(line)),
     [
-      { type: "prompt", text: "你好" },
+      { type: "prompt", text: "hello" },
       { type: "abort" },
       { type: "respond_confirm", requestId: "u1", confirmed: false },
       { type: "set_project", cwd: "/tmp" },
@@ -37,7 +37,7 @@ test("四种命令都按协议发出去", () => {
   );
 });
 
-test("listDir 按协议发出去，目录列表交给处理器", () => {
+test("listDir goes out in protocol form and the listing reaches the handler", () => {
   const fake = createFakeSocket();
   const listings: unknown[] = [];
 
@@ -60,7 +60,7 @@ test("listDir 按协议发出去，目录列表交给处理器", () => {
   ]);
 });
 
-test("快照与动作分别交给对应的处理器", () => {
+test("snapshots and actions reach their respective handlers", () => {
   const fake = createFakeSocket();
   const snapshots: unknown[] = [];
   const batches: unknown[] = [];
@@ -82,11 +82,11 @@ test("快照与动作分别交给对应的处理器", () => {
   assert.deepEqual(resets, ["/tmp"]);
 });
 
-test("坏消息被忽略，不崩", () => {
+test("malformed messages are ignored rather than crashing", () => {
   const fake = createFakeSocket();
-  new RemoteSession(fake.socket, { onActions: () => assert.fail("不该被调用") });
+  new RemoteSession(fake.socket, { onActions: () => assert.fail("must not be called") });
 
-  fake.socket.onmessage?.({ data: "这不是 JSON" });
+  fake.socket.onmessage?.({ data: "this is not JSON" });
   fake.socket.onmessage?.({ data: 42 });
-  fake.receive({ type: "没听过的类型" });
+  fake.receive({ type: "never heard of this type" });
 });

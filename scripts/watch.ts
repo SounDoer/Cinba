@@ -1,23 +1,24 @@
-// 旁观 core-server 的会话：连上去，把收到的东西打出来，不发任何命令。
+// Watch a core-server session: connect, print whatever arrives, send nothing.
 //
-// 用途一：验证多客户端（GUI 在用，这个在旁边看）。
-// 用途二：以后调试协议时的探针，跟 scripts/probe.ts 一个性质。
+// Use one: checking multiple clients (the GUI in use, this one looking on).
+// Use two: a probe for debugging the protocol later, same idea as
+// scripts/probe.ts.
 //
-// 用法：node scripts/watch.ts
+// Usage: node scripts/watch.ts
 
 import { RemoteSession } from "@cinba/core-client";
 
 const socket = new WebSocket("ws://127.0.0.1:4517/ws");
 
 socket.addEventListener("error", () => {
-  console.error("连不上 ws://127.0.0.1:4517/ws，core-server 起了吗？");
+  console.error("cannot reach ws://127.0.0.1:4517/ws - is core-server running?");
   process.exit(1);
 });
 
 new RemoteSession(socket, {
   onSnapshot: (snapshot, cwd) => {
     console.log(
-      `[快照] 工作目录=${cwd} 条目=${snapshot.entries.length} ` +
+      `[snapshot] cwd=${cwd} entries=${snapshot.entries.length} ` +
         `tokens=${snapshot.totalTokens} busy=${snapshot.busy}`,
     );
   },
@@ -26,11 +27,11 @@ new RemoteSession(socket, {
       if (action.type === "text_appended") {
         process.stdout.write(action.text);
       } else {
-        console.log(`\n[动作] ${JSON.stringify(action).slice(0, 160)}`);
+        console.log(`\n[action] ${JSON.stringify(action).slice(0, 160)}`);
       }
     }
   },
-  onReset: (cwd) => console.log(`\n[重置] 工作目录=${cwd}`),
+  onReset: (cwd) => console.log(`\n[reset] cwd=${cwd}`),
 });
 
-console.log("旁观中，Ctrl+C 退出");
+console.log("watching, Ctrl+C to exit");

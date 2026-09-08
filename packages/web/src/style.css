@@ -9,8 +9,8 @@ body {
 }
 
 /*
-  布局挂在 #root 上而不是 body 上：React 渲染进 #root，
-  header / main / footer 是它的子元素，不是 body 的。
+  The layout hangs on #root rather than body: React renders into #root, so
+  header / main / footer are its children, not body's.
 */
 #root {
   height: 100vh;
@@ -126,7 +126,7 @@ button:disabled { color: #bbb; cursor: default; }
 .entry p { margin: 0.4rem 0; }
 .entry blockquote { margin: 0.4rem 0; padding-left: 0.8rem; border-left: 3px solid #ddd; color: #666; }
 
-/* ---- 目录选择器 ---- */
+/* ---- Directory picker ---- */
 
 .picker { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.35); display: flex; align-items: center; justify-content: center; }
 .picker-box { background: #fff; border-radius: 10px; padding: 1rem; width: min(520px, 90vw); max-height: 70vh; display: flex; flex-direction: column; gap: 0.6rem; }

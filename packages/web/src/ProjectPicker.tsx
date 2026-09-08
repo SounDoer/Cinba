@@ -1,14 +1,15 @@
-// 目录选择器。
+// The directory picker.
 //
-// 浏览器拿不到本地路径（那是刻意的安全限制），所以由服务器列目录、这里只负责画。
-// 桌面版与网页版共用这一套——3b-2 远程接入时同样成立。
+// A browser cannot see local paths, which is a deliberate security limit, so
+// the server lists directories and this only draws them. The desktop and web
+// builds share it, and that still holds for remote access in 3b-2.
 
 import { useEffect, useState } from "react";
 import type { RemoteSession } from "@cinba/core-client";
 
 export type Listing = { path: string; parent: string | null; dirs: string[] };
 
-/** 拼子目录路径。服务器返回什么分隔符就跟着用，免得混用两种斜杠。 */
+/** Build a subdirectory path, following whichever separator the server returned so the two slashes never mix. */
 function childPath(current: string, name: string): string {
   const separator = current.includes("\\") ? "\\" : "/";
   return current.endsWith(separator) ? `${current}${name}` : `${current}${separator}${name}`;
@@ -36,7 +37,7 @@ export function ProjectPicker({
     remote?.listDir(path);
   }
 
-  // 只在服务器返回的正是当前目录时才画，免得进目录的瞬间显示上一层的内容。
+  // Render only when the server's listing is for the current directory, so entering one does not briefly show its parent.
   const shown = listing?.path === current ? listing : undefined;
 
   return (
@@ -47,7 +48,7 @@ export function ProjectPicker({
         <div className="picker-list">
           {shown?.parent ? (
             <button className="picker-item" onClick={() => go(shown.parent!)}>
-              .. 上一级
+              .. up
             </button>
           ) : null}
           {shown?.dirs.map((name) => (
@@ -56,19 +57,19 @@ export function ProjectPicker({
             </button>
           ))}
           {shown && shown.dirs.length === 0 ? (
-            <div className="picker-item">（没有子目录）</div>
+            <div className="picker-item">(no subdirectories)</div>
           ) : null}
         </div>
 
         <div className="picker-actions">
-          <button onClick={onClose}>取消</button>
+          <button onClick={onClose}>Cancel</button>
           <button
             onClick={() => {
               remote?.setProject(current);
               onClose();
             }}
           >
-            就用这个目录
+            Use this directory
           </button>
         </div>
       </div>

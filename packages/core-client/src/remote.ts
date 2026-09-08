@@ -1,17 +1,19 @@
-// 客户端这一侧的连接。
+// The client side of the connection.
 //
-// 与 CoreClient 并列，不是叠加：CoreClient 说的是 Pi 的 JSONL 协议，
-// 这个说的是本项目服务器与客户端之间的协议。
+// It sits beside CoreClient rather than on top of it: CoreClient speaks Pi's
+// JSONL protocol, while this speaks the protocol between this project's server
+// and its clients.
 
 import type { ViewAction } from "./events.ts";
 import type { Snapshot } from "./session.ts";
 import type { ClientMessage, ServerMessage } from "./protocol.ts";
 
 /**
- * 一个能收发文本消息的连接。
+ * A connection that can send and receive text messages.
  *
- * 原生 WebSocket 正好满足这个形状——浏览器、Electron 渲染层、Node 24 都有它，
- * 所以本模块不引入任何依赖。测试时喂一个假的即可。
+ * The native WebSocket fits this shape exactly, and browsers, the Electron
+ * renderer and Node 24 all ship it, so this module pulls in no dependencies.
+ * Tests can pass a fake.
  */
 export type Socket = {
   send(data: string): void;
@@ -66,7 +68,7 @@ export class RemoteSession {
     try {
       message = JSON.parse(data) as ServerMessage;
     } catch {
-      return; // 非 JSON 直接忽略
+      return; // Not JSON, ignore it
     }
 
     switch (message.type) {

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createSession } from "./session.ts";
 
-test("新会话是空的、不忙", () => {
+test("a fresh session is empty and not busy", () => {
   const session = createSession();
 
   assert.deepEqual(session.snapshot(), {
@@ -13,39 +13,39 @@ test("新会话是空的、不忙", () => {
   });
 });
 
-test("消息按到达顺序进条目表，文字逐段追加", () => {
+test("messages enter the ledger in arrival order and text appends piece by piece", () => {
   const session = createSession();
 
   session.apply({ type: "message_added", messageId: "m1", role: "assistant" });
-  session.apply({ type: "text_appended", messageId: "m1", text: "你" });
-  session.apply({ type: "text_appended", messageId: "m1", text: "好" });
+  session.apply({ type: "text_appended", messageId: "m1", text: "he" });
+  session.apply({ type: "text_appended", messageId: "m1", text: "llo" });
 
   assert.deepEqual(session.snapshot().entries, [
-    { kind: "message", messageId: "m1", role: "assistant", text: "你好", thinking: "" },
+    { kind: "message", messageId: "m1", role: "assistant", text: "hello", thinking: "" },
   ]);
 });
 
-test("thinking 与正文分开存", () => {
+test("thinking is stored separately from the body text", () => {
   const session = createSession();
 
   session.apply({ type: "message_added", messageId: "m1", role: "assistant" });
-  session.apply({ type: "thinking_appended", messageId: "m1", text: "想一下" });
-  session.apply({ type: "text_appended", messageId: "m1", text: "答案" });
+  session.apply({ type: "thinking_appended", messageId: "m1", text: "thinking it over" });
+  session.apply({ type: "text_appended", messageId: "m1", text: "the answer" });
 
   const entry = session.snapshot().entries[0];
-  assert.equal(entry.text, "答案");
-  assert.equal(entry.thinking, "想一下");
+  assert.equal(entry.text, "the answer");
+  assert.equal(entry.thinking, "thinking it over");
 });
 
-test("往不存在的消息上追加文字会被忽略，不崩", () => {
+test("appending to a message that does not exist is ignored rather than crashing", () => {
   const session = createSession();
 
-  session.apply({ type: "text_appended", messageId: "不存在", text: "x" });
+  session.apply({ type: "text_appended", messageId: "no-such-message", text: "x" });
 
   assert.deepEqual(session.snapshot().entries, []);
 });
 
-test("工具卡片按 toolCallId 更新，不新增条目", () => {
+test("a tool card updates in place by toolCallId instead of adding an entry", () => {
   const session = createSession();
 
   session.apply({
@@ -60,7 +60,7 @@ test("工具卡片按 toolCallId 更新，不新增条目", () => {
     toolCallId: "call_1",
     toolName: "bash",
     status: "done",
-    result: "输出",
+    result: "output",
   });
 
   assert.deepEqual(session.snapshot().entries, [
@@ -70,13 +70,13 @@ test("工具卡片按 toolCallId 更新，不新增条目", () => {
       toolName: "bash",
       args: { command: "ls" },
       status: "done",
-      result: "输出",
+      result: "output",
       confirmRequestId: undefined,
     },
   ]);
 });
 
-test("两个并发工具各占一张卡片", () => {
+test("two concurrent tools get one card each", () => {
   const session = createSession();
 
   session.apply({ type: "tool_changed", toolCallId: "a", toolName: "read", status: "pending" });
@@ -85,7 +85,7 @@ test("两个并发工具各占一张卡片", () => {
   assert.equal(session.snapshot().entries.length, 2);
 });
 
-test("确认请求挂到最近一张待批准的卡片上", () => {
+test("a confirm request attaches to the most recent pending card", () => {
   const session = createSession();
 
   session.apply({ type: "tool_changed", toolCallId: "a", toolName: "read", status: "done" });
@@ -93,11 +93,11 @@ test("确认请求挂到最近一张待批准的卡片上", () => {
   session.apply({ type: "confirm_requested", requestId: "u1" });
 
   const entries = session.snapshot().entries;
-  assert.equal(entries[0].confirmRequestId, undefined, "已完成的卡片不该被挂上确认");
+  assert.equal(entries[0].confirmRequestId, undefined, "a finished card must not have a confirmation attached");
   assert.equal(entries[1].confirmRequestId, "u1");
 });
 
-test("确认被回答后卡片上的待确认标记清除", () => {
+test("answering a confirmation clears the pending marker on the card", () => {
   const session = createSession();
 
   session.apply({ type: "tool_changed", toolCallId: "b", toolName: "bash", status: "pending" });
@@ -108,18 +108,19 @@ test("确认被回答后卡片上的待确认标记清除", () => {
   assert.equal(session.snapshot().entries[0].status, "running");
 });
 
-test("系统提示作为独立条目进账本", () => {
-  // 「已中止」这类提示必须进账本，不能只在界面上打一行——
-  // 否则 GUI 刷新一下就没了，用户会以为什么都没发生过。
+test("a system notice enters the ledger as its own entry", () => {
+  // A notice like "aborted" has to enter the ledger rather than just being
+  // printed to the screen. Otherwise a GUI reload loses it and the user thinks
+  // nothing ever happened.
   const session = createSession();
 
   session.apply({ type: "message_added", messageId: "m1", role: "assistant" });
-  session.apply({ type: "notice", text: "已中止" });
+  session.apply({ type: "notice", text: "aborted" });
 
-  assert.deepEqual(session.snapshot().entries[1], { kind: "notice", text: "已中止" });
+  assert.deepEqual(session.snapshot().entries[1], { kind: "notice", text: "aborted" });
 });
 
-test("费用与忙碌状态记在快照上", () => {
+test("cost and busy state are carried on the snapshot", () => {
   const session = createSession();
 
   session.apply({ type: "busy_changed", busy: true });
@@ -131,7 +132,7 @@ test("费用与忙碌状态记在快照上", () => {
   assert.equal(snapshot.totalCost, 0.0042);
 });
 
-test("快照是副本，改它不影响账本", () => {
+test("a snapshot is a copy; editing it does not affect the ledger", () => {
   const session = createSession();
   session.apply({ type: "message_added", messageId: "m1", role: "user" });
 
@@ -141,11 +142,11 @@ test("快照是副本，改它不影响账本", () => {
   assert.equal(session.snapshot().entries.length, 1);
 });
 
-test("可以从一份快照重建账本", () => {
-  // 客户端侧持有的是镜像：拿服务器给的快照开局，之后跟着动作走。
+test("a ledger can be rebuilt from a snapshot", () => {
+  // The client side holds a mirror: start from the server's snapshot, then follow the actions.
   const origin = createSession();
   origin.apply({ type: "message_added", messageId: "m1", role: "user" });
-  origin.apply({ type: "text_appended", messageId: "m1", text: "你好" });
+  origin.apply({ type: "text_appended", messageId: "m1", text: "hello" });
   origin.apply({ type: "usage_changed", totalTokens: 120, totalCost: 0.004 });
 
   const mirror = createSession(origin.snapshot());
@@ -153,12 +154,12 @@ test("可以从一份快照重建账本", () => {
   assert.deepEqual(mirror.snapshot(), origin.snapshot());
 });
 
-test("重建出来的账本能继续接收动作", () => {
+test("a rebuilt ledger goes on accepting actions", () => {
   const origin = createSession();
   origin.apply({ type: "message_added", messageId: "m1", role: "assistant" });
 
   const mirror = createSession(origin.snapshot());
-  mirror.apply({ type: "text_appended", messageId: "m1", text: "继续" });
+  mirror.apply({ type: "text_appended", messageId: "m1", text: "more" });
 
-  assert.equal(mirror.snapshot().entries[0].text, "继续");
+  assert.equal(mirror.snapshot().entries[0].text, "more");
 });

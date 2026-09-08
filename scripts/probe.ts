@@ -1,24 +1,26 @@
-// 阶段 0 协议探针：把 Pi RPC 模式吐出的每一条事件原样打印出来。
+// Phase 0 protocol probe: print every event Pi's RPC mode emits, verbatim.
 //
-// 用法：node scripts/probe.ts ["要问的话"]
+// Usage: node scripts/probe.ts ["something to ask"]
 
 import { spawn } from "node:child_process";
 
-const prompt = process.argv[2] ?? "用一句话说明你能做什么。";
+const prompt = process.argv[2] ?? "Say in one sentence what you can do.";
 
-// Windows 上 pi 实际是 pi.cmd，而 Node 18.20+ 出于安全考虑禁止直接 spawn .cmd/.bat
-// （会报 EINVAL），必须显式走 shell。Linux/macOS 上加 shell 也无妨。
+// On Windows pi is really pi.cmd, and Node 18.20+ refuses to spawn .cmd/.bat
+// directly for security reasons (EINVAL), so the shell is explicit here. Adding
+// shell does no harm on Linux or macOS.
 //
-// --provider deepseek 是临时的：settings.json 里的默认 provider 是 anthropic，
-// 而我们只有 DeepSeek 的 key。阶段 1 这个决定会搬进 core-host 统一管理。
+// --provider deepseek is temporary: settings.json defaults the provider to
+// anthropic while we only have a DeepSeek key. Phase 1 moves this decision into
+// core-host, where it is managed in one place.
 const pi = spawn("pi", ["--mode", "rpc", "--provider", "deepseek"], {
-  stdio: ["pipe", "pipe", "inherit"], // stderr 直接透传到我们的终端，方便看报错
+  stdio: ["pipe", "pipe", "inherit"], // stderr passes straight to our terminal so errors are visible
   shell: true,
 });
 
-// Pi 文档明确要求：只按 \n 切分，不要用通用行读取器
-// （那类读取器会把 Unicode 行分隔符也当换行，从而把内容切碎）。
-// 所以这里自己维护缓冲区，手工切行。
+// Pi's docs are explicit: split on \n only, never with a general-purpose line
+// reader (those treat Unicode line separators as newlines too and shred the
+// content). So we keep our own buffer and split by hand.
 let buffer = "";
 
 pi.stdout.on("data", (chunk: Buffer) => {
@@ -38,17 +40,17 @@ function printEvent(line: string): void {
     console.log(`\n── ${event.type} ──`);
     console.log(JSON.stringify(event, null, 2));
   } catch {
-    console.log(`\n── 非 JSON 输出 ──\n${line}`);
+    console.log(`\n-- non-JSON output --\n${line}`);
   }
 }
 
 pi.on("error", (err) => {
-  console.error("启动 pi 失败：", err.message);
+  console.error("failed to start pi:", err.message);
 });
 
 pi.on("exit", (code) => {
-  console.log(`\npi 进程退出，code=${code}`);
+  console.log(`\npi exited, code=${code}`);
 });
 
-// 发出第一条 prompt。注意结尾的 \n —— JSONL 靠它分隔记录，漏了 Pi 会一直等下去。
+// Send the first prompt. Note the trailing \n: JSONL separates records with it, and without it Pi waits forever.
 pi.stdin.write(JSON.stringify({ type: "prompt", message: prompt }) + "\n");

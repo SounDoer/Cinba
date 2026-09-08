@@ -1,6 +1,6 @@
 import type { Transport } from "./transport.ts";
 
-/** 需要客户端回话的 UI 方法。其余（notify、setStatus 等）是广播式的。 */
+/** UI methods that expect an answer. The rest (notify, setStatus, ...) are broadcasts. */
 const DIALOG_METHODS = new Set(["select", "confirm", "input", "editor"]);
 
 export type CoreEvent = { type: string; [key: string]: unknown };
@@ -20,7 +20,7 @@ export type UiRequest = {
   [key: string]: unknown;
 };
 
-/** 三种回应形态之一，见 Pi 的 RpcExtensionUIResponse。 */
+/** One of three reply shapes; see Pi's RpcExtensionUIResponse. */
 export type UiReply =
   | { value: string }
   | { confirmed: boolean }
@@ -29,10 +29,11 @@ export type UiReply =
 export type UiRequestHandler = (request: UiRequest) => Promise<UiReply>;
 
 /**
- * 协议层客户端。
+ * The protocol-level client.
  *
- * 与 Pi 内置的 RpcClient 的区别：那个类的 send() 和 process 都是 private，
- * 无法把 extension_ui_response 写回 stdin，权限门因此无法工作。
+ * How it differs from Pi's built-in RpcClient: there, both send() and process
+ * are private, so extension_ui_response cannot be written back to stdin, which
+ * leaves the permission gate unable to work.
  */
 export class CoreClient {
   #transport: Transport;
@@ -46,7 +47,7 @@ export class CoreClient {
     this.#transport.onLine((line) => this.#handleLine(line));
   }
 
-  /** 订阅事件流。返回取消订阅的函数。 */
+  /** Subscribe to the event stream. Returns a function that unsubscribes. */
   onEvent(listener: (event: CoreEvent) => void): () => void {
     this.#eventListeners.push(listener);
     return () => {
@@ -55,7 +56,7 @@ export class CoreClient {
     };
   }
 
-  /** 注册 UI 请求处理器。前端在这里弹窗、拿用户的选择。 */
+  /** Register the UI request handler. This is where a frontend prompts and collects the answer. */
   onUiRequest(handler: UiRequestHandler): void {
     this.#uiHandler = handler;
   }
@@ -85,10 +86,10 @@ export class CoreClient {
     try {
       data = JSON.parse(line) as CoreEvent;
     } catch {
-      return; // 非 JSON 的行直接忽略
+      return; // Not a JSON line, ignore it
     }
 
-    // 命令回执：按 id 找到等待中的 Promise
+    // Command reply: find the waiting promise by id
     if (data.type === "response" && typeof data.id === "string") {
       const resolve = this.#pending.get(data.id);
       if (resolve) {
@@ -98,22 +99,22 @@ export class CoreClient {
       }
     }
 
-    // extension UI 请求
+    // An extension UI request
     if (data.type === "extension_ui_request") {
       void this.#handleUiRequest(data as UiRequest);
       return;
     }
 
-    // 其余都是事件
+    // Everything else is an event
     for (const listener of this.#eventListeners) listener(data);
   }
 
   async #handleUiRequest(request: UiRequest): Promise<void> {
-    // 广播式的方法照样交给处理器（前端可以显示通知），但不回话。
+    // Broadcast methods still reach the handler so a frontend can show them, but get no reply.
     const needsReply = DIALOG_METHODS.has(request.method);
 
     if (!this.#uiHandler) {
-      // 没人处理阻塞式请求的话，核心会一直卡着，所以直接回「取消」。
+      // With nobody to handle a blocking request the core would stall, so answer "cancelled".
       if (needsReply) {
         this.#transport.send(
           JSON.stringify({

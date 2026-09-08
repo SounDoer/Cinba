@@ -6,7 +6,7 @@ type ToolCallEvent = { toolName: string; input: unknown };
 type Ctx = { hasUI: boolean; ui: { confirm: (title: string, message: string) => Promise<boolean> } };
 type Handler = (event: ToolCallEvent, ctx: Ctx) => Promise<unknown>;
 
-/** 装个假的 pi，把权限门注册的 tool_call 处理器抓出来单独调用。 */
+/** Install a fake pi so the tool_call handler the gate registers can be called on its own. */
 function captureHandler(): Handler {
   let handler: Handler | undefined;
   const pi = {
@@ -15,39 +15,40 @@ function captureHandler(): Handler {
     },
   };
   (gate as (api: unknown) => void)(pi);
-  if (!handler) throw new Error("权限门没有注册 tool_call 处理器");
+  if (!handler) throw new Error("the permission gate registered no tool_call handler");
   return handler;
 }
 
-/** 造一个上下文。answer 为 undefined 表示不该被问到。 */
+/** Build a context. An undefined answer means the user must not be asked at all. */
 function makeCtx(hasUI: boolean, answer?: boolean): Ctx {
   return {
     hasUI,
     ui: {
       confirm: async () => {
-        if (answer === undefined) throw new Error("不该询问用户");
+        if (answer === undefined) throw new Error("the user must not be asked");
         return answer;
       },
     },
   };
 }
 
-test("没有界面时拦截，而不是放行", async () => {
-  // 安全闸门必须 fail-closed：联系不上负责人时默认拒绝，不是默认放行。
-  // 今天 RPC 模式下 hasUI 恒为 true，但若哪天把 core-host 用在无界面的自动化里，
-  // fail-open 会让所有工具静默通过——而且不报错。
+test("blocks when there is no UI, rather than allowing", async () => {
+  // A safety gate must fail closed: when the responsible party cannot be
+  // reached the default is to refuse, not to allow. hasUI is always true in
+  // RPC mode today, but if core-host is ever used for headless automation,
+  // failing open would let every tool pass silently — with no error either.
   const handler = captureHandler();
 
   const result = await handler({ toolName: "bash", input: { command: "rm -rf /" } }, makeCtx(false));
 
   assert.deepEqual(result, {
     block: true,
-    reason: "没有界面可供确认，默认拦截",
+    reason: "No UI available to confirm, so blocked by default",
   });
 });
 
-test("没有界面时，只读工具仍然放行", async () => {
-  // 只读工具不构成风险，拦下来只会让无界面场景彻底不可用。
+test("read-only tools still pass when there is no UI", async () => {
+  // Read-only tools carry no risk, and blocking them would make headless use impossible.
   const handler = captureHandler();
 
   const result = await handler({ toolName: "read", input: { file: "a.txt" } }, makeCtx(false));
@@ -55,16 +56,16 @@ test("没有界面时，只读工具仍然放行", async () => {
   assert.equal(result, undefined);
 });
 
-test("只读工具不打扰用户", async () => {
+test("read-only tools do not interrupt the user", async () => {
   const handler = captureHandler();
 
   for (const toolName of ["read", "glob", "grep"]) {
     const result = await handler({ toolName, input: {} }, makeCtx(true));
-    assert.equal(result, undefined, `${toolName} 不该被拦`);
+    assert.equal(result, undefined, `${toolName} must not be blocked`);
   }
 });
 
-test("用户答应就放行", async () => {
+test("an approval lets the call through", async () => {
   const handler = captureHandler();
 
   const result = await handler({ toolName: "bash", input: { command: "ls" } }, makeCtx(true, true));
@@ -72,10 +73,10 @@ test("用户答应就放行", async () => {
   assert.equal(result, undefined);
 });
 
-test("用户拒绝就拦截，并把理由带给模型", async () => {
+test("a refusal blocks the call and hands the model a reason", async () => {
   const handler = captureHandler();
 
   const result = await handler({ toolName: "bash", input: { command: "ls" } }, makeCtx(true, false));
 
-  assert.deepEqual(result, { block: true, reason: "用户拒绝了这次工具调用" });
+  assert.deepEqual(result, { block: true, reason: "The user denied this tool call" });
 });

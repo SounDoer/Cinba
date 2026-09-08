@@ -1,18 +1,19 @@
-// 「我的核心」的定义：怎么启动 Pi、用哪个 provider/model、加载哪些扩展。
-// 三端共用这一份，保证醒来的永远是同一个大脑。
+// The definition of "my core": how Pi starts, which provider and model it uses,
+// which extensions it loads. All frontends share this one file, so the brain
+// that wakes up is always the same one.
 
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export type CoreOptions = {
-  /** 工作目录。Pi 的会话按工作目录隔离，所以这决定了「当前是哪个项目」。 */
+  /** Working directory. Pi isolates sessions by it, so this decides which project is current. */
   cwd?: string;
-  /** 模型厂商。 */
+  /** Model provider. */
   provider?: string;
-  /** 模型 id。不填则用该 provider 的默认模型。 */
+  /** Model id. Left out, the provider's default model is used. */
   model?: string;
-  /** 额外要加载的 extension 文件的绝对路径。权限门是自带的，不用也不能在这里传。 */
+  /** Absolute paths of extra extension files to load. The permission gate comes built in and must not be passed here. */
   extensions?: string[];
 };
 
@@ -24,10 +25,12 @@ export type SpawnPlan = {
 const DEFAULT_PROVIDER = "deepseek";
 
 /**
- * 算出启动 Pi 要用的参数与环境变量。
+ * Work out the arguments and environment for starting Pi.
  *
- * 抽成纯函数是为了能测：真正的 spawn 依赖运行时状态，测不了，
- * 但「参数拼对没有」「环境变量带上没有」是能测的，而后者恰好出过一次事故。
+ * It is a pure function so it can be tested: the real spawn depends on runtime
+ * state and cannot be, but whether the arguments are assembled correctly and
+ * whether the environment carries what it must are both testable — and the
+ * latter is exactly where an incident once came from.
  */
 export function buildSpawnPlan(
   entry: string,
@@ -41,33 +44,37 @@ export function buildSpawnPlan(
     args.push("--model", options.model);
   }
 
-  // 权限门永远排第一个，且不经过 options——它是这个 agent 的固有属性，
-  // 不是调用方的选项。交给调用方传就意味着「谁忘了传谁裸奔」。
+  // The permission gate always comes first and never travels through options:
+  // it is an intrinsic property of this agent, not a caller's choice. Leaving
+  // it to callers would mean whoever forgets it runs unguarded.
   for (const extension of [gate, ...(options.extensions ?? [])]) {
     args.push("-e", extension);
   }
 
   return {
     args,
-    // 在 Electron 主进程里 process.execPath 是 electron.exe，不是 node.exe。
-    // 不设这个变量，electron.exe 会把 rpc-entry.js 当成一个 app 去加载后立刻退出
-    // （实测：exit code=0，stdout 只有一个换行，stderr 为空——完全静默）。
-    // 在普通 Node 下这个变量无害，所以两边都设，不做环境判断。
+    // Inside the Electron main process, process.execPath is electron.exe, not
+    // node.exe. Without this variable, electron.exe loads rpc-entry.js as if it
+    // were an app and exits immediately (measured: exit code 0, a single
+    // newline on stdout, empty stderr — completely silent). The variable is
+    // harmless under plain Node, so set it either way rather than branching.
     env: { ...baseEnv, ELECTRON_RUN_AS_NODE: "1" },
   };
 }
 
 /**
- * 启动 Pi 的 RPC 进程。
+ * Start Pi's RPC process.
  *
- * 用 Node 直接执行 Pi 的 rpc-entry，而不是 spawn "pi" 命令：
- * Windows 上 pi 实际是 pi.cmd，Node 18.20+ 禁止直接 spawn .cmd（报 EINVAL），
- * 用 shell: true 绕过则会触发 DEP0190 弃用警告。直接跑入口 JS 两个问题都没有。
+ * Node runs Pi's rpc-entry directly instead of spawning the "pi" command: on
+ * Windows pi is really pi.cmd, Node 18.20+ refuses to spawn a .cmd directly
+ * (EINVAL), and working around that with shell: true trips the DEP0190
+ * deprecation warning. Running the entry JS has neither problem.
  */
 export function startCore(options: CoreOptions = {}): ChildProcess {
-  // import.meta.resolve 返回 file:// URL，spawn 需要普通路径，所以转一道。
-  // 注意必须用 import.meta.resolve：该子路径只声明了 import 条件，
-  // CJS 的 require.resolve 会报 ERR_PACKAGE_PATH_NOT_EXPORTED。
+  // import.meta.resolve returns a file:// URL and spawn wants a plain path, so
+  // convert. It has to be import.meta.resolve: that subpath declares only the
+  // import condition, and CJS require.resolve fails with
+  // ERR_PACKAGE_PATH_NOT_EXPORTED.
   const entry = fileURLToPath(
     import.meta.resolve("@earendil-works/pi-coding-agent/rpc-entry"),
   );
@@ -78,9 +85,10 @@ export function startCore(options: CoreOptions = {}): ChildProcess {
 
   const plan = buildSpawnPlan(entry, gate, options);
 
-  // stderr 也走 pipe，不用 "inherit"：Windows 上的 Electron GUI 进程没有挂控制台，
-  // "inherit" 会让 Pi 的报错彻底消失（阶段 1b 有一个 bug 就因此难查）。
-  // 由调用方决定往哪儿转发。
+  // stderr is piped rather than "inherit": an Electron GUI process on Windows
+  // has no console attached, and "inherit" makes Pi's errors vanish entirely
+  // (one phase 1b bug was hard to find for exactly this reason). The caller
+  // decides where to forward it.
   return spawn(process.execPath, plan.args, {
     cwd: options.cwd ?? process.cwd(),
     stdio: ["pipe", "pipe", "pipe"],

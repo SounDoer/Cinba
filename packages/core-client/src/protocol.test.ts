@@ -2,10 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseClientMessage } from "./protocol.ts";
 
-test("认得四种客户端消息", () => {
-  assert.deepEqual(parseClientMessage({ type: "prompt", text: "你好" }), {
+test("the four client messages are recognized", () => {
+  assert.deepEqual(parseClientMessage({ type: "prompt", text: "hello" }), {
     type: "prompt",
-    text: "你好",
+    text: "hello",
   });
   assert.deepEqual(parseClientMessage({ type: "abort" }), { type: "abort" });
   assert.deepEqual(
@@ -18,21 +18,21 @@ test("认得四种客户端消息", () => {
   });
 });
 
-test("认得 list_dir", () => {
+test("list_dir is recognized", () => {
   assert.deepEqual(parseClientMessage({ type: "list_dir", path: "C:\\Users" }), {
     type: "list_dir",
     path: "C:\\Users",
   });
 });
 
-test("list_dir 的 path 必须是非空字符串", () => {
+test("list_dir requires a non-empty string path", () => {
   assert.equal(parseClientMessage({ type: "list_dir" }), undefined);
   assert.equal(parseClientMessage({ type: "list_dir", path: "" }), undefined);
   assert.equal(parseClientMessage({ type: "list_dir", path: 42 }), undefined);
 });
 
-test("字段类型不对的一律丢掉", () => {
-  // 网络来的东西不可信。宁可丢掉也不能带着错的类型往下走。
+test("anything with a wrong field type is dropped", () => {
+  // Anything off the network is untrusted. Better dropped than passed along with a wrong type.
   assert.equal(parseClientMessage({ type: "prompt", text: 123 }), undefined);
   assert.equal(parseClientMessage({ type: "respond_confirm", requestId: "u1" }), undefined);
   assert.equal(
@@ -42,11 +42,11 @@ test("字段类型不对的一律丢掉", () => {
   assert.equal(parseClientMessage({ type: "set_project", cwd: "" }), undefined);
 });
 
-test("空白的 prompt 不算数", () => {
+test("a blank prompt does not count", () => {
   assert.equal(parseClientMessage({ type: "prompt", text: "   " }), undefined);
 });
 
-test("不认识的东西丢掉，不崩", () => {
+test("unknown input is dropped rather than crashing", () => {
   assert.equal(parseClientMessage({ type: "rm -rf /" }), undefined);
   assert.equal(parseClientMessage(null), undefined);
   assert.equal(parseClientMessage("prompt"), undefined);

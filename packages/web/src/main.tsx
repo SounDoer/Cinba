@@ -1,6 +1,7 @@
-// 界面入口：连服务器、维护镜像账本、渲染。
+// The UI entry point: connect to the server, keep a mirror ledger, render.
 //
-// 这份代码同时服务于浏览器与 Electron 窗口——两边加载的是同一个页面。
+// This same code serves both the browser and the Electron window, which load
+// the very same page.
 
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -13,7 +14,7 @@ import "./style.css";
 
 const EMPTY: Snapshot = { entries: [], totalTokens: 0, totalCost: 0, busy: false };
 
-/** 页面从哪来就连回哪去，所以浏览器与 Electron 都不用配置地址。 */
+/** Connect back to wherever the page came from, so neither the browser nor Electron needs an address configured. */
 const SERVER_URL = `ws://${location.host}/ws`;
 
 function App() {
@@ -51,8 +52,9 @@ function App() {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [snapshot]);
 
-  // Esc 中止。必须挂在 window 上，不能挂在输入框上——回答期间输入框是 disabled 的，
-  // 禁用的元素收不到键盘事件。阶段 1b 的 GUI 踩过这个坑。
+  // Esc aborts. It has to hang on window rather than the textarea: the textarea
+  // is disabled while a reply is in flight, and disabled elements receive no
+  // keyboard events. The phase 1b GUI fell into exactly this hole.
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape" && snapshot.busy) {
@@ -75,7 +77,7 @@ function App() {
     <>
       <header>
         <button onClick={() => setPicking(true)}>
-          项目：{cwd.split(/[\\/]/).pop() || "…"}
+          Project: {cwd.split(/[\\/]/).pop() || "..."}
         </button>
         <span>
           {snapshot.totalTokens} tokens · ${snapshot.totalCost.toFixed(4)}
@@ -95,7 +97,7 @@ function App() {
       <footer>
         <textarea
           rows={3}
-          placeholder="说点什么（Enter 发送，Shift+Enter 换行）"
+          placeholder="Say something (Enter to send, Shift+Enter for a new line)"
           value={draft}
           disabled={snapshot.busy}
           onChange={(event) => setDraft(event.target.value)}
@@ -107,9 +109,9 @@ function App() {
           }}
         />
         <button onClick={send} disabled={snapshot.busy}>
-          发送
+          Send
         </button>
-        {snapshot.busy ? <button onClick={() => remoteRef.current?.abort()}>中止</button> : null}
+        {snapshot.busy ? <button onClick={() => remoteRef.current?.abort()}>Stop</button> : null}
       </footer>
 
       {picking ? (
@@ -124,8 +126,9 @@ function App() {
   );
 }
 
-// 热更新会重新执行本模块，而同一个容器不能重复 createRoot——
-// 复用已有的 root，否则开发时会出现「点了没反应」这类状态错乱。
+// Hot reload re-executes this module, and createRoot must not run twice on the
+// same container. Reuse the existing root, or development hits state confusion
+// that looks exactly like "clicking does nothing".
 const container = document.getElementById("root")!;
 const globals = globalThis as { __cinbaRoot?: ReturnType<typeof createRoot> };
 globals.__cinbaRoot ??= createRoot(container);

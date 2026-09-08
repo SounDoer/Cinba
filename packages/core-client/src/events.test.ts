@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createEventFolder, foldUiRequest } from "./events.ts";
 
-test("user 与 assistant 消息各拿到一个新 id", () => {
+test("user and assistant messages each get a fresh id", () => {
   const fold = createEventFolder();
 
   assert.deepEqual(fold({ type: "message_start", message: { role: "user" } }), [
@@ -13,23 +13,24 @@ test("user 与 assistant 消息各拿到一个新 id", () => {
   ]);
 });
 
-test("用户消息的正文在 message_start 里就已经完整，必须一并取出", () => {
-  // 助手消息的正文靠后续的 text_delta 一点点填，用户消息没有那个过程——
-  // 只在 message_start 出现这一次。漏掉就是个永远空着的气泡。
+test("a user message arrives complete in message_start, so take the text there", () => {
+  // An assistant message fills in through later text_delta events. A user
+  // message has no such process: it appears this once, in message_start.
+  // Miss it and you get a bubble that stays empty forever.
   const fold = createEventFolder();
 
   const actions = fold({
     type: "message_start",
-    message: { role: "user", content: [{ type: "text", text: "你好" }] },
+    message: { role: "user", content: [{ type: "text", text: "hello" }] },
   });
 
   assert.deepEqual(actions, [
     { type: "message_added", messageId: "m1", role: "user" },
-    { type: "text_appended", messageId: "m1", text: "你好" },
+    { type: "text_appended", messageId: "m1", text: "hello" },
   ]);
 });
 
-test("助手消息开始时正文为空，不产生多余的追加动作", () => {
+test("an assistant message starts empty and produces no stray append action", () => {
   const fold = createEventFolder();
 
   assert.deepEqual(fold({ type: "message_start", message: { role: "assistant", content: [] } }), [
@@ -37,37 +38,37 @@ test("助手消息开始时正文为空，不产生多余的追加动作", () =>
   ]);
 });
 
-test("toolResult 消息不进消息流（内容已在工具卡片上）", () => {
+test("toolResult messages stay out of the transcript, since the tool card already shows them", () => {
   const fold = createEventFolder();
 
   assert.deepEqual(fold({ type: "message_start", message: { role: "toolResult" } }), []);
 });
 
-test("text_delta 变成往当前消息追加文字", () => {
+test("text_delta becomes an append onto the current message", () => {
   const fold = createEventFolder();
   fold({ type: "message_start", message: { role: "assistant" } });
 
   const actions = fold({
     type: "message_update",
-    assistantMessageEvent: { type: "text_delta", delta: "好" },
+    assistantMessageEvent: { type: "text_delta", delta: "hi" },
   });
 
-  assert.deepEqual(actions, [{ type: "text_appended", messageId: "m1", text: "好" }]);
+  assert.deepEqual(actions, [{ type: "text_appended", messageId: "m1", text: "hi" }]);
 });
 
-test("thinking_delta 走单独的通道", () => {
+test("thinking_delta travels on its own channel", () => {
   const fold = createEventFolder();
   fold({ type: "message_start", message: { role: "assistant" } });
 
   const actions = fold({
     type: "message_update",
-    assistantMessageEvent: { type: "thinking_delta", delta: "让我想想" },
+    assistantMessageEvent: { type: "thinking_delta", delta: "let me think" },
   });
 
-  assert.deepEqual(actions, [{ type: "thinking_appended", messageId: "m1", text: "让我想想" }]);
+  assert.deepEqual(actions, [{ type: "thinking_appended", messageId: "m1", text: "let me think" }]);
 });
 
-test("不认识的内层事件被忽略", () => {
+test("unrecognized inner events are ignored", () => {
   const fold = createEventFolder();
 
   assert.deepEqual(
@@ -76,7 +77,7 @@ test("不认识的内层事件被忽略", () => {
   );
 });
 
-test("tool_execution_start 只能是待批准，绝不是已执行", () => {
+test("tool_execution_start means awaiting approval, never already executed", () => {
   const fold = createEventFolder();
 
   const actions = fold({
@@ -97,7 +98,7 @@ test("tool_execution_start 只能是待批准，绝不是已执行", () => {
   ]);
 });
 
-test("tool_execution_end 按 isError 决定终态，并抽出文本结果", () => {
+test("tool_execution_end picks the final status from isError and extracts the text result", () => {
   const fold = createEventFolder();
 
   const ok = fold({
@@ -105,23 +106,23 @@ test("tool_execution_end 按 isError 决定终态，并抽出文本结果", () =
     toolCallId: "call_1",
     toolName: "read",
     isError: false,
-    result: { content: [{ type: "text", text: "文件内容" }] },
+    result: { content: [{ type: "text", text: "file contents" }] },
   });
   assert.equal(ok[0].status, "done");
-  assert.equal(ok[0].result, "文件内容");
+  assert.equal(ok[0].result, "file contents");
 
   const bad = fold({
     type: "tool_execution_end",
     toolCallId: "call_2",
     toolName: "bash",
     isError: true,
-    result: { content: [{ type: "text", text: "用户拒绝了这次工具调用" }] },
+    result: { content: [{ type: "text", text: "The user denied this tool call" }] },
   });
   assert.equal(bad[0].status, "error");
-  assert.equal(bad[0].result, "用户拒绝了这次工具调用");
+  assert.equal(bad[0].result, "The user denied this tool call");
 });
 
-test("费用与 token 逐条累加", () => {
+test("cost and tokens accumulate across events", () => {
   const fold = createEventFolder();
 
   const first = fold({
@@ -137,21 +138,23 @@ test("费用与 token 逐条累加", () => {
   assert.deepEqual(second, [{ type: "usage_changed", totalTokens: 150, totalCost: 0.003 }]);
 });
 
-test("agent_start 就是「开始忙」", () => {
-  // 忙 / 不忙本来就能从事件流推出来。少了这一半，每个前端都得自己补一句
-  // busy:true——GUI 补过、TUI 补过、网页版还要再补。三遍就是抽象漏了一块。
+test("agent_start is what turns busy on", () => {
+  // Busy and idle are both derivable from the event stream. Without this half,
+  // every frontend has to patch busy:true in itself — once for the GUI, again
+  // for the TUI, and the web UI would have needed a third. Three times means
+  // the abstraction was missing a piece.
   const fold = createEventFolder();
 
   assert.deepEqual(fold({ type: "agent_start" }), [{ type: "busy_changed", busy: true }]);
 });
 
-test("agent_settled 解除忙碌", () => {
+test("agent_settled clears busy", () => {
   const fold = createEventFolder();
 
   assert.deepEqual(fold({ type: "agent_settled" }), [{ type: "busy_changed", busy: false }]);
 });
 
-test("confirm 类 UI 请求变成确认动作，其余不变成任何动作", () => {
+test("a confirm UI request becomes a confirm action; other kinds become nothing", () => {
   assert.deepEqual(
     foldUiRequest({ type: "extension_ui_request", id: "u1", method: "confirm" }),
     { type: "confirm_requested", requestId: "u1" },

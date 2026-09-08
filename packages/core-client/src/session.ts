@@ -1,8 +1,11 @@
-// 会话账本：吃界面动作，维护「现在界面应该长什么样」。
+// The session ledger: consumes view actions and maintains what the UI should
+// currently look like.
 //
-// 这是唯一真相。渲染层只持有一份副本，任何时候都能靠 snapshot() 重建，
-// 所以开发期间刷新界面不会丢对话。
-// 依据：VS Code 对 webview 的官方指导——view 无状态，状态归 host。
+// This is the single source of truth. The view holds only a copy and can be
+// rebuilt from snapshot() at any time, so reloading the UI during development
+// does not lose the conversation.
+// Basis: VS Code's official webview guidance — the view is stateless, the host
+// owns the state.
 
 import type { ToolStatus, ViewAction } from "./events.ts";
 
@@ -21,11 +24,11 @@ export type ToolEntry = {
   args?: unknown;
   status: ToolStatus;
   result?: string;
-  /** 有值表示这张卡片正等着用户点允许/拒绝，值是回应时要带的请求 id。 */
+  /** Set while this card awaits an allow/deny click; the value is the request id to answer with. */
   confirmRequestId?: string;
 };
 
-/** 系统提示，例如「已中止」。不是谁说的话，单独一类。 */
+/** A system notice such as "aborted". Nobody said it, so it gets its own kind. */
 export type NoticeEntry = {
   kind: "notice";
   text: string;
@@ -46,11 +49,12 @@ export type Session = {
 };
 
 /**
- * @param initial 用一份快照开局。客户端侧持有镜像账本时用得上：
- *                连上服务器先拿一份快照，之后跟着增量动作走。
+ * @param initial Start from an existing snapshot. Useful for the mirror ledger
+ *                on the client side: take a snapshot on connect, then follow
+ *                the incremental actions.
  */
 export function createSession(initial?: Snapshot): Session {
-  // 复制一份，免得调用方后续改动那个快照影响到这里。
+  // Copy, so later edits by the caller to that snapshot cannot reach in here.
   const entries: Entry[] = (initial?.entries ?? []).map((entry) => ({ ...entry }));
   let totalTokens = initial?.totalTokens ?? 0;
   let totalCost = initial?.totalCost ?? 0;
@@ -103,7 +107,7 @@ export function createSession(initial?: Snapshot): Session {
             existing.status = action.status;
             if (action.args !== undefined) existing.args = action.args;
             if (action.result !== undefined) existing.result = action.result;
-            // 状态一旦离开 pending，说明确认已有结果，标记该清了。
+            // Leaving pending means the confirmation resolved; clear the marker.
             if (action.status !== "pending") existing.confirmRequestId = undefined;
             return;
           }
@@ -120,8 +124,9 @@ export function createSession(initial?: Snapshot): Session {
         }
 
         case "confirm_requested": {
-          // UI 请求不带 toolCallId，只能挂到最近一张待批准的卡片上。
-          // Pi 在确认期间是阻塞的，正常情况下同时最多一个待确认项。
+          // The UI request carries no toolCallId, so attach it to the most
+          // recent pending card. Pi blocks while confirming, so under normal
+          // conditions at most one confirmation is outstanding.
           for (let i = entries.length - 1; i >= 0; i--) {
             const entry = entries[i]!;
             if (entry.kind === "tool" && entry.status === "pending") {

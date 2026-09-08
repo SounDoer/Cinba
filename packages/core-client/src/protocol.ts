@@ -1,12 +1,14 @@
-// 服务器与客户端之间的线上协议。
+// The wire protocol between server and client.
 //
-// 与 Pi 的 JSONL 协议是两回事：那个走 transport.ts / client.ts，携带 Pi 的原始事件；
-// 这个携带已经折叠好的界面动作，层级更高。两边共用这一份定义，免得各写一遍慢慢对不上。
+// Distinct from Pi's JSONL protocol: that one goes through transport.ts and
+// client.ts and carries Pi's raw events. This one carries already-folded view
+// actions and sits a level higher. Both sides share this single definition so
+// the two ends cannot drift apart.
 
 import type { ViewAction } from "./events.ts";
 import type { Snapshot } from "./session.ts";
 
-/** 客户端 → 服务器。 */
+/** Client to server. */
 export type ClientMessage =
   | { type: "prompt"; text: string }
   | { type: "abort" }
@@ -14,19 +16,21 @@ export type ClientMessage =
   | { type: "set_project"; cwd: string }
   | { type: "list_dir"; path: string };
 
-/** 服务器 → 客户端。 */
+/** Server to client. */
 export type ServerMessage =
   | { type: "snapshot"; snapshot: Snapshot; cwd: string }
   | { type: "actions"; actions: ViewAction[] }
   | { type: "reset"; cwd: string }
-  /** parent 为上一级路径；已在根目录时为 null。dirs 只含子目录名，不含文件。 */
+  /** parent is the path one level up, or null at the root. dirs holds subdirectory names only, no files. */
   | { type: "dir_listing"; path: string; parent: string | null; dirs: string[] };
 
 /**
- * 校验客户端来的消息，不认识就返回 undefined 让调用方丢掉。
+ * Validate a message from a client; return undefined for anything unrecognized
+ * so the caller can drop it.
  *
- * 网络上来的东西一律不可信，所以逐个字段查类型——哪怕现在只监听回环地址。
- * 等 3b 真的对外开口时，这道检查已经在了。
+ * Anything arriving over the network is untrusted, so every field gets a type
+ * check — even though we currently listen on the loopback address only. By the
+ * time 3b opens a real door outward, this check is already in place.
  */
 export function parseClientMessage(raw: unknown): ClientMessage | undefined {
   if (typeof raw !== "object" || raw === null) return undefined;

@@ -1,11 +1,14 @@
-// Cinba 本机核心服务。
+// Cinba's local core service.
 //
-// Pi 住在这里，会话账本也在这里——它是唯一真相。GUI 与（3b 之后的）网页都是它的客户端。
+// Pi lives here and so does the session ledger, which makes this the single
+// source of truth. The GUI and (from 3b on) the web UI are both its clients.
 //
-// 只监听 127.0.0.1。这是本阶段没有网络安全面的唯一依据，任何时候都不得改成 0.0.0.0——
-// 这个服务能在本机执行任意命令，对外开口是另一个量级的问题，属于 3b 的内容。
+// It listens on 127.0.0.1 only. That is the sole reason this phase has no
+// network attack surface, and it must never become 0.0.0.0: this service can
+// run any command on this machine, so opening a door outward is a different
+// order of problem and belongs to 3b.
 //
-// 用法：node <仓库路径>/packages/core-server/src/index.ts
+// Usage: node <repo>/packages/core-server/src/index.ts
 
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
@@ -30,10 +33,10 @@ import type { ServerMessage, Session, ViewAction } from "@cinba/core-client";
 const HOST = "127.0.0.1";
 const PORT = 4517;
 
-/** 文字增量逐 token 到达，攒一批再发，避免每个字一次网络往返。 */
+/** Text deltas arrive token by token; batch them so each character is not its own round trip. */
 const FLUSH_INTERVAL_MS = 30;
 
-/** 界面构建产物的所在目录。按仓库布局相对定位，不经过包解析。 */
+/** Where the built UI lives. Located relative to the repo layout, not through package resolution. */
 const WEB_DIST = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
 
 const MIME: Record<string, string> = {
@@ -45,13 +48,14 @@ const MIME: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
-/** 提供界面的静态文件。 */
+/** Serve the UI's static files. */
 async function serveStatic(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const url = new URL(request.url ?? "/", "http://localhost");
   const requested = url.pathname === "/" ? "/index.html" : url.pathname;
 
-  // 防目录穿越：拼完再检查是否仍在 WEB_DIST 之下。
-  // 现在只监听回环地址，但这道检查该在 3b-2 开对外通道之前就位。
+  // Guard against path traversal: join first, then check the result is still
+  // under WEB_DIST. We listen on loopback only today, but this check should be
+  // in place before 3b-2 opens a channel outward.
   const filePath = normalize(join(WEB_DIST, requested));
   if (!filePath.startsWith(WEB_DIST + sep) && filePath !== WEB_DIST) {
     response.writeHead(403).end("forbidden");
@@ -67,7 +71,7 @@ async function serveStatic(request: IncomingMessage, response: ServerResponse): 
   } catch {
     response
       .writeHead(404)
-      .end("界面还没构建。请先跑：npm run build --workspace @cinba/web");
+      .end("The UI is not built yet. Run: npm run build --workspace @cinba/web");
   }
 }
 
@@ -77,13 +81,13 @@ let client: CoreClient | undefined;
 let session: Session = createSession();
 let cwd = homedir();
 
-/** 待回应的权限确认：requestId → 把答案交回给 CoreClient 的那个函数。 */
+/** Outstanding permission confirmations: requestId to the function that hands the answer back to CoreClient. */
 const pendingConfirms = new Map<string, (confirmed: boolean) => void>();
 
 let outbox: ViewAction[] = [];
 let flushTimer: NodeJS.Timeout | undefined;
 
-// ---- 工作目录的记忆 ----
+// ---- Remembering the working directory ----
 
 const configDir = join(homedir(), ".cinba");
 
@@ -96,7 +100,7 @@ function loadCwd(): string {
     const parsed = JSON.parse(readFileSync(configPath(), "utf8")) as { cwd?: unknown };
     if (typeof parsed.cwd === "string" && existsSync(parsed.cwd)) return parsed.cwd;
   } catch {
-    // 首次启动没有这个文件，属正常情况。
+    // On first start the file does not exist, which is normal.
   }
   return homedir();
 }
@@ -106,11 +110,11 @@ function saveCwd(next: string): void {
     mkdirSync(configDir, { recursive: true });
     writeFileSync(configPath(), JSON.stringify({ cwd: next }, null, 2), "utf8");
   } catch {
-    // 记不住不影响这一次使用，不值得中断服务。
+    // Failing to remember does not affect this run, and is not worth interrupting the service for.
   }
 }
 
-// ---- 广播 ----
+// ---- Broadcasting ----
 
 function sendTo(socket: WebSocket, message: ServerMessage): void {
   socket.send(JSON.stringify(message));
@@ -121,7 +125,7 @@ function broadcast(message: ServerMessage): void {
   for (const socket of clients) socket.send(text);
 }
 
-/** 记进账本，并排队广播。 */
+/** Record into the ledger and queue for broadcast. */
 function emit(actions: ViewAction[]): void {
   for (const action of actions) session.apply(action);
   outbox.push(...actions);
@@ -137,7 +141,7 @@ function emit(actions: ViewAction[]): void {
 
 // ---- Pi ----
 
-/** 起一个新的 Pi 进程，并把账本清空。切换工作目录时也走这里。 */
+/** Start a fresh Pi process and clear the ledger. Switching working directory comes through here too. */
 function startSession(): void {
   void client?.close();
   pendingConfirms.clear();
@@ -160,8 +164,8 @@ function startSession(): void {
 
     emit([action]);
 
-    // 一直挂着，直到某个客户端把用户的选择送回来。
-    // 核心此刻正阻塞等待，这正是权限门起作用的地方。
+    // Hang here until some client sends the user's answer back. The core is
+    // blocked meanwhile, which is exactly where the permission gate does its work.
     const confirmed = await new Promise<boolean>((resolve) => {
       pendingConfirms.set(request.id, resolve);
     });
@@ -171,7 +175,7 @@ function startSession(): void {
   client = next;
 }
 
-// ---- 客户端来的消息 ----
+// ---- Messages from clients ----
 
 function handle(raw: string): void {
   let parsed: unknown;
@@ -182,27 +186,28 @@ function handle(raw: string): void {
   }
 
   const message = parseClientMessage(parsed);
-  if (!message) return; // 不认识的一律丢掉
+  if (!message) return; // Anything unrecognized is dropped
 
   switch (message.type) {
     case "prompt":
-      // 立刻置忙，不等 agent_start 从 Pi 那头回来。
+      // Go busy immediately instead of waiting for agent_start to come back from Pi.
       emit([{ type: "busy_changed", busy: true }]);
       void client?.prompt(message.text);
       return;
 
     case "abort":
       void client?.abort();
-      emit([{ type: "notice", text: "已中止" }]);
+      emit([{ type: "notice", text: "aborted" }]);
       return;
 
     case "respond_confirm": {
       const resolve = pendingConfirms.get(message.requestId);
-      if (!resolve) return; // 已经有人先答过了
+      if (!resolve) return; // Somebody already answered first
       pendingConfirms.delete(message.requestId);
 
-      // 用户点了允许：卡片进入「执行中」。这是 running 状态的唯一来源——
-      // Pi 在确认与执行完成之间不发任何事件。
+      // The user allowed it, so the card moves to running. This is the only
+      // source of the running status: Pi emits nothing between the
+      // confirmation and the end of execution.
       if (message.confirmed) {
         const pending = session
           .snapshot()
@@ -229,14 +234,15 @@ function handle(raw: string): void {
       cwd = message.cwd;
       saveCwd(cwd);
       startSession();
-      // 先发新快照再发 reset：客户端收到 reset 时手里的快照必须已经是新的。
+      // Snapshot first, then reset: by the time a client sees reset, the snapshot it holds must already be the new one.
       broadcast({ type: "snapshot", snapshot: session.snapshot(), cwd });
       broadcast({ type: "reset", cwd });
       return;
 
     case "list_dir": {
-      // 浏览器拿不到本地路径（刻意的安全限制），所以由服务器列目录、界面只负责画。
-      // 「能列目录」没有增加新能力——这个服务本来就能执行任意命令。
+      // A browser cannot see local paths, deliberately, so the server lists
+      // directories and the UI only draws them. Listing directories adds no new
+      // capability: this service can already run any command.
       let dirs: string[] = [];
       try {
         dirs = readdirSync(message.path, { withFileTypes: true })
@@ -244,7 +250,7 @@ function handle(raw: string): void {
           .map((item) => item.name)
           .sort();
       } catch {
-        // 读不了（不存在、没权限）就当空目录，界面显示为空即可。
+        // Unreadable (missing, no permission) counts as empty; the UI can just show nothing.
       }
       const parent = dirname(message.path);
       broadcast({
@@ -258,39 +264,41 @@ function handle(raw: string): void {
   }
 }
 
-// ---- 起服务 ----
+// ---- Starting the service ----
 
 cwd = loadCwd();
 startSession();
 
-// WebSocket 与静态文件共用一个端口：界面从这里加载，也从这里连回来。
+// The WebSocket and the static files share one port: the UI loads from here and connects back here.
 const httpServer = createServer((request, response) => void serveStatic(request, response));
-// 给 WebSocket 一个专属路径，静态文件走其余路径。
-// 这样开发时 Vite 只需把 /ws 代理到这里，页面本身仍由 Vite 提供（保留热更新）。
+// The WebSocket gets its own path and static files take the rest, so in
+// development Vite only has to proxy /ws here while still serving the page
+// itself, which keeps hot reload.
 const server = new WebSocketServer({ server: httpServer, path: "/ws" });
 
 httpServer.listen(PORT, HOST, () => {
-  console.log(`[cinba] 界面 http://${HOST}:${PORT}`);
-  console.log(`[cinba] 工作目录 ${cwd}`);
+  console.log(`[cinba] UI at http://${HOST}:${PORT}`);
+  console.log(`[cinba] working directory ${cwd}`);
 });
 
 server.on("connection", (socket: WebSocket) => {
   clients.add(socket);
-  console.log(`[cinba] 客户端接入，当前 ${clients.size} 个`);
+  console.log(`[cinba] client connected, ${clients.size} now`);
 
-  // 新连接先拿一份完整快照。中途连进来的客户端靠这个补上错过的内容——
-  // 已经流过去的事件是追不回来的，这就是账本必须在服务器侧的原因。
+  // A new connection gets a full snapshot first. That is how a client joining
+  // midway catches up on what it missed: events already streamed cannot be
+  // recovered, which is precisely why the ledger has to live on the server.
   sendTo(socket, { type: "snapshot", snapshot: session.snapshot(), cwd });
 
   socket.on("message", (data: unknown) => handle(String(data)));
   socket.on("close", () => {
     clients.delete(socket);
-    console.log(`[cinba] 客户端断开，当前 ${clients.size} 个`);
+    console.log(`[cinba] client disconnected, ${clients.size} left`);
   });
 });
 
 function shutdown(): void {
-  console.log("\n[cinba] 正在关闭，回收 Pi 子进程");
+  console.log("\n[cinba] shutting down, reclaiming the Pi child process");
   void client?.close();
   server.close();
   httpServer.close();

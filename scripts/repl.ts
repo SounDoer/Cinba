@@ -1,6 +1,7 @@
-// 阶段 1a 的端到端验证：把 core-host + core-client + 权限门串起来。
+// The phase 1a end-to-end check: core-host, core-client and the permission
+// gate strung together.
 //
-// 用法：node scripts/repl.ts "你的问题"
+// Usage: node scripts/repl.ts "your question"
 
 import { createInterface } from "node:readline/promises";
 import { startCore } from "@cinba/core-host";
@@ -8,7 +9,7 @@ import { CoreClient, StdioTransport } from "@cinba/core-client";
 
 const child = startCore();
 
-// startCore 把 stderr 交给调用方处理，这里原样转到终端。
+// startCore leaves stderr to the caller; forward it to the terminal as is.
 child.stderr?.setEncoding("utf8");
 child.stderr?.on("data", (chunk: string) => process.stderr.write(chunk));
 
@@ -16,16 +17,16 @@ const client = new CoreClient(new StdioTransport(child));
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 
-// 权限确认：核心问什么，我们就在终端问用户
+// Permission confirmation: whatever the core asks, we ask the user in the terminal
 client.onUiRequest(async (request) => {
   if (request.method === "confirm") {
-    console.log(`\n⚠️  ${String(request.title ?? "需要确认")}`);
+    console.log(`\n⚠️  ${String(request.title ?? "confirmation needed")}`);
     console.log(String(request.message ?? ""));
-    const answer = await rl.question("允许？(y/N) ");
+    const answer = await rl.question("Allow? (y/N) ");
     return { confirmed: answer.trim().toLowerCase() === "y" };
   }
   if (request.method === "notify") {
-    console.log(`[通知] ${String(request.message ?? "")}`);
+    console.log(`[notice] ${String(request.message ?? "")}`);
     return { cancelled: true };
   }
   return { cancelled: true };
@@ -36,7 +37,7 @@ client.onEvent((event) => {
     console.log(`\n🔧 ${String(event.toolName)}`);
   }
   if (event.type === "agent_settled") {
-    console.log("\n─── 完成 ───");
+    console.log("\n--- done ---");
     void client.close().then(() => rl.close());
   }
   if (event.type === "message_end") {
@@ -47,4 +48,4 @@ client.onEvent((event) => {
   }
 });
 
-await client.prompt(process.argv[2] ?? "你好");
+await client.prompt(process.argv[2] ?? "hello");

@@ -1,33 +1,36 @@
-// 消息流。三种条目：消息、工具卡片、系统提示。
+// The transcript. Three kinds of entry: messages, tool cards, system notices.
 //
-// 与阶段 1b 的手写 DOM 版最大的不同：这里不做增量更新，整份从快照渲染，
-// 由 React 去 diff。因此不再需要 textNodes / toolNodes 那些节点簿记。
+// The big difference from the hand-written DOM version in phase 1b: nothing
+// updates incrementally here. The whole thing renders from the snapshot and
+// React does the diffing, so the textNodes / toolNodes bookkeeping is gone.
 
 import Markdown from "react-markdown";
 import type { Entry, MessageEntry, NoticeEntry, ToolEntry } from "@cinba/core-client";
 
 const STATUS_LABEL: Record<string, string> = {
-  pending: "待批准",
-  running: "执行中",
-  done: "完成",
-  error: "被拒绝或出错",
+  pending: "awaiting approval",
+  running: "running",
+  done: "done",
+  error: "denied or failed",
 };
 
 function Message({ entry }: { entry: MessageEntry }) {
   return (
     <div className={`entry ${entry.role}`}>
-      <div className="role">{entry.role === "user" ? "你" : "助手"}</div>
+      <div className="role">{entry.role === "user" ? "You" : "Assistant"}</div>
 
       {entry.thinking ? (
         <details className="thinking">
-          <summary>思考过程</summary>
+          <summary>Thinking</summary>
           <pre>{entry.thinking}</pre>
         </details>
       ) : null}
 
       {/*
-        react-markdown 默认不允许原始 HTML，且构建的是 React 节点树而不是往 DOM 里塞字符串。
-        模型输出的 <script> 只会显示成文字——这正是阶段 1b 推迟 Markdown 的那个顾虑的解法。
+        react-markdown disallows raw HTML by default and builds a React node
+        tree rather than pushing strings into the DOM. A <script> in model
+        output only ever shows up as text, which is the answer to the very
+        concern that made phase 1b postpone Markdown.
       */}
       <Markdown>{entry.text}</Markdown>
     </div>
@@ -59,10 +62,10 @@ function ToolCard({
       {requestId ? (
         <div className="tool-confirm">
           <button className="allow" onClick={() => onRespond(requestId, true)}>
-            允许
+            Allow
           </button>
           <button className="deny" onClick={() => onRespond(requestId, false)}>
-            拒绝
+            Deny
           </button>
         </div>
       ) : null}
@@ -87,7 +90,7 @@ export function Transcript({
           return <ToolCard key={entry.toolCallId} entry={entry} onRespond={onRespond} />;
         }
         const notice = entry as NoticeEntry;
-        // 系统提示没有天然的 id，用序号兜底——它只追加不修改，序号是稳定的。
+        // A notice has no natural id, so fall back to its index: notices are only appended, never edited, so the index is stable.
         return (
           <div className="notice" key={`notice-${index}`}>
             {notice.text}
