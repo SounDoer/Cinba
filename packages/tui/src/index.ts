@@ -696,6 +696,15 @@ socket.addEventListener("error", () => {
 });
 
 socket.addEventListener("close", () => {
+  // Exit rather than wait and reconnect. Reconnecting was considered on
+  // 2026-09-08 and deferred: it would want backoff, a re-landing on the same
+  // conversation, and a locked input meanwhile — worth it only once restarting
+  // the service under a running terminal becomes a habit rather than a one-off.
+  //
+  // Note this fires the moment Ctrl+C is pressed in the service's window, not
+  // when its "Terminate batch job (Y/N)?" is answered: the console delivers
+  // Ctrl+C to every process in the group, so the service is already gone while
+  // cmd.exe is still asking about its own script.
   tui.stop();
   console.error("The Cinba service went away.");
   process.exit(1);
