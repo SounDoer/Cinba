@@ -352,6 +352,7 @@ node scripts/repl.ts "运行 ls 命令，告诉我当前目录下有什么"
 | RPC 命令 `get_entries`（含 `since`） | 打开会话重建 + 每轮对账 | 打开一条有历史的会话 | 半吵闹：历史空白，或对账每轮报漂移 |
 | RPC 命令 `new_session` / `switch_session` / `set_session_name` | 新建会话 | 新建一条会话并说一句 | 吵闹 |
 | 事件流 `agent_start` / `agent_settled` / `message_*` / `tool_execution_*` | `core-client/events.ts` | 对话一次，看流式与忙碌状态 | 半吵闹：输入框不解锁，或不流式 |
+| **Pi 在 stdin 关闭时自行退出**（`process.stdin.on("end")` → shutdown） | 子进程的回收**完全靠它** | 见下方「子进程回收」 | ⚠️ **半安静**：core-server 每被强杀一次就漏若干个 Pi 进程，机器越用越慢，但不报错 |
 
 **唯一会安静失效的仍然只有权限门**，所以那一条永远排第一，且必须手工做：
 
@@ -360,6 +361,21 @@ node scripts/repl.ts "run the ls command"     # 出现确认时答 n
 ```
 
 必须同时看到：命令没执行（`isError` 为 true），且模型知道自己被拒了。
+
+**子进程回收依赖 Pi 的这一条行为，不是我们自己做的。** core-server 的 `shutdown()`
+只在优雅退出时跑；被强杀、崩溃、或关掉 `cinba.cmd` 窗口时它跑不到。真正兜底的是：
+父进程一死，子进程的 stdin 管道 EOF，Pi 自己退出。
+
+2026-09-08 实测（开了 4 个会话、用 `taskkill /F` 强杀服务、不给任何 handler 机会）：
+
+```
+pi processes while running: [ 43708, 45684, 56152, 45128 ]
+force-killing the server, no handlers
+  after 1000ms more, pi processes: []
+```
+
+**验证方法**：起服务、开两三个会话、`taskkill /F` 杀掉服务进程，
+一两秒后确认没有 `rpc-entry` 的 node 进程残留。
 
 其余各条的失败都是吵闹的——起不来、列表空、历史白——跑一遍 GUI 就会撞见。
 `node --test "packages/*/src/*.test.ts"` 覆盖的是我们自己那一半（折叠、协议、拼参数），
