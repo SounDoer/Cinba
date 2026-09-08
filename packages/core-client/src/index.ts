@@ -1,3 +1,5 @@
+export { COMMANDS, isCommand, matchCommands } from "./commands.ts";
+export type { Command, CommandId } from "./commands.ts";
 export { CoreClient } from "./client.ts";
 export type {
   CoreEvent,

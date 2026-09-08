@@ -34,12 +34,16 @@ import type {
   TUI,
 } from "@earendil-works/pi-tui";
 import {
+  COMMANDS,
   createSession,
+  isCommand,
+  matchCommands,
   RemoteSession,
   sessionSubtitle,
   sessionTitle,
 } from "@cinba/core-client";
 import type {
+  Command,
   Entry,
   Session,
   SessionSummary,
@@ -174,11 +178,31 @@ class Transcript implements Component {
   }
 }
 
+/**
+ * The input line, plus the command menu that appears above it.
+ *
+ * Input has no hook for "the text changed", so the menu is refreshed here,
+ * where keystrokes already pass through on their way in. That is cheaper than
+ * swapping in Editor, which does support completion providers but brings a lot
+ * else with it.
+ */
 class PromptInput implements Component {
   readonly input = new Input();
+  #hints: Command[] = [];
 
   handleInput(data: string): void {
     this.input.handleInput(data);
+    // Typing a slash opens the menu; typing on narrows it; deleting the slash closes it.
+    this.#hints = matchCommands(this.input.getValue());
+  }
+
+  /** The command Enter would run, if any. */
+  pending(): Command | undefined {
+    return this.#hints[0];
+  }
+
+  clearHints(): void {
+    this.#hints = [];
   }
 
   invalidate(): void {
@@ -186,7 +210,18 @@ class PromptInput implements Component {
   }
 
   render(width: number): string[] {
-    return [`${GREEN}${BOLD}You:${RESET}`, ...this.input.render(width)];
+    const menu: string[] = [];
+    for (const [index, command] of this.#hints.entries()) {
+      // The first is what Enter takes, so it is marked: otherwise the effect of
+      // pressing Enter would be guesswork.
+      const line =
+        index === 0
+          ? `${MAGENTA}> /${command.name}${RESET}  ${DIM}${command.summary}${RESET}`
+          : `${DIM}  /${command.name}  ${command.summary}${RESET}`;
+      menu.push(...wrapTextWithAnsi(line, width));
+    }
+
+    return [...menu, `${GREEN}${BOLD}You:${RESET}`, ...this.input.render(width)];
   }
 }
 
@@ -204,7 +239,7 @@ class StatusBar implements Component {
     // Highlight while busy: this line sits pinned at the bottom of a fast-scrolling screen, and all-dim means invisible.
     const hint = this.busy
       ? `${YELLOW}${BOLD}⏳ answering - press Esc to stop${RESET}`
-      : `${DIM}^O conv · ^P model · ^C exit${RESET}`;
+      : `${DIM}/ for commands · ^C exit${RESET}`;
     const model = this.model ? `${DIM} · ${this.model}${RESET}` : "";
     // Truncated by display columns as well; see the note in Transcript.render.
     return [truncateToWidth(`${usage}${model}    ${hint}`, width)];
@@ -624,6 +659,29 @@ socket.addEventListener("close", () => {
 
 // ---- Interaction ----
 
+/** Carry out one of Cinba's own commands. What it means here; the catalogue says which exist. */
+function runCommand(command: Command): void {
+  switch (command.id) {
+    case "sessions":
+      remote.listSessions();
+      return;
+    case "model":
+      remote.listModels();
+      return;
+    case "new":
+      // The terminal's rule throughout: you are in the directory you started in.
+      remote.createSession(process.cwd());
+      return;
+    case "help":
+      transcript.append("");
+      for (const entry of COMMANDS) {
+        transcript.append(`${MAGENTA}/${entry.name}${RESET}  ${DIM}${entry.summary}${RESET}`);
+      }
+      tui.requestRender();
+      return;
+  }
+}
+
 promptInput.input.onSubmit = (value: string) => {
   // No new input while answering, and the box is deliberately NOT cleared:
   // whatever the user typed during streaming has to survive, or half the point
@@ -631,6 +689,20 @@ promptInput.input.onSubmit = (value: string) => {
   if (busy || confirming) return;
   const text = value.trim();
   if (text === "") return;
+
+  if (isCommand(text)) {
+    const command = matchCommands(text)[0];
+    promptInput.input.setValue("");
+    promptInput.clearHints();
+    if (command) {
+      runCommand(command);
+    } else {
+      // Say so rather than sending it to the model: a mistyped command is not a question.
+      applyAction({ type: "notice", text: `no such command: ${text}` });
+    }
+    return;
+  }
+
   promptInput.input.setValue("");
 
   // Go busy immediately rather than waiting for the signal to come back over
@@ -656,8 +728,9 @@ function exit(): void {
 tui.addInputListener((data: string) => {
   if (matchesKey(data, "ctrl+c")) exit();
 
-  // The two things the GUI puts in its header. Not available mid-answer, for
-  // the same reason the GUI disables them: do not swap brains mid-sentence.
+  // Accelerators for two of the commands. The slash menu is the discoverable
+  // way in; these stay for the hands that already know them. Not available
+  // mid-answer, for the same reason the GUI disables its header buttons.
   if (matchesKey(data, "ctrl+o") && !busy && !confirming) {
     remote.listSessions();
     return true;
