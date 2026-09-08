@@ -118,7 +118,7 @@ Cinba/
 |---|---|
 | 核心用 Pi，不 fork | 两个动机都不需要改 Pi 源码；fork 要自扛上游更新 |
 | GUI 用 Electron 而非 Tauri | Pi 核心是 Node，Electron 主进程自带 Node 运行时，拉起子进程天然顺畅；Tauri 需塞 Node sidecar，自找麻烦。已有的 Tauri 前端经验（Web 技术栈）可平移 |
-| 从第一天就走进程边界 + 协议 | 阶段 3 远程化的前提；同时所有事件变成可读 JSON，正好服务于"搞懂原理" |
+| 从第一天就走进程边界 + 协议 | 原因写于阶段 0：阶段 3 远程化的前提；同时所有事件变成可读 JSON，正好服务于"搞懂原理"。**2026-09-08 重新审视**：`docs/rpc.md` 建议 Node 应用直接 import `AgentSession` 而不是起子进程，而 3a 之后前端与 Pi 之间本就隔着 WebSocket，所以"为了远程化"这条理由已部分失效。**结论仍是维持**，但换成两条更硬的理由：①**隔离**——多会话之后，一条对话把 Pi 搞崩不该带走其它正在跑的；②**契约稳定性**——RPC 是有文档的协议，`AgentSession` 是"去看源码"。将来若要做登录或注册自定义 provider，那些只有导出 API 够得着，届时是"要不要为这一个功能开一条更宽的依赖"，不是"要不要换架构" |
 | TUI 自己写，不用 Pi 原生 CLI | 保证两端共用同一套核心定义与协议层；`pi-tui` 已提供 Editor、Markdown、SelectList，最难的部分不用自己造 |
 | `core-host` 单独成包 | 保证"我的 agent"只有一处定义，避免 GUI 和 TUI 逐渐分化 |
 | 权限门由 `core-host` 无条件挂载 | 它是 agent 的固有属性而非界面功能。交给调用方传，就意味着某个调用方忘了传就会裸奔 |
@@ -340,12 +340,26 @@ node scripts/repl.ts "运行 ls 命令，告诉我当前目录下有什么"
 这个代价是有意付的——自己造会话存储要写的代码远多于接线，而且不会做得比 Pi 好——
 但防御必须跟上。**升级 Pi 之后照这张表过一遍。**
 
+**表里的依赖不是同一个风险等级，分两档：**
+
+- **① 有文档的公开协议**（RPC 命令、事件流、`extension_ui_request` 对话框通道）。
+  Pi 的 `docs/rpc.md` 逐条记录，开篇写明它的用途是「embedding the agent in other
+  applications, IDEs, or **custom UIs**」——我们正是它写明的目标用户，走的是正门。
+  我们用到的每一条 RPC 命令都在那份文档里。
+- **② 只有源码的导出 API**（`SessionManager`、将来若用到的 `ModelRuntime`）。
+  文档对这条路的说法是「see `src/core/agent-session.ts`」，也就是没有协议层面的承诺。
+  **同样是 `0.x` 版本，一个写下来的协议比一个内部类更不容易在小版本里变形。**
+
+所以判断要不要为某个新功能引入依赖时，先问它落在哪一档：**① 基本等于接线，
+② 是一次要单独权衡的决定**。到目前为止 ② 只有一处（`SessionManager.list`，为了不起 Pi
+就能列会话），那是个先例，也是个该谨慎对待的先例。
+
 | 依赖的接口 | 用在哪 | 怎么验 | 失效时的症状 |
 |---|---|---|---|
 | `pi.on("tool_call")` / `ctx.ui.confirm()` / `{ block: true }` | `extensions/permission-gate.ts` | **手工跑拒绝路径**（见下） | ⚠️ **可能安静失效**：界面照样问，你答拒绝，命令却已执行 |
 | `rpc-entry` 入口 + `--provider` / `--model` / `--session` / `-e` | `core-host` | 起 GUI，能对话即通过 | 吵闹：Pi 起不来 |
-| `SessionManager.list()` / `.listAll()` / `SessionInfo` 字段 | `core-host` 的 `listSessions()` | 打开会话列表，有内容且标题正确 | 吵闹：列表空或报错 |
-| 会话文件的条目结构（`message` / `model_change` / `toolCall` / `toolResult`） | `core-client/entries.ts` | `node --test packages/core-client/src/entries.test.ts` + 打开一条旧会话看是否完整 | **半吵闹**：旧对话画不全或画错 |
+| **②** `SessionManager.list()` / `.listAll()` / `SessionInfo` 字段 | `core-host` 的 `listSessions()` | 打开会话列表，有内容且标题正确 | 吵闹：列表空或报错 |
+| **②** 会话文件的条目结构（`message` / `model_change` / `toolCall` / `toolResult`） | `core-client/entries.ts` | `node --test packages/core-client/src/entries.test.ts` + 打开一条旧会话看是否完整 | **半吵闹**：旧对话画不全或画错 |
 | RPC 命令 `prompt` / `abort` | `core-client/client.ts` | 起 GUI 对话一次、按一次 Stop | 吵闹 |
 | RPC 命令 `get_state` | 打开会话时问模型与会话 id | 顶栏显示模型名 | 吵闹：会话开不出来 |
 | RPC 命令 `get_available_models` / `set_model` | 模型切换 | 切一次模型，对话仍延续 | 吵闹：列表空 / 切换报错 |
