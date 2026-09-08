@@ -392,6 +392,7 @@ node scripts/repl.ts "运行 ls 命令，告诉我当前目录下有什么"
 | `pi.on("tool_call")` / `ctx.ui.confirm()` / `{ block: true }` | `extensions/permission-gate.ts` | **手工跑拒绝路径**（见下） | ⚠️ **可能安静失效**：界面照样问，你答拒绝，命令却已执行 |
 | `rpc-entry` 入口 + `--provider` / `--model` / `--session` / `-e` | `core-host` | 起 GUI，能对话即通过 | 吵闹：Pi 起不来 |
 | **②** `SessionManager.list()` / `.listAll()` / `SessionInfo` 字段 | `core-host` 的 `listSessions()` | 打开会话列表，有内容且标题正确 | 吵闹：列表空或报错 |
+| **②** `ModelRuntime.getProviders()` / `hasConfiguredAuth()` / `login()` / `logout()` | `core-host/credentials.ts` | `node --test packages/core-host/src/credentials.test.ts`（跑在临时目录里） | 吵闹：provider 列表空，或登录报错 |
 | **②** 会话文件的条目结构（`message` / `model_change` / `toolCall` / `toolResult`） | `core-client/entries.ts` | `node --test packages/core-client/src/entries.test.ts` + 打开一条旧会话看是否完整 | **半吵闹**：旧对话画不全或画错 |
 | RPC 命令 `prompt` / `abort` | `core-client/client.ts` | 起 GUI 对话一次、按一次 Stop | 吵闹 |
 | RPC 命令 `get_state` | 打开会话时问模型与会话 id | 顶栏显示模型名 | 吵闹：会话开不出来 |
@@ -427,6 +428,25 @@ force-killing the server, no handlers
 其余各条的失败都是吵闹的——起不来、列表空、历史白——跑一遍 GUI 就会撞见。
 `node --test "packages/*/src/*.test.ts"` 覆盖的是我们自己那一半（折叠、协议、拼参数），
 **覆盖不到 Pi 那一半**，所以这张表不能用测试代替。
+
+### API key 的红线（2026-09-08 新增）
+
+在此之前 **core-server 从头到尾没碰过任何密钥**——只把 provider 和 model 的**名字**传给
+Pi，Pi 自己读 `auth.json`、自己发 HTTPS。2026-09-08 为兑现第一动机破了这个例，
+只破在一处（`core-host/credentials.ts`），并用四条规矩挡住：
+
+1. **单向**：密钥进得去、出不来。任何 ServerMessage 都不得携带密钥，只传
+   `{ id, name, configured }`。
+2. **不进日志、不进账本、不进快照**——账本会广播给所有观看者。
+3. **界面遮蔽**：网页 `type="password"`，终端不回显。
+4. **凭据操作只接受 loopback 连接**（`core-server/loopback.ts`）。今天它拒绝不了任何东西，
+   因为服务只监听 `127.0.0.1`——**它是为门打开的那天提前放好的**。
+
+⚠️ **一次真实的泄漏，值得记住**：`setApiKey` 最初把密钥回答给 Pi 提出的**任何**问题。
+Amazon Bedrock 的 `api_key` 流程先问的是「用哪种认证方式」，于是密钥被当成方式名答过去，
+Bedrock 把它原样回显在错误里，**显示到了屏幕上**。当时代码注释里写着「失败信息永远不含
+密钥」——**那是假设，不是事实**。现在回调只回答 `type === "secret"` 的问题，另加
+`redactSecret()` 兜底。**教训：安全性质写在注释里等于没写，要有测试或代码挡着。**
 
 ### 权限门必须 fail-closed
 
@@ -494,7 +514,8 @@ force-killing the server, no handlers
 
 | | 为什么 |
 |---|---|
-| **登录 / OAuth（写入凭据）** | 涉及密钥。今天 core-server 从头到尾没碰过任何 API key——我们传给 Pi 的是 provider 和 model 的**名字**，Pi 自己读 `~/.pi/agent/auth.json`、自己发 HTTPS。做了登录，密钥就要经过我们的协议、界面、可能出现在日志与崩溃堆栈里。**注意这个性质并不防攻击者**（能连上 WebSocket 就能让模型跑任意命令，包括 `cat auth.json`），它防的是**意外泄漏**——少一个能不小心漏出去的地方。而登录是一个 provider 一辈子一次的操作 |
+| ~~**登录 / OAuth（写入凭据）**~~ **2026-09-08 部分改变**：**API key 登录已做进 Cinba**（`/login`、`/logout`、`/providers`，见 `docs/plans/2026-09-08-credentials.md`），条件是只支持 api_key、只接受本机连接、密钥单向不回传。**OAuth 仍然回 `pi`**：它要开浏览器等回调，且 Pi 的实现围着它自己的 TUI 写。以下为原记录。 | — |
+| **（存档）登录 / OAuth（写入凭据）** | 涉及密钥。今天 core-server 从头到尾没碰过任何 API key——我们传给 Pi 的是 provider 和 model 的**名字**，Pi 自己读 `~/.pi/agent/auth.json`、自己发 HTTPS。做了登录，密钥就要经过我们的协议、界面、可能出现在日志与崩溃堆栈里。**注意这个性质并不防攻击者**（能连上 WebSocket 就能让模型跑任意命令，包括 `cat auth.json`），它防的是**意外泄漏**——少一个能不小心漏出去的地方。而登录是一个 provider 一辈子一次的操作 |
 | **装/卸扩展、skills、提示词模板** | 涉及**执行第三方代码**，第 9 节明写「引入第三方 Pi package 前必须审阅代码」。这件事该在一个会认真看的地方做，不是随手点两下 |
 | **Pi 自己 TUI 的主题、键位** | 那是它的界面，我们有自己的 |
 | **自定义 provider 注册、模型目录刷新** | 低频配置 |

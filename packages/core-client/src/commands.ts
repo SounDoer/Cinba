@@ -12,7 +12,15 @@
 // get_commands call) which are per-session and would have to arrive over the
 // wire rather than be listed here.
 
-export type CommandId = "model" | "sessions" | "new" | "name" | "help";
+export type CommandId =
+  | "model"
+  | "sessions"
+  | "new"
+  | "name"
+  | "providers"
+  | "login"
+  | "logout"
+  | "help";
 
 export type Command = {
   id: CommandId;
@@ -29,7 +37,10 @@ export const COMMANDS: readonly Command[] = [
   { id: "help", name: "help", summary: "list these commands" },
   { id: "model", name: "model", summary: "switch model, keeping this conversation" },
   { id: "name", name: "name", summary: "name this conversation, e.g. /name parser work" },
+  { id: "login", name: "login", summary: "give a provider an API key" },
+  { id: "logout", name: "logout", summary: "forget a provider's API key" },
   { id: "new", name: "new", summary: "start a conversation here" },
+  { id: "providers", name: "providers", summary: "which providers are configured" },
   { id: "sessions", name: "sessions", summary: "switch to another conversation" },
 ];
 

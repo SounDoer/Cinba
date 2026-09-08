@@ -18,6 +18,18 @@ export type ModelRef = { provider: string; id: string };
  * is the opening line of the conversation and serves as the title: Pi already
  * has it, so nothing has to invent one.
  */
+/**
+ * Whether a provider can be used, and never how.
+ *
+ * Shaped so it cannot carry a secret: a key travels to the core and never
+ * comes back. See core-host/credentials.ts.
+ */
+export type ProviderStatus = {
+  id: string;
+  name: string;
+  configured: boolean;
+};
+
 export type SessionSummary = {
   id: string;
   cwd: string;
@@ -42,7 +54,11 @@ export type ClientMessage =
   | { type: "create_session"; cwd: string }
   | { type: "delete_session"; sessionId: string }
   /** Names the conversation this client is in, the same as prompt and set_model act on it. */
-  | { type: "rename_session"; name: string };
+  | { type: "rename_session"; name: string }
+  | { type: "list_providers" }
+  /** The one message in this protocol that carries a secret. It must never be logged, and nothing sends one back. */
+  | { type: "set_api_key"; providerId: string; apiKey: string }
+  | { type: "clear_credential"; providerId: string };
 
 /** Server to client. */
 export type ServerMessage =
@@ -61,7 +77,8 @@ export type ServerMessage =
   | { type: "model_changed"; model: ModelRef }
   | { type: "session_listing"; sessions: SessionSummary[] }
   /** Which session this client is now looking at. The snapshot for it follows. */
-  | { type: "session_opened"; sessionId: string };
+  | { type: "session_opened"; sessionId: string }
+  | { type: "provider_listing"; providers: ProviderStatus[] };
 
 /**
  * Validate a message from a client; return undefined for anything unrecognized
@@ -127,6 +144,28 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
     case "delete_session":
       if (typeof message.sessionId !== "string" || message.sessionId === "") return undefined;
       return { type: "delete_session", sessionId: message.sessionId };
+
+    case "list_providers":
+      return { type: "list_providers" };
+
+    case "set_api_key":
+      if (
+        typeof message.providerId !== "string" ||
+        message.providerId === "" ||
+        typeof message.apiKey !== "string" ||
+        message.apiKey.trim() === ""
+      ) {
+        return undefined;
+      }
+      return {
+        type: "set_api_key",
+        providerId: message.providerId,
+        apiKey: message.apiKey.trim(),
+      };
+
+    case "clear_credential":
+      if (typeof message.providerId !== "string" || message.providerId === "") return undefined;
+      return { type: "clear_credential", providerId: message.providerId };
 
     case "rename_session":
       if (typeof message.name !== "string" || message.name.trim() === "") return undefined;

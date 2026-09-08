@@ -13,7 +13,13 @@ export { createEventFolder, foldUiRequest } from "./events.ts";
 export { projectName, sessionSubtitle, sessionTitle } from "./labels.ts";
 export type { ToolStatus, ViewAction } from "./events.ts";
 export { parseClientMessage } from "./protocol.ts";
-export type { ClientMessage, ModelRef, ServerMessage, SessionSummary } from "./protocol.ts";
+export type {
+  ClientMessage,
+  ModelRef,
+  ProviderStatus,
+  ServerMessage,
+  SessionSummary,
+} from "./protocol.ts";
 export { RemoteSession } from "./remote.ts";
 export type { RemoteHandlers, SnapshotState, Socket } from "./remote.ts";
 export { createSession } from "./session.ts";

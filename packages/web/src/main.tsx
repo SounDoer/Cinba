@@ -6,12 +6,19 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createSession, RemoteSession } from "@cinba/core-client";
-import type { ModelRef, Session, SessionSummary, Snapshot } from "@cinba/core-client";
+import type {
+  ModelRef,
+  ProviderStatus,
+  Session,
+  SessionSummary,
+  Snapshot,
+} from "@cinba/core-client";
 import { Transcript } from "./Transcript.tsx";
 import { ProjectPicker } from "./ProjectPicker.tsx";
 import type { Listing } from "./ProjectPicker.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { SessionPicker } from "./SessionPicker.tsx";
+import { ProviderPicker } from "./ProviderPicker.tsx";
 import "./style.css";
 
 const EMPTY: Snapshot = { entries: [], totalTokens: 0, totalCost: 0, busy: false };
@@ -31,6 +38,8 @@ function App() {
   const [pickingSession, setPickingSession] = useState(false);
   const [sessionId, setSessionId] = useState("");
   const [sessions, setSessions] = useState<SessionSummary[] | undefined>(undefined);
+  const [pickingProvider, setPickingProvider] = useState(false);
+  const [providers, setProviders] = useState<ProviderStatus[] | undefined>(undefined);
 
   const remoteRef = useRef<RemoteSession | undefined>(undefined);
   const mirrorRef = useRef<Session>(createSession());
@@ -56,6 +65,7 @@ function App() {
       onModelChanged: (next) => setModel(next),
       onSessionListing: (next) => setSessions(next),
       onSessionOpened: (id) => setSessionId(id),
+      onProviderListing: (next) => setProviders(next),
     });
 
     return () => socket.close();
@@ -97,6 +107,7 @@ function App() {
         <button onClick={() => setPickingModel(true)} disabled={snapshot.busy}>
           Model: {model?.id ?? "..."}
         </button>
+        <button onClick={() => setPickingProvider(true)}>Providers</button>
         <span>
           {snapshot.totalTokens} tokens · ${snapshot.totalCost.toFixed(4)}
         </span>
@@ -131,6 +142,14 @@ function App() {
         </button>
         {snapshot.busy ? <button onClick={() => remoteRef.current?.abort()}>Stop</button> : null}
       </footer>
+
+      {pickingProvider ? (
+        <ProviderPicker
+          remote={remoteRef.current}
+          providers={providers}
+          onClose={() => setPickingProvider(false)}
+        />
+      ) : null}
 
       {pickingSession ? (
         <SessionPicker

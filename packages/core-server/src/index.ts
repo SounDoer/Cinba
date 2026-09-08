@@ -25,7 +25,15 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { findSession, listSessions as storedSessions, startCore } from "@cinba/core-host";
+import {
+  clearCredential,
+  findSession,
+  listProviders,
+  listSessions as storedSessions,
+  setApiKey,
+  startCore,
+} from "@cinba/core-host";
+import { isLoopback } from "./loopback.ts";
 import { assessIdle, IDLE_TIMEOUT_MS } from "./reclaim.ts";
 import {
   CoreClient,
@@ -125,6 +133,19 @@ const live = new Map<string, Live>();
 const viewing = new Map<WebSocket, string>();
 
 const clients = new Set<WebSocket>();
+
+/**
+ * Which clients arrived over the loopback address.
+ *
+ * Credential changes are refused from anywhere else. Today every connection is
+ * loopback and this rejects nothing — but the whole point is that it is already
+ * in place before that stops being true. Reading a conversation and changing
+ * which API key the machine uses are not the same kind of act, and the second
+ * should not become reachable the moment a door opens outward.
+ */
+const local = new WeakSet<WebSocket>();
+
+
 
 /** Defaults for a newly started Pi, and where to pick up on restart. */
 let cwd = homedir();
@@ -570,6 +591,49 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
       return;
     }
 
+    case "list_providers":
+      // Status only: which providers are usable. Never how.
+      sendTo(socket, { type: "provider_listing", providers: await listProviders() });
+      return;
+
+    case "set_api_key": {
+      if (!local.has(socket)) {
+        // Deliberately says nothing about why beyond this: a remote caller
+        // learns only that it cannot.
+        console.warn("[cinba] refused a credential change from a non-local client");
+        if (current) {
+          emit(current, [{ type: "notice", text: "credentials can only be changed locally" }]);
+        }
+        return;
+      }
+      try {
+        await setApiKey(message.providerId, message.apiKey);
+        // The provider's name, never the key, and never the fact that it has one logged.
+        if (current) {
+          emit(current, [{ type: "notice", text: `${message.providerId} is configured` }]);
+        }
+      } catch (error) {
+        // The message from a failed login can be shown; it never contains the key.
+        const reason = error instanceof Error ? error.message : String(error);
+        if (current) emit(current, [{ type: "notice", text: `could not configure: ${reason}` }]);
+      }
+      sendTo(socket, { type: "provider_listing", providers: await listProviders() });
+      return;
+    }
+
+    case "clear_credential": {
+      if (!local.has(socket)) {
+        console.warn("[cinba] refused a credential change from a non-local client");
+        return;
+      }
+      await clearCredential(message.providerId);
+      if (current) {
+        emit(current, [{ type: "notice", text: `${message.providerId} is no longer configured` }]);
+      }
+      sendTo(socket, { type: "provider_listing", providers: await listProviders() });
+      return;
+    }
+
     case "list_sessions":
       sendTo(socket, { type: "session_listing", sessions: await listSessions(message.cwd) });
       return;
@@ -663,8 +727,9 @@ httpServer.listen(PORT, HOST, () => {
   if (model) console.log(`[cinba] model ${model.provider}/${model.id}`);
 });
 
-server.on("connection", (socket: WebSocket) => {
+server.on("connection", (socket: WebSocket, request: IncomingMessage) => {
   clients.add(socket);
+  if (isLoopback(request.socket.remoteAddress)) local.add(socket);
   console.log(`[cinba] client connected, ${clients.size} now`);
 
   // A new connection lands on the conversation it was last on. Its Pi starts

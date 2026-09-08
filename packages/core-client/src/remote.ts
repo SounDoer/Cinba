@@ -6,7 +6,13 @@
 
 import type { ViewAction } from "./events.ts";
 import type { Snapshot } from "./session.ts";
-import type { ClientMessage, ModelRef, ServerMessage, SessionSummary } from "./protocol.ts";
+import type {
+  ClientMessage,
+  ModelRef,
+  ProviderStatus,
+  ServerMessage,
+  SessionSummary,
+} from "./protocol.ts";
 
 /**
  * A connection that can send and receive text messages.
@@ -36,6 +42,7 @@ export type RemoteHandlers = {
   onModelChanged?: (model: ModelRef) => void;
   onSessionListing?: (sessions: SessionSummary[]) => void;
   onSessionOpened?: (sessionId: string) => void;
+  onProviderListing?: (providers: ProviderStatus[]) => void;
 };
 
 export class RemoteSession {
@@ -92,6 +99,19 @@ export class RemoteSession {
     this.#send({ type: "rename_session", name });
   }
 
+  listProviders(): void {
+    this.#send({ type: "list_providers" });
+  }
+
+  /** Sends a secret. The reply never contains one; nothing here logs it. */
+  setApiKey(providerId: string, apiKey: string): void {
+    this.#send({ type: "set_api_key", providerId, apiKey });
+  }
+
+  clearCredential(providerId: string): void {
+    this.#send({ type: "clear_credential", providerId });
+  }
+
   #send(message: ClientMessage): void {
     this.#socket.send(JSON.stringify(message));
   }
@@ -117,6 +137,9 @@ export class RemoteSession {
         return;
       case "actions":
         this.#handlers.onActions?.(message.actions);
+        return;
+      case "provider_listing":
+        this.#handlers.onProviderListing?.(message.providers);
         return;
       case "session_listing":
         this.#handlers.onSessionListing?.(message.sessions);

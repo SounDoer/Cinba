@@ -1,3 +1,5 @@
+export { clearCredential, listProviders, setApiKey } from "./credentials.ts";
+export type { ProviderStatus } from "./credentials.ts";
 // The definition of "my core": how Pi starts, which provider and model it uses,
 // which extensions it loads. All frontends share this one file, so the brain
 // that wakes up is always the same one.

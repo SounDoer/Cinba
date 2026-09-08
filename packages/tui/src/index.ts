@@ -332,12 +332,15 @@ class ConfirmDialog implements Component {
 /**
  * A list to choose from, standing in for the input at the bottom.
  *
- * The same shape as the confirmation dialog, which is the only other thing that
- * takes over the bottom of the screen.
+ * Typing narrows it. SelectList can filter but does not read the keyboard for
+ * it — handleInput there is only arrows and Enter — so the filter is collected
+ * here and handed over. Without this a list of forty providers could only be
+ * walked one arrow press at a time.
  */
 class ChoiceDialog implements Component {
   #list: SelectList;
   #title: string;
+  #filter = "";
 
   constructor(title: string, items: { value: string; label: string; description?: string }[]) {
     this.#title = title;
@@ -349,6 +352,20 @@ class ChoiceDialog implements Component {
   onAnswer?: (value: string | undefined) => void;
 
   handleInput(data: string): void {
+    if (matchesKey(data, "backspace")) {
+      this.#filter = this.#filter.slice(0, -1);
+      this.#list.setFilter(this.#filter);
+      return;
+    }
+
+    // Printable characters narrow the list; everything else (arrows, Enter,
+    // Esc) belongs to the list itself.
+    if (data.length === 1 && data >= " " && data !== "\x7f") {
+      this.#filter += data;
+      this.#list.setFilter(this.#filter);
+      return;
+    }
+
     this.#list.handleInput(data);
   }
 
@@ -357,10 +374,11 @@ class ChoiceDialog implements Component {
   }
 
   render(width: number): string[] {
+    const typed = this.#filter === "" ? "" : `  ${MAGENTA}${this.#filter}${RESET}`;
     return [
-      ...wrapTextWithAnsi(`${YELLOW}${BOLD}${this.#title}${RESET}`, width),
+      ...wrapTextWithAnsi(`${YELLOW}${BOLD}${this.#title}${RESET}${typed}`, width),
       ...this.#list.render(width),
-      `${DIM}up/down to choose, Enter to confirm, Esc to cancel${RESET}`,
+      `${DIM}type to narrow, up/down to choose, Enter to confirm, Esc to cancel${RESET}`,
     ];
   }
 }
@@ -375,6 +393,65 @@ function choose(
   dialog.onAnswer = (value) => {
     showPrompt();
     onAnswer(value);
+  };
+  setBottom(dialog);
+  tui.setFocus(dialog);
+}
+
+/**
+ * A one-line input that never shows what was typed.
+ *
+ * Handles its own keys rather than wrapping Input, because Input's whole job is
+ * to render the text back and there is no way to ask it not to. An API key
+ * should not appear on a screen someone may be sharing, nor scroll into the
+ * terminal's own history.
+ */
+class SecretInput implements Component, Focusable {
+  #value = "";
+  #title: string;
+  focused = false;
+  onAnswer?: (secret: string | undefined) => void;
+
+  constructor(title: string) {
+    this.#title = title;
+  }
+
+  handleInput(data: string): void {
+    if (matchesKey(data, "escape")) {
+      this.onAnswer?.(undefined);
+      return;
+    }
+    if (matchesKey(data, "enter") || matchesKey(data, "return")) {
+      this.onAnswer?.(this.#value.trim() === "" ? undefined : this.#value.trim());
+      return;
+    }
+    if (matchesKey(data, "backspace")) {
+      this.#value = this.#value.slice(0, -1);
+      return;
+    }
+    // Printable characters only: control sequences must not end up inside a key.
+    if (data.length > 0 && !data.startsWith("\x1b") && data >= " ") {
+      this.#value += data;
+    }
+  }
+
+  invalidate(): void {}
+
+  render(width: number): string[] {
+    return [
+      ...wrapTextWithAnsi(`${YELLOW}${BOLD}${this.#title}${RESET}`, width),
+      `${DIM}(nothing is echoed; Enter to save, Esc to cancel)${RESET}`,
+      `> ${"*".repeat(Math.min(this.#value.length, Math.max(width - 4, 0)))}`,
+    ];
+  }
+}
+
+/** Collect a secret at the bottom of the screen, then hand it over exactly once. */
+function askSecret(title: string, onAnswer: (secret: string | undefined) => void): void {
+  const dialog = new SecretInput(title);
+  dialog.onAnswer = (secret) => {
+    showPrompt();
+    onAnswer(secret);
   };
   setBottom(dialog);
   tui.setFocus(dialog);
@@ -620,6 +697,60 @@ const remote = new RemoteSession(socket as unknown as Socket, {
       applyAction(action);
     }
   },
+  onProviderListing: (providers) => {
+    if (providerIntent === "list") {
+      transcript.append("");
+      for (const provider of providers.filter((entry) => entry.configured)) {
+        transcript.append(`${GREEN}configured${RESET}  ${provider.name} ${DIM}(${provider.id})${RESET}`);
+      }
+      transcript.append(
+        `${DIM}${providers.filter((entry) => !entry.configured).length} more available - /login to add one${RESET}`,
+      );
+      tui.requestRender();
+      providerIntent = undefined;
+      return;
+    }
+
+    if (providerIntent === "login") {
+      providerIntent = undefined;
+      choose(
+        "Give which provider an API key?",
+        providers.map((provider) => ({
+          value: provider.id,
+          label: `${provider.configured ? "* " : "  "}${provider.name}`,
+          description: provider.id,
+        })),
+        (id) => {
+          if (!id) return;
+          askSecret(`API key for ${id}`, (secret) => {
+            if (secret) remote.setApiKey(id, secret);
+          });
+        },
+      );
+      return;
+    }
+
+    if (providerIntent === "logout") {
+      providerIntent = undefined;
+      const configured = providers.filter((provider) => provider.configured);
+      if (configured.length === 0) {
+        applyAction({ type: "notice", text: "nothing is configured" });
+        return;
+      }
+      choose(
+        "Forget which provider's key?",
+        configured.map((provider) => ({
+          value: provider.id,
+          label: provider.name,
+          description: provider.id,
+        })),
+        (id) => {
+          if (id) remote.clearCredential(id);
+        },
+      );
+      return;
+    }
+  },
   onSessionListing: (sessions) => {
     if (!landed) {
       land(sessions);
@@ -667,6 +798,9 @@ const remote = new RemoteSession(socket as unknown as Socket, {
  * directory's conversations and picks from those — once, on connecting.
  */
 let landed = false;
+
+/** Why the provider list was asked for, since one message serves three commands. */
+let providerIntent: "list" | "login" | "logout" | undefined;
 
 function land(sessions: SessionSummary[]): void {
   if (landed) return;
@@ -736,6 +870,21 @@ function runCommand(command: Command, line: string): void {
       // The terminal's rule throughout: you are in the directory you started in.
       remote.createSession(process.cwd());
       return;
+    case "providers":
+      providerIntent = "list";
+      remote.listProviders();
+      return;
+
+    case "login":
+      providerIntent = "login";
+      remote.listProviders();
+      return;
+
+    case "logout":
+      providerIntent = "logout";
+      remote.listProviders();
+      return;
+
     case "help":
       transcript.append("");
       for (const entry of COMMANDS) {
