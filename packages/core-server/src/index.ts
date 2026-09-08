@@ -26,6 +26,7 @@ import { homedir } from "node:os";
 import { dirname, extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findSession, listSessions as storedSessions, startCore } from "@cinba/core-host";
+import { assessIdle, IDLE_TIMEOUT_MS } from "./reclaim.ts";
 import {
   CoreClient,
   createEventFolder,
@@ -114,6 +115,8 @@ type Live = {
   storedActions: ViewAction[];
   /** Last entry id pulled from Pi, so the next pull asks only for what followed. */
   reconciledUpTo: string | undefined;
+  /** When nobody was last looking at it; undefined while someone is. See reclaim.ts. */
+  idleSince: number | undefined;
 };
 
 const live = new Map<string, Live>();
@@ -283,6 +286,7 @@ async function open(options: { sessionPath?: string; cwd: string }): Promise<Liv
     flushTimer: undefined,
     storedActions: [],
     reconciledUpTo: undefined,
+    idleSince: undefined,
   };
 
   pi.onEvent((event) => {
@@ -407,6 +411,39 @@ function show(socket: WebSocket, session: Live): void {
   saveConfig();
   sendTo(socket, { type: "session_opened", sessionId: session.id });
   sendTo(socket, snapshotOf(session));
+}
+
+// ---- Reclaiming idle conversations ----
+
+/**
+ * Stop the Pi of any conversation nobody has watched for a while.
+ *
+ * Safe because the conversation is not in the process: Pi wrote it to its
+ * session file, so opening it again brings the context back. What this buys is
+ * memory — a process costs 60-85MB whether or not anyone is looking, and
+ * several people each leaving a few conversations open adds up.
+ */
+function sweepIdle(): void {
+  const now = Date.now();
+
+  for (const session of [...live.values()] ) {
+    const hasViewers = [...viewing.values()].includes(session.id);
+    const verdict = assessIdle(
+      {
+        hasViewers,
+        busy: session.ledger.snapshot().busy,
+        awaitingConfirmation: session.pendingConfirms.size > 0,
+        idleSince: session.idleSince,
+      },
+      now,
+    );
+
+    session.idleSince = verdict.idleSince;
+    if (!verdict.reclaim) continue;
+
+    console.log(`[cinba] ${session.id} idle, stopping its Pi (it reopens from disk)`);
+    stop(session.id);
+  }
 }
 
 // ---- Messages from clients ----
@@ -614,9 +651,15 @@ const httpServer = createServer((request, response) => void serveStatic(request,
 // itself, which keeps hot reload.
 const server = new WebSocketServer({ server: httpServer, path: "/ws" });
 
+// Checked every minute rather than on a timer per conversation: one timer is
+// easier to reason about, and a minute of imprecision on a ten-minute rule
+// changes nothing.
+setInterval(sweepIdle, 60_000).unref();
+
 httpServer.listen(PORT, HOST, () => {
   console.log(`[cinba] UI at http://${HOST}:${PORT}`);
   console.log(`[cinba] working directory ${cwd}`);
+  console.log(`[cinba] idle conversations release their process after ${IDLE_TIMEOUT_MS / 60_000} minutes`);
   if (model) console.log(`[cinba] model ${model.provider}/${model.id}`);
 });
 
