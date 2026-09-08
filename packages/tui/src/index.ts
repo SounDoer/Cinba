@@ -33,7 +33,12 @@ import type {
   SelectListTheme,
   TUI,
 } from "@earendil-works/pi-tui";
-import { createSession, RemoteSession } from "@cinba/core-client";
+import {
+  createSession,
+  RemoteSession,
+  sessionSubtitle,
+  sessionTitle,
+} from "@cinba/core-client";
 import type {
   Entry,
   Session,
@@ -544,8 +549,9 @@ const remote = new RemoteSession(socket as unknown as Socket, {
       "Open which conversation?",
       sessions.map((session) => ({
         value: session.id,
-        label: session.firstMessage || "(nothing said yet)",
-        description: `${session.cwd} - ${session.messageCount} messages`,
+        // The dot marks the one you are in, the same as the browser's list.
+        label: `${session.id === sessionId ? "● " : "  "}${sessionTitle(session)}`,
+        description: sessionSubtitle(session),
       })),
       (id) => {
         if (id) remote.openSession(id);

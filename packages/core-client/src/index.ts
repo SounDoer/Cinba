@@ -8,6 +8,7 @@ export type {
 } from "./client.ts";
 export { foldSessionEntries, sameTranscript } from "./entries.ts";
 export { createEventFolder, foldUiRequest } from "./events.ts";
+export { projectName, sessionSubtitle, sessionTitle } from "./labels.ts";
 export type { ToolStatus, ViewAction } from "./events.ts";
 export { parseClientMessage } from "./protocol.ts";
 export type { ClientMessage, ModelRef, ServerMessage, SessionSummary } from "./protocol.ts";

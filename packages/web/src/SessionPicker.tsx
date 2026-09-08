@@ -5,12 +5,8 @@
 // holding a real conversation, and nothing puts it back.
 
 import { useEffect, useState } from "react";
+import { sessionSubtitle, sessionTitle } from "@cinba/core-client";
 import type { RemoteSession, SessionSummary } from "@cinba/core-client";
-
-/** The last path segment, whichever slash the server's platform uses. */
-function projectName(cwd: string): string {
-  return cwd.split(/[\\/]/).filter(Boolean).pop() || cwd;
-}
 
 function when(iso: string): string {
   const date = new Date(iso);
@@ -78,11 +74,10 @@ export function SessionPicker({
                 >
                   <span className="session-title">
                     {active ? "● " : ""}
-                    {session.name || session.firstMessage || "(nothing said yet)"}
+                    {sessionTitle(session)}
                   </span>
                   <span className="session-meta">
-                    {projectName(session.cwd)} · {session.messageCount} messages ·{" "}
-                    {when(session.modified)}
+                    {sessionSubtitle(session)} · {when(session.modified)}
                   </span>
                 </button>
                 <button className="session-delete" onClick={() => setConfirming(session.id)}>
