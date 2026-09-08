@@ -21,11 +21,15 @@ export type Command = {
   summary: string;
 };
 
+/**
+ * Order here is not the order shown — matchCommands sorts — so it is kept
+ * alphabetical to match, rather than looking like a ranking that does nothing.
+ */
 export const COMMANDS: readonly Command[] = [
-  { id: "sessions", name: "sessions", summary: "switch to another conversation" },
-  { id: "new", name: "new", summary: "start a conversation here" },
-  { id: "model", name: "model", summary: "switch model, keeping this conversation" },
   { id: "help", name: "help", summary: "list these commands" },
+  { id: "model", name: "model", summary: "switch model, keeping this conversation" },
+  { id: "new", name: "new", summary: "start a conversation here" },
+  { id: "sessions", name: "sessions", summary: "switch to another conversation" },
 ];
 
 /** Does this input line look like a command rather than something to say? */
@@ -39,6 +43,9 @@ export function isCommand(input: string): boolean {
  * A bare "/" matches everything, which is what makes the list a menu: type the
  * slash and the options appear. An exact name sorts ahead of the merely
  * prefixed, so "/new" cannot be beaten by a longer command starting with it.
+ *
+ * The first is what Enter takes. On a bare slash that is /help, which is the
+ * right thing for the one case where the user has expressed no intent yet.
  */
 export function matchCommands(input: string): Command[] {
   if (!isCommand(input)) return [];

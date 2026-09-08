@@ -437,3 +437,40 @@ cd Cinba && 起 TUI
 - **网页端和 TUI 能同时各自工作在不同的会话里** —— 这一条正是「每个打开的会话一个 Pi」
   那个决定要换来的东西:共用一个进程靠 `switch_session` 轮换的话,同一时刻只有一条对话
   跑得动,这个场景就不成立。决定与实测对上了。
+
+### 收尾（斜杠命令）
+
+**28. ⚠️ 焦点给错了对象,菜单从来没出现过。**
+`tui.setFocus(promptInput.input)` —— 焦点落在内层 `Input` 上,按键直接进了它,
+包在外面那层 `PromptInput.handleInput`(负责刷新菜单)**一次都没被调用过**。
+四个命令能用,是因为打完整名字回车走的是 `onSubmit`,那条路不经过菜单。
+
+修法:让 `PromptInput` 自己实现 `Focusable` 成为焦点,并把 `focused` 透传给内层 `Input`
+(否则光标就没了——TUI 把标志设在它 focus 的那个对象上,而只有 `Input` 知道光标在哪)。
+
+**不能改成在 `tui.addInputListener` 里刷新**:实测 pi-tui 的输入监听器**先于**焦点组件
+运行(`tui.js:662` 在 `718` 之前),那时 `getValue()` 还是上一个字符的值,菜单会永远慢一拍。
+
+**29. ✅ 之前说"TUI 的交互必须人工验证"是错的——管道喂 stdin 就够。**
+`ProcessTerminal` 读的是 `process.stdin`,不要求 TTY。
+
+```bash
+{ sleep 5; printf '/'; sleep 4; } | timeout 14 node packages/tui/src/index.ts
+```
+
+输出里能直接看到菜单渲染:
+
+```
+> /help     list these commands
+  /model    switch model, keeping this conversation
+  /new      start a conversation here
+  /sessions switch to another conversation
+> /
+```
+
+打 `/se` 收窄到 `> /sessions`,也验过。**这一条推翻了 Task 8 的执行期发现里
+「打字发送没法自动化验证」那句** —— 当时放弃得太早了,后果是这个焦点 bug 一直到用户
+手工测才暴露。以后 TUI 的交互一律用管道验。
+
+**30. 目录里的排列顺序其实是无效的**(`matchCommands` 会排序),看着像"按重要性排"
+其实不是。已改成字母序并写明,免得以后有人调整顺序却毫无效果。

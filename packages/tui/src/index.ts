@@ -29,6 +29,7 @@ import {
 } from "@earendil-works/pi-tui";
 import type {
   Component,
+  Focusable,
   MarkdownTheme,
   SelectListTheme,
   TUI,
@@ -186,9 +187,25 @@ class Transcript implements Component {
  * swapping in Editor, which does support completion providers but brings a lot
  * else with it.
  */
-class PromptInput implements Component {
+class PromptInput implements Component, Focusable {
   readonly input = new Input();
   #hints: Command[] = [];
+  #focused = false;
+
+  /**
+   * Focus has to land on this wrapper, not on the Input inside it, or
+   * handleInput below never runs and the menu never appears. The flag is passed
+   * through so the Input still draws the cursor: TUI sets it on whatever it
+   * focused, and only the Input knows where the cursor goes.
+   */
+  get focused(): boolean {
+    return this.#focused;
+  }
+
+  set focused(value: boolean) {
+    this.#focused = value;
+    this.input.focused = value;
+  }
 
   handleInput(data: string): void {
     this.input.handleInput(data);
@@ -349,7 +366,7 @@ root.addChild(transcript);
 root.addChild(promptInput);
 root.addChild(statusBar);
 tui.addChild(root);
-tui.setFocus(promptInput.input);
+tui.setFocus(promptInput);
 
 /** The bottom holds either the input or the confirmation dialog; switching reassembles the whole thing. */
 function setBottom(component: Component): void {
@@ -362,7 +379,7 @@ function setBottom(component: Component): void {
 
 function showPrompt(): void {
   setBottom(promptInput);
-  tui.setFocus(promptInput.input);
+  tui.setFocus(promptInput);
 }
 
 /** Raise a confirmation and resolve once the user has chosen. The core is blocked waiting for this answer. */
