@@ -1,7 +1,7 @@
 # 多会话 + TUI 改成客户端
 
 日期：2026-09-08
-状态：阶段 A 完成（Task 1-7），阶段 B 待做
+状态：阶段 A 完成；阶段 B 的 Task 8 完成，Task 9-11 待做
 
 这是 3a 之后最大的一次结构改动，分两阶段，各自可独立验收：
 
@@ -348,3 +348,36 @@ model's reply: "I attempted to run `ls`, but the tool call was denied, so I coul
 切到 Desktop 那条 → 顶栏变「Desktop — conversations」，正文换成那条对话
 切回 Cinba 那条   → 顶栏和正文都跟着回来
 ```
+
+### Task 8
+
+**17. TUI 需要一个以前不需要的能力:整屏重画。**
+它的 `Transcript` 是只追加的(阶段 2 的设计:滚过去的行改不了)。但现在一整段对话会一次性
+到达——打开一条会话时,以及服务端对账纠正时。加了 `clear()`,并新增 `drawSnapshot()`
+把账本快照整段画出来,和逐条追加的 `applyAction()` 并存:**流式用追加,整段用重画**。
+
+**18. TUI 的落点规则和服务端的默认不一样,而且 TUI 的规则更老。**
+服务端给新连接的是「上次用的那条会话」,可能属于别的项目;而终端的规矩是
+「你在哪个目录启动就在哪个目录干活」。所以 TUI 连上之后自己要一次 `list_sessions(cwd)`,
+在本目录的会话里挑最近的一条打开,没有就新建。**`cd proj && 起 TUI` 的手感一个字没变。**
+
+代价:服务端仍然会为它的默认会话起一个 Pi,而 TUI 随即换到别的会话去了。多一个进程,
+无害,先接受。
+
+**19. 连不上时打印一行提示后退出,不自动拉起服务。** 实测输出:
+
+```
+Cannot reach the Cinba service at ws://127.0.0.1:4517/ws.
+Start it first: double-click cinba.cmd in the repository root.
+--- exit code: 1 ---
+```
+
+**20. `@cinba/tui` 不再依赖 `@cinba/core-host`。** 它现在只依赖 `core-client`,
+和 `web` 一样——这正是设计文档第 5 节要求的前端依赖形态。**TUI 第一次真正满足它。**
+
+**21. 实测:TUI 连上后画出了完整的历史对话**,含 `-- deepseek/deepseek-v4-pro --` /
+`-- deepseek/deepseek-v4-flash --` 两个模型标记,和 GUI 看到的是同一条会话。
+
+**未验证的部分要说清楚:在 TUI 里打字发送这条路没能自动化验证**——它要一个真的终端
+(pty),脚本喂 stdin 驱动不了。发送走的是 `remote.prompt()`,和网页端同一条已验证的路径,
+但 `onSubmit` 那十行是新写的,**需要人工在真终端里敲一次确认**。

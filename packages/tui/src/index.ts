@@ -1,13 +1,20 @@
 // Cinba's terminal client.
 //
-// It shares core-host and core-client with the Electron GUI; only the drawing
-// layer differs.
-// Usage: node <repo>/packages/tui/src/index.ts
+// It is a client of core-server, exactly like the browser and the Electron
+// window: same protocol, same ledger, same conversations. Only the drawing
+// layer differs. It used to start a Pi of its own, which made it a second core
+// host and left it quietly out of step with the GUI — a model switched there
+// was invisible here.
 //
-// Working directory = wherever it was started. Pi isolates sessions by working
-// directory, so whichever directory you cd into is the one you work in. Do not
-// start it through npm --workspace: that sets the working directory to the
-// package's own directory.
+// What it gains by connecting instead: the same conversation as the GUI, a
+// transcript that survives closing the terminal, and one set of settings.
+//
+// Usage: cd <your project> && node <repo>/packages/tui/src/index.ts
+//
+// Working directory = wherever it was started, and that still decides which
+// project you land in: on connecting it looks for conversations in this
+// directory and opens the most recent, or starts one. Do not launch it through
+// npm --workspace, which would set the directory to the package's own.
 
 import {
   Container,
@@ -20,9 +27,18 @@ import {
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import type { Component, SelectListTheme, TUI } from "@earendil-works/pi-tui";
-import { startCore } from "@cinba/core-host";
-import { CoreClient, createEventFolder, StdioTransport } from "@cinba/core-client";
-import type { ViewAction } from "@cinba/core-client";
+import { createSession, RemoteSession } from "@cinba/core-client";
+import type {
+  Entry,
+  Session,
+  SessionSummary,
+  Snapshot,
+  Socket,
+  ViewAction,
+} from "@cinba/core-client";
+
+/** Same address the browser uses. Nothing here starts a core: the service has to be running. */
+const SERVER_URL = "ws://127.0.0.1:4517/ws";
 
 const DIM = "\x1b[2m";
 const BOLD = "\x1b[1m";
@@ -56,6 +72,11 @@ class Transcript implements Component {
   append(line: string): void {
     this.#lines.push(line);
     if (this.#lines.length > this.#max) this.#lines = this.#lines.slice(-this.#max);
+  }
+
+  /** Start over. Needed now that a whole conversation can arrive at once, on opening one or after a correction. */
+  clear(): void {
+    this.#lines = [];
   }
 
   /** Append to the end of the last line. This is how streaming text grows character by character. */
@@ -204,29 +225,27 @@ function ask(title: string): Promise<boolean> {
 
 // ---- Starting the core ----
 
-const child = startCore();
+// ---- Talking to the core ----
 
-// The TUI owns the screen, so console.error would scribble over it. Pi's errors go into the output area instead.
-child.stderr?.setEncoding("utf8");
-child.stderr?.on("data", (chunk: string) => {
-  for (const line of chunk.trimEnd().split("\n")) {
-    transcript.append(`${RED}[pi] ${line}${RESET}`);
-  }
-  tui.requestRender();
-});
+const socket = new WebSocket(SERVER_URL);
 
-const client = new CoreClient(new StdioTransport(child));
-const fold = createEventFolder();
-
+/** The mirror ledger, the same one the web UI keeps. The server owns the real one. */
+let mirror: Session = createSession();
 let busy = false;
+let sessionId = "";
+
+/** Set while a confirmation dialog is up, so Enter in the input cannot jump the queue. */
+let confirming = false;
+
+function roleHeading(role: "user" | "assistant"): string {
+  return role === "user" ? `${GREEN}${BOLD}You:${RESET}` : `${BLUE}${BOLD}Assistant:${RESET}`;
+}
 
 function applyAction(action: ViewAction): void {
   switch (action.type) {
     case "message_added":
       transcript.append("");
-      transcript.append(
-        action.role === "user" ? `${GREEN}${BOLD}You:${RESET}` : `${BLUE}${BOLD}Assistant:${RESET}`,
-      );
+      transcript.append(roleHeading(action.role));
       transcript.append(""); // The first line of the body, for appendInline to build on
       break;
 
@@ -241,7 +260,7 @@ function applyAction(action: ViewAction): void {
     case "tool_changed": {
       if (action.status === "pending") {
         transcript.append("");
-        transcript.append(`${YELLOW}🔧 ${action.toolName}${RESET} ${DIM}awaiting approval${RESET}`);
+        transcript.append(`${YELLOW}[tool] ${action.toolName}${RESET} ${DIM}awaiting approval${RESET}`);
         if (action.args !== undefined) {
           for (const line of JSON.stringify(action.args, null, 2).split("\n")) {
             transcript.append(`${DIM}   ${line}${RESET}`);
@@ -250,8 +269,8 @@ function applyAction(action: ViewAction): void {
       } else if (action.status === "done" || action.status === "error") {
         transcript.append(
           action.status === "done"
-            ? `   ${GREEN}✅ done${RESET}`
-            : `   ${RED}❌ denied or failed${RESET}`,
+            ? `   ${GREEN}done${RESET}`
+            : `   ${RED}denied or failed${RESET}`,
         );
         // Tool output can be long, so take the first 20 lines: flooding a terminal is worse than showing less.
         for (const line of (action.result ?? "").split("\n").slice(0, 20)) {
@@ -261,6 +280,14 @@ function applyAction(action: ViewAction): void {
       // running is not drawn: the dialog disappearing is itself the signal that execution began.
       break;
     }
+
+    case "confirm_requested":
+      raiseConfirm(action.requestId);
+      break;
+
+    case "model_in_use":
+      transcript.append(`${MAGENTA}-- ${action.provider}/${action.modelId} --${RESET}`);
+      break;
 
     case "notice":
       transcript.append(`${YELLOW}[${action.text}]${RESET}`);
@@ -276,28 +303,143 @@ function applyAction(action: ViewAction): void {
       statusBar.busy = action.busy;
       break;
 
-    // thinking is not shown in this phase; tools and cost arrive in later tasks.
+    // thinking stays hidden in the terminal: it is long and rarely what you came for.
     default:
       break;
   }
   tui.requestRender();
 }
 
-client.onEvent((event) => {
-  for (const action of fold(event)) applyAction(action);
+/** Draw a whole conversation from scratch: on opening one, and after the server corrects the transcript. */
+function drawSnapshot(snapshot: Snapshot): void {
+  transcript.clear();
+  transcript.append(`${BOLD}Cinba${RESET} ${DIM}${process.cwd()}${RESET}`);
+  transcript.append(`${DIM}Type and press Enter to send. Ctrl+C to exit.${RESET}`);
+  for (const entry of snapshot.entries) drawEntry(entry);
+
+  statusBar.totalTokens = snapshot.totalTokens;
+  statusBar.totalCost = snapshot.totalCost;
+  busy = snapshot.busy;
+  statusBar.busy = snapshot.busy;
+  tui.requestRender();
+}
+
+function drawEntry(entry: Entry): void {
+  switch (entry.kind) {
+    case "message":
+      transcript.append("");
+      transcript.append(roleHeading(entry.role));
+      for (const line of entry.text.split("\n")) transcript.append(line);
+      break;
+
+    case "tool": {
+      transcript.append("");
+      const outcome =
+        entry.status === "done"
+          ? `${GREEN}done${RESET}`
+          : entry.status === "error"
+            ? `${RED}denied or failed${RESET}`
+            : `${DIM}${entry.status}${RESET}`;
+      transcript.append(`${YELLOW}[tool] ${entry.toolName}${RESET} ${outcome}`);
+      for (const line of (entry.result ?? "").split("\n").slice(0, 20)) {
+        if (line !== "") transcript.append(`${DIM}   ${line}${RESET}`);
+      }
+      break;
+    }
+
+    case "model":
+      transcript.append(`${MAGENTA}-- ${entry.provider}/${entry.modelId} --${RESET}`);
+      break;
+
+    case "notice":
+      transcript.append(`${YELLOW}[${entry.text}]${RESET}`);
+      break;
+  }
+}
+
+/**
+ * Raise the allow/deny dialog.
+ *
+ * The request carries no tool name, so it comes from the card the ledger is
+ * holding at pending — the same heuristic the GUI uses, and sound for the same
+ * reason: that conversation's Pi is blocked, so at most one is outstanding.
+ */
+function raiseConfirm(requestId: string): void {
+  const waiting = mirror
+    .snapshot()
+    .entries.filter((entry) => entry.kind === "tool" && entry.status === "pending")
+    .at(-1);
+  const toolName = waiting && waiting.kind === "tool" ? waiting.toolName : "this tool";
+
+  confirming = true;
+  const dialog = new ConfirmDialog(`Allow ${toolName}?`);
+  dialog.onAnswer = (confirmed) => {
+    confirming = false;
+    transcript.append(confirmed ? `${DIM}   -> allowed${RESET}` : `${DIM}   -> denied${RESET}`);
+    showPrompt();
+    remote.respondConfirm(requestId, confirmed);
+  };
+  setBottom(dialog);
+  tui.setFocus(dialog);
+}
+
+const remote = new RemoteSession(socket as unknown as Socket, {
+  onSnapshot: (state) => {
+    mirror = createSession(state.snapshot);
+    sessionId = state.sessionId;
+    drawSnapshot(state.snapshot);
+  },
+  onActions: (actions) => {
+    for (const action of actions) {
+      mirror.apply(action);
+      applyAction(action);
+    }
+  },
+  onSessionListing: (sessions) => land(sessions),
 });
 
-client.onUiRequest(async (request) => {
-  // Only confirm needs an answer; notify and friends are broadcasts and are not
-  // shown in this phase.
-  //
-  // Note that foldUiRequest is not used here. That function exists to turn a UI
-  // request into an action that can cross a boundary, which the GUI needs for
-  // IPC. The TUI is a single process and can use the request directly, for the
-  // same reason it does not use session.ts.
-  if (request.method !== "confirm") return { cancelled: true };
-  const confirmed = await ask(String(request.title ?? "Allow this tool?"));
-  return { confirmed };
+// ---- Landing in the right conversation ----
+
+/**
+ * The server points a fresh connection at whichever conversation was last used,
+ * which may belong to another project. The terminal's rule is different and
+ * older than that: you are in the directory you started in. So it asks for that
+ * directory's conversations and picks from those — once, on connecting.
+ */
+let landed = false;
+
+function land(sessions: SessionSummary[]): void {
+  if (landed) return;
+  landed = true;
+
+  const here = sessions.filter((session) => session.cwd === process.cwd());
+  const recent = here[0];
+
+  if (!recent) {
+    remote.createSession(process.cwd());
+    return;
+  }
+  if (recent.id !== sessionId) remote.openSession(recent.id);
+}
+
+socket.addEventListener("open", () => {
+  remote.listSessions(process.cwd());
+});
+
+socket.addEventListener("error", () => {
+  // Nothing is started here on purpose. Whoever owns that process should own
+  // its lifetime and its log, and a core quietly outliving this terminal --
+  // still able to run any command -- would be worse than an error message.
+  tui.stop();
+  console.error(`Cannot reach the Cinba service at ${SERVER_URL}.`);
+  console.error("Start it first: double-click cinba.cmd in the repository root.");
+  process.exit(1);
+});
+
+socket.addEventListener("close", () => {
+  tui.stop();
+  console.error("The Cinba service went away.");
+  process.exit(1);
 });
 
 // ---- Interaction ----
@@ -306,30 +448,28 @@ promptInput.input.onSubmit = (value: string) => {
   // No new input while answering, and the box is deliberately NOT cleared:
   // whatever the user typed during streaming has to survive, or half the point
   // of typing while watching output is gone.
-  if (busy) return;
+  if (busy || confirming) return;
   const text = value.trim();
   if (text === "") return;
   promptInput.input.setValue("");
 
-  // Go busy immediately instead of waiting for agent_start to come back down
-  // the pipe. The event stream sends the same signal (see agent_start in
-  // events.ts); this is only so the input locks at once.
+  // Go busy immediately rather than waiting for the signal to come back over
+  // the socket. The server sends the same thing; this only locks the input at once.
   applyAction({ type: "busy_changed", busy: true });
 
-  void client.prompt(text);
+  remote.prompt(text);
 };
 
 // Esc stops an answer in progress. Pressing it while idle does nothing: exiting
-// is Ctrl+C, so a slip of the hand cannot close the session.
+// is Ctrl+C, so a slip of the hand cannot close the conversation.
 promptInput.input.onEscape = () => {
   if (!busy) return;
-  void client.abort();
-  applyAction({ type: "notice", text: "aborted" });
+  remote.abort();
 };
 
 function exit(): void {
   tui.stop();
-  void client.close();
+  socket.close();
   process.exit(0);
 }
 
@@ -339,6 +479,6 @@ tui.addInputListener((data: string) => {
 });
 
 transcript.append(`${BOLD}Cinba${RESET} ${DIM}${process.cwd()}${RESET}`);
-transcript.append(`${DIM}Type and press Enter to send. Ctrl+C to exit.${RESET}`);
+transcript.append(`${DIM}Connecting to the core service...${RESET}`);
 
 tui.start();

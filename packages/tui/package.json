@@ -5,7 +5,6 @@
   "version": "0.0.0",
   "dependencies": {
     "@cinba/core-client": "*",
-    "@cinba/core-host": "*",
     "@earendil-works/pi-tui": "^0.85.1"
   }
 }
