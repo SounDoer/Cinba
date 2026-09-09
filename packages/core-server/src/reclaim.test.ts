@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assessIdle, IDLE_TIMEOUT_MS } from "./reclaim.ts";
+import { assessIdle, canStopNow, IDLE_TIMEOUT_MS } from "./reclaim.ts";
 
 const IDLE = {
   hasViewers: false,
@@ -51,4 +51,15 @@ test("finishing a turn gives it the whole quiet period again", () => {
 
   const nowIdle = assessIdle({ ...IDLE, idleSince: wasBusy.idleSince }, 1000);
   assert.equal(nowIdle.idleSince, 1000, "the clock restarts, rather than resuming from 500");
+});
+
+test("a quiet conversation can be stopped on demand", () => {
+  // Nobody is mid-anything, so the process can go now rather than at the end of
+  // a quiet period. Watchers are not consulted: reopening is transparent to them.
+  assert.equal(canStopNow({ busy: false, awaitingConfirmation: false }), true);
+});
+
+test("a conversation mid-answer or mid-decision cannot be stopped on demand", () => {
+  assert.equal(canStopNow({ busy: true, awaitingConfirmation: false }), false);
+  assert.equal(canStopNow({ busy: false, awaitingConfirmation: true }), false);
 });

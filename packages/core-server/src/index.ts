@@ -34,7 +34,7 @@ import {
   startCore,
 } from "@cinba/core-host";
 import { isLoopback } from "./loopback.ts";
-import { assessIdle, IDLE_TIMEOUT_MS } from "./reclaim.ts";
+import { assessIdle, canStopNow, IDLE_TIMEOUT_MS } from "./reclaim.ts";
 import {
   CoreClient,
   createEventFolder,
@@ -133,6 +133,8 @@ type Live = {
   reconciledUpTo: string | undefined;
   /** When nobody was last looking at it; undefined while someone is. See reclaim.ts. */
   idleSince: number | undefined;
+  /** Its Pi started before the current credentials. See recycleStale(). */
+  staleCredentials: boolean;
 };
 
 const live = new Map<string, Live>();
@@ -266,7 +268,16 @@ async function listSessions(forCwd?: string): Promise<SessionSummary[]> {
  * Bring a conversation to life: start its Pi, wire the event stream into its
  * ledger, and rebuild the transcript from what Pi has stored.
  */
-async function open(options: { sessionPath?: string; cwd: string }): Promise<Live | undefined> {
+async function open(options: {
+  sessionPath?: string;
+  cwd: string;
+  /**
+   * Which model this Pi starts on, when it should not be the service default.
+   * Replacing a conversation's process must not quietly move it to another
+   * model, so recycling passes the one it was already using.
+   */
+  model?: ModelRef;
+}): Promise<Live | undefined> {
   // A directory that has since been renamed or removed makes spawn fail with
   // ENOENT, which reads as "node is missing" and is thoroughly misleading.
   if (!existsSync(options.cwd)) {
@@ -276,10 +287,11 @@ async function open(options: { sessionPath?: string; cwd: string }): Promise<Liv
 
   console.log(`[cinba] starting Pi in ${options.cwd}${options.sessionPath ? " (resuming)" : ""}`);
 
+  const starting = options.model ?? model;
   const child = startCore({
     cwd: options.cwd,
-    provider: model?.provider,
-    model: model?.id,
+    provider: starting?.provider,
+    model: starting?.id,
     sessionPath: options.sessionPath,
   });
 
@@ -330,6 +342,7 @@ async function open(options: { sessionPath?: string; cwd: string }): Promise<Liv
     storedActions: [],
     reconciledUpTo: undefined,
     idleSince: undefined,
+    staleCredentials: false,
   };
 
   pi.onEvent((event) => {
@@ -489,6 +502,91 @@ function sweepIdle(): void {
   }
 }
 
+// ---- Handing conversations the current credentials ----
+
+/**
+ * Note that every open conversation is talking to a Pi that started before the
+ * credentials changed, and replace those processes as soon as it is safe.
+ *
+ * A Pi reads the credential file once, at startup. A provider added afterwards
+ * is invisible to it: its model list comes back without those models, and
+ * switching to one fails with "Model not found" — which is why adding a key
+ * appeared to do nothing until the conversation happened to be reopened. Pi's
+ * RPC has no command that makes it look again, so the only way to give it a new
+ * key is to give it a new process.
+ */
+function markCredentialsStale(): void {
+  for (const session of live.values()) session.staleCredentials = true;
+  void recycleStale();
+}
+
+/**
+ * Replace the Pi of every conversation whose credentials are stale.
+ *
+ * Safe for the same reason reclaiming is: the conversation is in Pi's session
+ * file, not in the process. The one thing that must not happen is cutting into
+ * a turn, so a conversation that is busy or waiting on an allow/deny keeps its
+ * process and the next sweep tries again.
+ *
+ * A conversation nobody is watching is only stopped — it comes back from disk
+ * when someone asks for it, and starting a process now would waste exactly what
+ * reclaim.ts exists to save. One that is being watched is reopened straight
+ * away instead, because its viewers would otherwise be pointed at a
+ * conversation that is no longer open, and their next message would go nowhere.
+ */
+async function recycleStale(): Promise<void> {
+  if (![...live.values()].some((session) => session.staleCredentials)) return;
+
+  // Which providers this machine can reach now. A conversation is put back on
+  // the model it was using only if that is still one of them: Pi will not start
+  // on a provider it has no credential for, and that includes the placeholder
+  // it reports when it has none at all. Getting this wrong leaves a
+  // conversation with no process rather than with the wrong model.
+  const reachable = new Set(
+    (await listProviders()).filter((provider) => provider.configured).map((provider) => provider.id),
+  );
+
+  for (const session of [...live.values()]) {
+    if (!session.staleCredentials) continue;
+    if (
+      !canStopNow({
+        busy: session.ledger.snapshot().busy,
+        awaitingConfirmation: session.pendingConfirms.size > 0,
+      })
+    ) {
+      continue;
+    }
+
+    const watchers = [...viewing.entries()]
+      .filter(([, id]) => id === session.id)
+      .map(([socket]) => socket);
+    const wasUsing =
+      session.model && reachable.has(session.model.provider) ? session.model : undefined;
+
+    // Found before the process goes, so what replaces it is already known.
+    const stored = watchers.length > 0 ? await findSession(session.id) : undefined;
+
+    console.log(`[cinba] ${session.id} has stale credentials, restarting its Pi`);
+    stop(session.id);
+    if (watchers.length === 0) continue;
+
+    const reopened = stored
+      ? await open({ sessionPath: stored.path, cwd: stored.cwd || session.cwd, model: wasUsing })
+      : // Pi writes the session file with the first entry, so a conversation
+        // with nothing in it yet has none to come back from. A new one in the
+        // same directory is the same empty conversation.
+        await open({ cwd: session.cwd, model: wasUsing });
+    if (!reopened) {
+      // Its directory has gone, or Pi would not start there. Nothing to show,
+      // and nothing to be gained by pretending otherwise: the client picks
+      // another conversation from its next listing.
+      console.error(`[cinba] could not reopen ${session.id} after a credential change`);
+      continue;
+    }
+    for (const socket of watchers) show(socket, reopened);
+  }
+}
+
 // ---- Messages from clients ----
 
 async function handle(socket: WebSocket, raw: string): Promise<void> {
@@ -634,6 +732,7 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
         if (current) {
           emit(current, [{ type: "notice", text: `${message.providerId} is configured` }]);
         }
+        markCredentialsStale();
       } catch (error) {
         // The message from a failed login can be shown; it never contains the key.
         const reason = error instanceof Error ? error.message : String(error);
@@ -652,6 +751,9 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
       if (current) {
         emit(current, [{ type: "notice", text: `${message.providerId} is no longer configured` }]);
       }
+      // A removed key matters as much as an added one: a Pi that still holds it
+      // would go on offering models this machine can no longer reach.
+      markCredentialsStale();
       sendTo(socket, { type: "provider_listing", providers: await listProviders() });
       return;
     }
@@ -740,7 +842,12 @@ const server = new WebSocketServer({ server: httpServer, path: "/ws" });
 // Checked every minute rather than on a timer per conversation: one timer is
 // easier to reason about, and a minute of imprecision on a ten-minute rule
 // changes nothing.
-setInterval(sweepIdle, 60_000).unref();
+setInterval(() => {
+  sweepIdle();
+  // The retry for conversations that were mid-turn when the credentials
+  // changed. The common case is handled the moment the change happens.
+  void recycleStale();
+}, 60_000).unref();
 
 httpServer.listen(PORT, HOST, () => {
   console.log(`[cinba] core "${coreName}" - UI at http://${HOST}:${PORT}`);

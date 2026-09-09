@@ -38,6 +38,19 @@ export type IdleVerdict = {
 };
 
 /**
+ * Whether stopping this conversation's process right now would lose something
+ * a person is in the middle of.
+ *
+ * Viewers are not part of it. Being watched is a reason not to stop a process
+ * for *memory* — the point of the quiet period — but it is no reason not to
+ * stop one that has to be replaced, because reopening brings the conversation
+ * back. Mid-answer and mid-decision are the two states where it does matter.
+ */
+export function canStopNow(state: Pick<IdleState, "busy" | "awaitingConfirmation">): boolean {
+  return !state.busy && !state.awaitingConfirmation;
+}
+
+/**
  * Decide, for one conversation, whether its process should stop now.
  *
  * Being busy or awaiting a confirmation resets the clock rather than merely
@@ -49,7 +62,7 @@ export function assessIdle(
   now: number,
   timeoutMs: number = IDLE_TIMEOUT_MS,
 ): IdleVerdict {
-  if (state.hasViewers || state.busy || state.awaitingConfirmation) {
+  if (state.hasViewers || !canStopNow(state)) {
     return { idleSince: undefined, reclaim: false };
   }
 
