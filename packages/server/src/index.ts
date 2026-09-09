@@ -19,11 +19,10 @@
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { createServer } from "node:http";
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { IncomingMessage } from "node:http";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
-import { dirname, extname, join, normalize, sep } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   clearCredential,
@@ -35,6 +34,7 @@ import {
 } from "@cinba/agent";
 import { isLoopback } from "./loopback.ts";
 import { assessIdle, canStopNow, IDLE_TIMEOUT_MS } from "./reclaim.ts";
+import { createStaticFileHandler } from "./static-files.ts";
 import {
   createEventFolder,
   foldSessionEntries,
@@ -67,42 +67,7 @@ const FLUSH_INTERVAL_MS = 30;
 
 /** Where the built UI lives. Located relative to the repo layout, not through package resolution. */
 const WEB_DIST = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
-
-const MIME: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".svg": "image/svg+xml",
-  ".woff2": "font/woff2",
-};
-
-/** Serve the UI's static files. */
-async function serveStatic(request: IncomingMessage, response: ServerResponse): Promise<void> {
-  const url = new URL(request.url ?? "/", "http://localhost");
-  const requested = url.pathname === "/" ? "/index.html" : url.pathname;
-
-  // Guard against path traversal: join first, then check the result is still
-  // under WEB_DIST. We listen on loopback only today, but this check should be
-  // in place before a channel is ever opened outward.
-  const filePath = normalize(join(WEB_DIST, requested));
-  if (!filePath.startsWith(WEB_DIST + sep) && filePath !== WEB_DIST) {
-    response.writeHead(403).end("forbidden");
-    return;
-  }
-
-  try {
-    const body = await readFile(filePath);
-    response.writeHead(200, {
-      "content-type": MIME[extname(filePath)] ?? "application/octet-stream",
-    });
-    response.end(body);
-  } catch {
-    response
-      .writeHead(404)
-      .end("The UI is not built yet. Run: npm run build --workspace @cinba/web");
-  }
-}
+const serveStatic = createStaticFileHandler(WEB_DIST);
 
 // ---- State ----
 
