@@ -51,7 +51,6 @@ import type {
   Session,
   SessionSummary,
   Snapshot,
-  Socket,
   ViewAction,
 } from "@cinba/contract";
 
@@ -713,7 +712,7 @@ function raiseConfirm(requestId: string): void {
   tui.setFocus(dialog);
 }
 
-const remote = new RemoteSession(socket as unknown as Socket, {
+const remote = new RemoteSession(socket, {
   onSnapshot: (state) => {
     mirror = createSession(state.snapshot);
     sessionId = state.sessionId;
@@ -981,11 +980,11 @@ tui.addInputListener((data: string) => {
   // mid-answer, for the same reason the GUI disables its header buttons.
   if (matchesKey(data, "ctrl+o") && !busy && !confirming) {
     remote.listSessions();
-    return true;
+    return { consume: true };
   }
   if (matchesKey(data, "ctrl+p") && !busy && !confirming) {
     remote.listModels();
-    return true;
+    return { consume: true };
   }
   return undefined;
 });

@@ -4,6 +4,7 @@
     "module": "NodeNext",
     "moduleResolution": "nodenext",
     "strict": true,
+    "forceConsistentCasingInFileNames": true,
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true,
     "allowImportingTsExtensions": true,

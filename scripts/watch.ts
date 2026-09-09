@@ -16,7 +16,7 @@ socket.addEventListener("error", () => {
 });
 
 new RemoteSession(socket, {
-  onSnapshot: (snapshot, cwd) => {
+  onSnapshot: ({ snapshot, cwd }) => {
     console.log(
       `[snapshot] cwd=${cwd} entries=${snapshot.entries.length} ` +
         `tokens=${snapshot.totalTokens} busy=${snapshot.busy}`,
@@ -31,7 +31,6 @@ new RemoteSession(socket, {
       }
     }
   },
-  onReset: (cwd) => console.log(`\n[reset] cwd=${cwd}`),
 });
 
 console.log("watching, Ctrl+C to exit");

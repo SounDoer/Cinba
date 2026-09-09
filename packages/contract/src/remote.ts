@@ -23,7 +23,12 @@ import type {
  */
 export type Socket = {
   send(data: string): void;
-  onmessage: ((event: { data: unknown }) => void) | null;
+  /**
+   * Browser and Node WebSockets give this event different nominal types even
+   * though both expose data. Keep the platform event opaque at this boundary;
+   * RemoteSession immediately treats its data as unknown and validates JSON.
+   */
+  onmessage: ((event: any) => void) | null;
 };
 
 /** Everything a snapshot says about the session it describes. An object rather than four positional arguments, which this had grown to. */

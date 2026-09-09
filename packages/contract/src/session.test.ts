@@ -33,6 +33,7 @@ test("thinking is stored separately from the body text", () => {
   session.apply({ type: "text_appended", messageId: "m1", text: "the answer" });
 
   const entry = session.snapshot().entries[0];
+  assert(entry?.kind === "message");
   assert.equal(entry.text, "the answer");
   assert.equal(entry.thinking, "thinking it over");
 });
@@ -93,6 +94,8 @@ test("a confirm request attaches to the most recent pending card", () => {
   session.apply({ type: "confirm_requested", requestId: "u1" });
 
   const entries = session.snapshot().entries;
+  assert(entries[0]?.kind === "tool");
+  assert(entries[1]?.kind === "tool");
   assert.equal(entries[0].confirmRequestId, undefined, "a finished card must not have a confirmation attached");
   assert.equal(entries[1].confirmRequestId, "u1");
 });
@@ -104,8 +107,10 @@ test("answering a confirmation clears the pending marker on the card", () => {
   session.apply({ type: "confirm_requested", requestId: "u1" });
   session.apply({ type: "tool_changed", toolCallId: "b", toolName: "bash", status: "running" });
 
-  assert.equal(session.snapshot().entries[0].confirmRequestId, undefined);
-  assert.equal(session.snapshot().entries[0].status, "running");
+  const entry = session.snapshot().entries[0];
+  assert(entry?.kind === "tool");
+  assert.equal(entry.confirmRequestId, undefined);
+  assert.equal(entry.status, "running");
 });
 
 test("a system notice enters the ledger as its own entry", () => {
@@ -161,7 +166,9 @@ test("a rebuilt ledger goes on accepting actions", () => {
   const mirror = createSession(origin.snapshot());
   mirror.apply({ type: "text_appended", messageId: "m1", text: "more" });
 
-  assert.equal(mirror.snapshot().entries[0].text, "more");
+  const entry = mirror.snapshot().entries[0];
+  assert(entry?.kind === "message");
+  assert.equal(entry.text, "more");
 });
 
 test("two tellings of the same conversation match despite different ids", () => {

@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "version": "0.0.0",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
   "dependencies": {
     "@cinba/contract": "*",
     "@earendil-works/pi-tui": "^0.85.1"

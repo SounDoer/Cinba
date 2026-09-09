@@ -10,7 +10,17 @@
     "packages/*"
   ],
   "scripts": {
-    "test": "node --test --experimental-strip-types \"packages/*/src/*.test.ts\"",
-    "test:e2e": "node --test --experimental-strip-types \"packages/*/src/*.e2e.ts\""
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.scripts.json",
+    "test": "node --test --experimental-strip-types \"packages/*/src/**/*.test.ts\"",
+    "test:e2e": "node --test --experimental-strip-types \"packages/*/src/**/*.e2e.ts\"",
+    "build": "npm run build --workspace @cinba/web",
+    "check": "npm run typecheck && npm test && npm run test:e2e && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@types/ws": "^8.18.1",
+    "typescript": "^7.0.2"
   }
 }

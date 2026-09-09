@@ -108,6 +108,7 @@ test("tool_execution_end picks the final status from isError and extracts the te
     isError: false,
     result: { content: [{ type: "text", text: "file contents" }] },
   });
+  assert(ok[0]?.type === "tool_changed");
   assert.equal(ok[0].status, "done");
   assert.equal(ok[0].result, "file contents");
 
@@ -118,6 +119,7 @@ test("tool_execution_end picks the final status from isError and extracts the te
     isError: true,
     result: { content: [{ type: "text", text: "The user denied this tool call" }] },
   });
+  assert(bad[0]?.type === "tool_changed");
   assert.equal(bad[0].status, "error");
   assert.equal(bad[0].result, "The user denied this tool call");
 });

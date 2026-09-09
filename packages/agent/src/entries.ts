@@ -15,8 +15,7 @@
 // A pure function over plain data: no Pi, no transport, no cost to test.
 
 import { extractText } from "./events.ts";
-import type { ViewAction } from "./events.ts";
-import type { Entry } from "./session.ts";
+import type { ViewAction } from "@cinba/contract";
 
 /** One content part of a stored message. */
 type Part = {
