@@ -17,7 +17,7 @@ echo.
 rem Give the server two seconds to start listening before opening the browser.
 start /b "" powershell -NoProfile -Command "Start-Sleep 2; Start-Process 'http://127.0.0.1:4517/'"
 
-node packages\core-server\src\index.ts
+node packages\server\src\index.ts
 
 :done
 echo.

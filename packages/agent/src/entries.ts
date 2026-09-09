@@ -140,38 +140,3 @@ export function foldSessionEntries(entries: readonly unknown[]): ViewAction[] {
 
   return actions;
 }
-
-/**
- * Do two transcripts say the same thing?
- *
- * Compared by content, never by id: a transcript built live carries ids this
- * project invented while streaming, and the same transcript rebuilt from Pi's
- * file carries Pi's own. Comparing ids would report a difference every single
- * turn and make the check worthless.
- *
- * Notices are left out on purpose. They are ephemeral interface messages with
- * no counterpart in Pi's file, so their absence from the rebuilt side is
- * expected rather than a disagreement.
- */
-export function sameTranscript(a: readonly Entry[], b: readonly Entry[]): boolean {
-  const meaningful = (entries: readonly Entry[]) =>
-    entries.filter((entry) => entry.kind !== "notice").map(signature);
-  const left = meaningful(a);
-  const right = meaningful(b);
-  return left.length === right.length && left.every((line, index) => line === right[index]);
-}
-
-function signature(entry: Entry): string {
-  switch (entry.kind) {
-    case "message":
-      return `m|${entry.role}|${entry.text}|${entry.thinking}`;
-    case "tool":
-      // The pending flag is left out: a card awaiting approval is part of the
-      // present, and the present is not in Pi's file yet.
-      return `t|${entry.toolName}|${entry.status}|${entry.result ?? ""}`;
-    case "model":
-      return `p|${entry.provider}|${entry.modelId}`;
-    default:
-      return "";
-  }
-}

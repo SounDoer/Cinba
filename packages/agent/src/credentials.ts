@@ -16,14 +16,10 @@
 // a decision to weigh rather than a wiring job.
 
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import type { ProviderStatus } from "@cinba/contract";
 
-export type ProviderStatus = {
-  id: string;
-  /** Human-readable, from Pi. */
-  name: string;
-  /** Whether a credential is stored. Never says what it is. */
-  configured: boolean;
-};
+// The wire type, not a copy of it: what this function reports is exactly what
+// travels, and a second definition would be free to drift into carrying a key.
 
 /**
  * Every provider Pi knows about, and whether this machine has credentials for

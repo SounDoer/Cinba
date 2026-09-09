@@ -79,32 +79,46 @@
 
 ## 3. 架构
 
-三层，边界严格：
+四层，边界严格（2026-09-09 重构后，包名与内容对上）：
 
 ```
 ┌─ 前端层 ─────────────────────────────────────────┐
-│  Electron GUI (本机)  │  TUI (服务器)  │  [阶段3] Web │
+│  Electron GUI  │  TUI  │  Web                     │
+│  只依赖 contract，永不 import Pi                   │
 └────────────────────┬─────────────────────────────┘
-                     │  只认协议，永不 import Pi
-┌─ 协议层 ───────────▼─────────────────────────────┐
-│  core-client：收发 JSONL、把原始事件变成类型化事件    │
-│  传输：stdio 管道（阶段0-2）→ WebSocket（阶段3）     │
+┌─ 契约层 ───────────▼─────────────────────────────┐
+│  contract：协议消息、账本、界面动作、两端共同的措辞  │
+│  零依赖，浏览器安全。服务端与所有前端都 import 它    │
+└────────────────────┬─────────────────────────────┘
+┌─ 服务层 ───────────▼─────────────────────────────┐
+│  server：唯一跑着的进程。会话表、Pi 的生死、账本、   │
+│  静态页面。听 127.0.0.1:4517                       │
 └────────────────────┬─────────────────────────────┘
 ┌─ 核心层 ───────────▼─────────────────────────────┐
-│  Pi（npm 依赖）+ 自己的 extensions                  │
-│  由 core-host 负责启动与配置                        │
+│  agent：唯一碰 Pi 的地方。起 Pi、收发 JSONL、       │
+│  折叠事件、凭据、会话文件                          │
+│  extensions：权限门（Pi 以 -e 按文件路径加载）      │
+│  Pi（npm 依赖）                                    │
 └──────────────────────────────────────────────────┘
 ```
+
+**为什么是四层而不是三层**：原设计写的是三层，中间叫「协议层」，内容是「收发 JSONL」——
+那只是对 Pi 说话的那一半。3a 把 Pi 挪进独立进程之后，又长出了「对前端说话」这一层，
+而架构图一直没画它。2026-09-09 的重构把两半分开：**对 Pi 说话的并进 `agent`，
+对前端说话的成为 `contract`**。见 `docs/plans/2026-09-09-package-rename.md`。
 
 一次完整对话的数据流：
 
 ```
-用户输入 → 前端 → core-client（编码成 JSON）→ 管道 → Pi 核心
-                                                      ↓ 思考、调工具
-前端渲染 ← core-client（解码成类型化事件）← 管道 ← Pi 核心
+用户输入 → 前端 → contract 编码 → WebSocket → server
+                                                 ↓ 找到这条会话的 Pi
+                                          agent 编码成 JSONL → 管道 → Pi
+                                                                       ↓ 思考、调工具
+前端渲染 ← contract 解码 ← WebSocket ← server ← agent 折叠成界面动作 ← 管道 ← Pi
 ```
 
-把前端从 desktop 换成 tui，中间层和核心层不需要任何改动。这是整个设计要达成的效果。
+把前端从 web 换成 tui，下面三层不需要任何改动；把 `agent` 从「起子进程」换成「进程内」，
+上面三层也不需要改动。这是整个设计要达成的效果。
 
 ## 4. 目录结构
 
@@ -123,16 +137,24 @@ Cinba/
 ├── scripts/
 │   └── probe.ts                 # 阶段0 协议探针，之后留作调试工具
 └── packages/
-    ├── core-host/               # 「我的核心」的定义
-    │   ├── package.json
-    │   └── src/index.ts         #   startCore()：启动 Pi、指定模型、挂载 extensions
-    │
-    ├── core-client/             # 协议层
+    ├── agent/                   # 唯一碰 Pi 的地方
     │   ├── package.json
     │   └── src/
-    │       ├── index.ts         #   对外 API：sendMessage() / onEvent()
-    │       ├── transport.ts     #   传输实现。阶段3 换 WebSocket 时只动这里
-    │       └── events.ts        #   原始 JSON → 类型化事件
+    │       ├── index.ts         #   startPi()：启动 Pi、指定模型、无条件挂权限门
+    │       ├── pi-client.ts     #   PiClient：对 Pi 进程说 JSONL
+    │       ├── transport.ts     #   stdio 传输
+    │       ├── events.ts        #   Pi 的事件流 → 界面动作
+    │       ├── entries.ts       #   Pi 存的会话条目 → 界面动作
+    │       └── credentials.ts   #   provider 凭据（唯一碰密钥的地方）
+    │
+    ├── contract/                # 服务端与前端的约定（零依赖）
+    │   ├── package.json
+    │   └── src/
+    │       ├── protocol.ts      #   两端之间的消息
+    │       ├── remote.ts        #   前端这一侧的连接
+    │       ├── actions.ts       #   界面动作的词汇表
+    │       ├── session.ts       #   账本
+    │       └── labels.ts commands.ts  #   两端必须一致的措辞
     │
     ├── extensions/              # Pi 扩展（自定义工具、权限门、上下文注入）
     │   ├── package.json
@@ -160,10 +182,11 @@ Cinba/
 这是本设计**唯一真正硬性**的约束：
 
 ```
-前端 ──► core-client ──(协议)──► core-host ──► Pi + extensions
+前端 ──► contract ◄── server ──► agent ──► Pi + extensions
 ```
 
-- `desktop` / `tui` / `web` 只依赖 `core-client`
+- `desktop` / `tui` / `web` 只依赖 `contract`
+- `contract` 谁也不依赖——它必须能被浏览器 import
 - 前端不依赖 `extensions`，不依赖 Pi
 - 依赖方向单向，不允许反向或抄近路
 
@@ -179,8 +202,8 @@ Cinba/
 | GUI 用 Electron 而非 Tauri | Pi 核心是 Node，Electron 主进程自带 Node 运行时，拉起子进程天然顺畅；Tauri 需塞 Node sidecar，自找麻烦。已有的 Tauri 前端经验（Web 技术栈）可平移 |
 | 从第一天就走进程边界 + 协议 | 原因写于阶段 0：阶段 3 远程化的前提；同时所有事件变成可读 JSON，正好服务于"搞懂原理"。**2026-09-08 重新审视**：`docs/rpc.md` 建议 Node 应用直接 import `AgentSession` 而不是起子进程，而 3a 之后前端与 Pi 之间本就隔着 WebSocket，所以"为了远程化"这条理由已部分失效。**结论仍是维持**，但换成两条更硬的理由：①**隔离**——多会话之后，一条对话把 Pi 搞崩不该带走其它正在跑的；②**契约稳定性**——RPC 是有文档的协议，`AgentSession` 是"去看源码"。**为什么我们的隔离需求和普通 Node 应用不同，见下方「app 还是 service」**。将来若要做登录或注册自定义 provider，那些只有导出 API 够得着，届时是"要不要为这一个功能开一条更宽的依赖"，不是"要不要换架构" |
 | TUI 自己写，不用 Pi 原生 CLI | 保证两端共用同一套核心定义与协议层；`pi-tui` 已提供 Editor、Markdown、SelectList，最难的部分不用自己造 |
-| `core-host` 单独成包 | 保证"我的 agent"只有一处定义，避免 GUI 和 TUI 逐渐分化 |
-| 权限门由 `core-host` 无条件挂载 | 它是 agent 的固有属性而非界面功能。交给调用方传，就意味着某个调用方忘了传就会裸奔 |
+| `agent` 单独成包（原 `core-host`） | 保证"我的 agent"只有一处定义，避免 GUI 和 TUI 逐渐分化；2026-09-09 把「对 Pi 说话」那半也并了进来，于是**「Pi 的接触面」正好等于一个包**，第 9 节的清单就是这个目录的清单 |
+| 权限门由 `agent` 无条件挂载 | 它是 agent 的固有属性而非界面功能。交给调用方传，就意味着某个调用方忘了传就会裸奔 |
 
 ### app 还是 service（2026-09-08）
 
@@ -207,7 +230,7 @@ IDEs, or **custom UIs**"（我们是），那条 note 说 Node 用户可以考�
 两边都沾，所以得自己权衡，而权衡的结果取决于自己是 app 还是 service。
 
 **换的成本比一度估计的低**：`AgentSession` 的事件形状（`message_update` /
-`assistantMessageEvent` / `text_delta`）与 RPC 事件流一致，`core-client/events.ts`
+`assistantMessageEvent` / `text_delta`）与 RPC 事件流一致，`agent/events.ts`
 基本不用改，消失的是 `client.ts` / `transport.ts` / `line-splitter.ts` 那一层。
 所以不换的理由不是"改起来贵"，就是上面那条隔离。
 
@@ -232,7 +255,7 @@ IDEs, or **custom UIs**"（我们是），那条 note 说 Node 用户可以考�
 
 **~~阶段 2 刻意做朴素~~（2026-09-08 作废）**：原文是「一个输入框、一条消息流、Ctrl+C 退出，
 不做模型选择器、不做会话浏览器」。那是在「TUI 只在服务器上凑合用」的前提下写的，
-而 2026-09-08 确定的要求是**两端功能一致、都由自己设计**。TUI 已改成 core-server 的客户端，
+而 2026-09-08 确定的要求是**两端功能一致、都由自己设计**。TUI 已改成核心服务的客户端，
 并补上了 Markdown、模型选择器、会话列表。见 `docs/plans/2026-09-08-sessions-and-tui-client.md`。
 
 **阶段 4 可能同时引入构建步骤**：GUI 侧现在是手写 DOM、无框架，TUI 侧用 pi-tui。打磨期两边都可能想换——GUI 换成前端框架，TUI 换成 Ink（终端里的 React，Claude Code 与 Codex 都在用）。届时理由会比现在充分：需要构建步骤的地方不止一处，且对两个界面都已有实感。现在不做，是因为为了单个界面库去改整个仓库「不编译」的性质，代价与收益不成比例。换界面层的成本始终很低——它是整个系统里最容易推倒重写的一层。
@@ -261,11 +284,11 @@ IDEs, or **custom UIs**"（我们是），那条 note 说 Node 用户可以考�
 本机不再有 Pi，**家里电脑上的项目就管不了了**——包括 Cinba 这个仓库自己。
 
 ```
-家里电脑  ─► core-server（本机，只听 127.0.0.1）  ─► 管家里的项目
+家里电脑  ─► server（本机，只听 127.0.0.1）  ─► 管家里的项目
                     ▲
    desktop / web / tui  ── 界面上能选连哪个核心
                     ▼
-VPS      ─► core-server（听 Tailscale 内网）      ─► 管 VPS
+VPS      ─► server（听 Tailscale 内网）      ─► 管 VPS
                     ▲
               手机（Tailscale）
 ```
@@ -273,7 +296,7 @@ VPS      ─► core-server（听 Tailscale 内网）      ─► 管 VPS
 同一个程序换台机器启动，不是两套代码。但**两个核心彼此完全独立**：对话、账本、配置、
 花费统计都不共享。界面上切核心是换一个世界，不是把会话搬过去。
 
-「VPS 上的 Cinba 管 VPS」不需要任何额外代码：Pi 的 bash 工具本来就跑在 core-server
+「VPS 上的 Cinba 管 VPS」不需要任何额外代码：Pi 的 bash 工具本来就跑在服务
 所在的机器上。
 
 **「外出也想用家里的项目」暂缓，不是否决。** 它会把当初暂缓形态 A 的那个理由原样带回来
@@ -296,7 +319,7 @@ VPS      ─► core-server（听 Tailscale 内网）      ─► 管 VPS
 **推进顺序**（前两步不碰网络，红线不动，做完立刻受益）：
 
 ```
-1. ✅ 多会话 + TUI/desktop 都改成 core-server 的客户端   （2026-09-08 完成）
+1. ✅ 多会话 + TUI/desktop 都改成核心服务的客户端   （2026-09-08 完成）
 2. 多核心
    2a. ✅ 核心身份：界面上一直看得见「我连的是哪台机器」  （2026-09-09 完成）
    2b. ⬜ 核心切换器：界面里内置一份核心清单             （暂缓，见下）
@@ -331,13 +354,18 @@ VPS      ─► core-server（听 Tailscale 内网）      ─► 管 VPS
 
 ## 8. 已验证的结论与待解问题
 
+> **读旧记录时的对照表（2026-09-09 改名）**：下文的存档条目保留了当时的包名。
+> `core-host` → 今天的 `agent`；`core-server` → `server`；`core-client` 一分为二——
+> 对 Pi 说话的那半并进 `agent`，对前端说话的那半成为 `contract`。
+> 存档不改写，因为那确实是当时的叫法。
+
 完整实测记录见 `docs/notes/2026-09-06-rpc-protocol-findings.md`。
 
 ### 已确认（阶段 0 实测，2026-09-06）
 
 - **走 RPC 模式**（`pi --mode rpc`）。事件流完整可用：`agent_start` / `turn_start` / `message_start` / `message_update` / `tool_execution_*` / `agent_end` / `agent_settled`，嵌套结构为 agent > turn > message。
 - **`agent_settled` 是"可接受新输入"的信号**，GUI 据此解除输入锁。不可用 `turn_end` 代替——调完工具后还会有下一轮。
-- **RPC 进程常驻**，一次 prompt 结束后不退出。`core-host` 需管理进程生命周期，GUI 关闭时必须回收子进程。
+- **RPC 进程常驻**，一次 prompt 结束后不退出。`agent` 需管理进程生命周期，GUI 关闭时必须回收子进程。
 - **消息的 role 有三种**：`user` / `assistant` / `toolResult`。
 - **费用与 token 用量随消息实时返回**，GUI 无需自行计算。
 
@@ -356,14 +384,14 @@ VPS      ─► core-server（听 Tailscale 内网）      ─► 管 VPS
 
 ### 已解决（阶段 3a）
 
-- ~~**`desktop` 包同时扮演了前端与核心侧。**~~ 3a 把 Pi 与账本搬进独立的 `core-server` 进程，
-  `desktop` 改为通过 WebSocket 连接它，依赖只剩 `@cinba/core-client`——第 5 节的依赖规则
+- ~~**`desktop` 包同时扮演了前端与核心侧。**~~ 3a 把 Pi 与账本搬进独立的服务进程，
+  `desktop` 改为通过 WebSocket 连接它，依赖只剩契约包——第 5 节的依赖规则
   回到设计原样。选的是「薄前端 + 独立核心进程」那条路。
 
 ### 已解决（阶段 1 期间）
 
-- ~~**`ctx.ui.confirm()` 如何穿过 RPC 边界。**~~ Pi 的 extension UI protocol 已经定义好了这条往返通道（`extension_ui_request` / `extension_ui_response`，按 `id` 配对），不需要自造。但 Pi 内置的 `RpcClient` 用不了——它的 `send()` 是 private，没法把回应写回 stdin，所以 `core-client` 自己实现。详见 `docs/notes/2026-09-06-rpc-protocol-findings.md` 第 9 节。
-- ~~**`shell: true` 的替代方案。**~~ 改为用 Node 直接执行 Pi 的 `rpc-entry`，两个问题都没了。**但在 Electron 下有个陷阱**：主进程里 `process.execPath` 是 `electron.exe` 而不是 `node.exe`，必须给子进程设 `ELECTRON_RUN_AS_NODE=1`，否则 Electron 会把入口文件当成一个 app 加载后静默退出。已在 `core-host` 落实并加测试。
+- ~~**`ctx.ui.confirm()` 如何穿过 RPC 边界。**~~ Pi 的 extension UI protocol 已经定义好了这条往返通道（`extension_ui_request` / `extension_ui_response`，按 `id` 配对），不需要自造。但 Pi 内置的 `RpcClient` 用不了——它的 `send()` 是 private，没法把回应写回 stdin，所以我们自己实现。详见 `docs/notes/2026-09-06-rpc-protocol-findings.md` 第 9 节。
+- ~~**`shell: true` 的替代方案。**~~ 改为用 Node 直接执行 Pi 的 `rpc-entry`，两个问题都没了。**但在 Electron 下有个陷阱**：主进程里 `process.execPath` 是 `electron.exe` 而不是 `node.exe`，必须给子进程设 `ELECTRON_RUN_AS_NODE=1`，否则 Electron 会把入口文件当成一个 app 加载后静默退出。已在 `agent` 落实并加测试。
 
 ### 待解问题
 
@@ -383,7 +411,7 @@ VPS      ─► core-server（听 Tailscale 内网）      ─► 管 VPS
 
   改造本身不大：TUI 那 344 行里画的部分几乎不动，换的是入口那三行
   （`startCore + CoreClient + fold` → `WebSocket + RemoteSession + createSession`）。
-  **但它必须和「多会话」一起做**：core-server 现在只有一个当前项目、一条消息流，
+  **但它必须和「多会话」一起做**：服务当时只有一个当前项目、一条消息流，
   而 TUI 现在的用法是多开几个各干各的，不先补多会话会明确变难用。
 
 - **Pi 的 extension API 稳定性。** 文档路径带 `/latest`，项目迭代快。因此不把大量逻辑压在 extension API 上。**升级 Pi 后的重验步骤见第 9 节。**
@@ -446,7 +474,7 @@ OAuth 登录、装卸扩展与 skills、Pi 自己 TUI 的主题与键位、自�
 
 - Pi 的 extensions 以完整系统权限运行，引入第三方 Pi package 前必须审阅代码。
 - Electron 侧：`contextIsolation` 开启，`nodeIntegration` 关闭，`sandbox` 开启。
-  **阶段 3b-1 之后不再有 IPC**——窗口加载的是 core-server 提供的网页，与浏览器走完全相同的
+  **阶段 3b-1 之后不再有 IPC**——窗口加载的是服务提供的网页，与浏览器走完全相同的
   路径（WebSocket 连 `127.0.0.1:4517`）。`preload.js` 已删除，Electron 主进程只负责开窗口。
 - 模型输出经 `react-markdown` 渲染，它构建 React 节点树且默认禁止原始 HTML，
   因此模型无法往界面注入标记。**不要改用 `dangerouslySetInnerHTML` 或引入 `rehype-raw`。**
@@ -504,17 +532,17 @@ node scripts/repl.ts "运行 ls 命令，告诉我当前目录下有什么"
 | 依赖的接口 | 用在哪 | 怎么验 | 失效时的症状 |
 |---|---|---|---|
 | `pi.on("tool_call")` / `ctx.ui.confirm()` / `{ block: true }` | `extensions/permission-gate.ts` | **手工跑拒绝路径**（见下） | ⚠️ **可能安静失效**：界面照样问，你答拒绝，命令却已执行 |
-| `rpc-entry` 入口 + `--provider` / `--model` / `--session` / `-e` | `core-host` | 起 GUI，能对话即通过 | 吵闹：Pi 起不来 |
-| **②** `SessionManager.list()` / `.listAll()` / `SessionInfo` 字段 | `core-host` 的 `listSessions()` | 打开会话列表，有内容且标题正确 | 吵闹：列表空或报错 |
-| **②** `ModelRuntime.getProviders()` / `hasConfiguredAuth()` / `login()` / `logout()` | `core-host/credentials.ts` | `node --test packages/core-host/src/credentials.test.ts`（跑在临时目录里） | 吵闹：provider 列表空，或登录报错 |
-| **②** 会话文件的条目结构（`message` / `model_change` / `toolCall` / `toolResult`） | `core-client/entries.ts` | `node --test packages/core-client/src/entries.test.ts` + 打开一条旧会话看是否完整 | **半吵闹**：旧对话画不全或画错 |
-| RPC 命令 `prompt` / `abort` | `core-client/client.ts` | 起 GUI 对话一次、按一次 Stop | 吵闹 |
+| `rpc-entry` 入口 + `--provider` / `--model` / `--session` / `-e` | `agent` | 起 GUI，能对话即通过 | 吵闹：Pi 起不来 |
+| **②** `SessionManager.list()` / `.listAll()` / `SessionInfo` 字段 | `agent` 的 `listSessions()` | 打开会话列表，有内容且标题正确 | 吵闹：列表空或报错 |
+| **②** `ModelRuntime.getProviders()` / `hasConfiguredAuth()` / `login()` / `logout()` | `agent/credentials.ts` | `npm test`（凭据测试跑在临时目录里） | 吵闹：provider 列表空，或登录报错 |
+| **②** 会话文件的条目结构（`message` / `model_change` / `toolCall` / `toolResult`） | `agent/entries.ts` | `npm test` + 打开一条旧会话看是否完整 | **半吵闹**：旧对话画不全或画错 |
+| RPC 命令 `prompt` / `abort` | `agent/pi-client.ts` | 起 GUI 对话一次、按一次 Stop | 吵闹 |
 | RPC 命令 `get_state` | 打开会话时问模型与会话 id | 顶栏显示模型名 | 吵闹：会话开不出来 |
 | RPC 命令 `get_available_models` / `set_model` | 模型切换 | 切一次模型，对话仍延续 | 吵闹：列表空 / 切换报错 |
 | RPC 命令 `get_entries`（含 `since`） | 打开会话重建 + 每轮对账 | 打开一条有历史的会话 | 半吵闹：历史空白，或对账每轮报漂移 |
 | RPC 命令 `new_session` / `switch_session` / `set_session_name` | 新建会话 | 新建一条会话并说一句 | 吵闹 |
-| 事件流 `agent_start` / `agent_settled` / `message_*` / `tool_execution_*` | `core-client/events.ts` | 对话一次，看流式与忙碌状态 | 半吵闹：输入框不解锁，或不流式 |
-| **Pi 在 stdin 关闭时自行退出**（`process.stdin.on("end")` → shutdown） | 子进程的回收**完全靠它** | 见下方「子进程回收」 | ⚠️ **半安静**：core-server 每被强杀一次就漏若干个 Pi 进程，机器越用越慢，但不报错 |
+| 事件流 `agent_start` / `agent_settled` / `message_*` / `tool_execution_*` | `agent/events.ts` | 对话一次，看流式与忙碌状态 | 半吵闹：输入框不解锁，或不流式 |
+| **Pi 在 stdin 关闭时自行退出**（`process.stdin.on("end")` → shutdown） | 子进程的回收**完全靠它** | 见下方「子进程回收」 | ⚠️ **半安静**：服务每被强杀一次就漏若干个 Pi 进程，机器越用越慢，但不报错 |
 
 **唯一会安静失效的仍然只有权限门**，所以那一条永远排第一，且必须手工做：
 
@@ -524,7 +552,7 @@ node scripts/repl.ts "run the ls command"     # 出现确认时答 n
 
 必须同时看到：命令没执行（`isError` 为 true），且模型知道自己被拒了。
 
-**子进程回收依赖 Pi 的这一条行为，不是我们自己做的。** core-server 的 `shutdown()`
+**子进程回收依赖 Pi 的这一条行为，不是我们自己做的。** `server` 的 `shutdown()`
 只在优雅退出时跑；被强杀、崩溃、或关掉 `cinba.cmd` 窗口时它跑不到。真正兜底的是：
 父进程一死，子进程的 stdin 管道 EOF，Pi 自己退出。
 
@@ -545,15 +573,15 @@ force-killing the server, no handlers
 
 ### API key 的红线（2026-09-08 新增）
 
-在此之前 **core-server 从头到尾没碰过任何密钥**——只把 provider 和 model 的**名字**传给
+在此之前 **服务端从头到尾没碰过任何密钥**——只把 provider 和 model 的**名字**传给
 Pi，Pi 自己读 `auth.json`、自己发 HTTPS。2026-09-08 为兑现第一动机破了这个例，
-只破在一处（`core-host/credentials.ts`），并用四条规矩挡住：
+只破在一处（`agent/credentials.ts`），并用四条规矩挡住：
 
 1. **单向**：密钥进得去、出不来。任何 ServerMessage 都不得携带密钥，只传
    `{ id, name, configured }`。
 2. **不进日志、不进账本、不进快照**——账本会广播给所有观看者。
 3. **界面遮蔽**：网页 `type="password"`，终端不回显。
-4. **凭据操作只接受 loopback 连接**（`core-server/loopback.ts`）。今天它拒绝不了任何东西，
+4. **凭据操作只接受 loopback 连接**（`server/loopback.ts`）。今天它拒绝不了任何东西，
    因为服务只监听 `127.0.0.1`——**它是为门打开的那天提前放好的**。
 
 ⚠️ **一次真实的泄漏，值得记住**：`setApiKey` 最初把密钥回答给 Pi 提出的**任何**问题。
@@ -567,8 +595,8 @@ Bedrock 把它原样回显在错误里，**显示到了屏幕上**。当时代�
 没有界面（`ctx.hasUI` 为 false）时问不了人。此时正确的默认动作是**拦截**，不是放行——
 联系不上负责人时该拒绝，这是安全闸门的通则。
 
-本项目最初写成了放行（fail-open），2026-09-07 修正。今天走不到那个分支（`core-host` 永远用
-`rpc-entry` 启动 Pi，RPC 模式下 `hasUI` 恒为 true），但若将来把 `core-host` 用在无界面的
+本项目最初写成了放行（fail-open），2026-09-07 修正。今天走不到那个分支（`agent` 永远用
+`rpc-entry` 启动 Pi，RPC 模式下 `hasUI` 恒为 true），但若将来把 `agent` 用在无界面的
 自动化里，fail-open 意味着**所有工具静默通过且不报错**。
 
 例外：只读工具（`read` / `glob` / `grep`）在无界面时仍然放行，否则自动化场景彻底不可用。
@@ -651,9 +679,9 @@ Bedrock 把它原样回显在错误里，**显示到了屏幕上**。当时代�
 ### 一个结构性事实
 
 **Pi 的 RPC 里没有 login**（33 条命令，无一与鉴权有关）。所以登录**没法照我们一贯的做法
-接线**，只能走 `core-host` import `ModelRuntime` 那条更宽的依赖——这本身也是个信号：
+接线**，只能走 `agent` import `ModelRuntime` 那条更宽的依赖——这本身也是个信号：
 它不在 Pi 认为「远程驱动」该做的事情之内。
 
 ## 11. 命名
 
-项目名 Cinba。npm 上 `cinba` 与 `@cinba` scope 均未被占用（2026-09-06 核实）。包命名为 `@cinba/core-host`、`@cinba/core-client` 等。
+项目名 Cinba。npm 上 `cinba` 与 `@cinba` scope 均未被占用（2026-09-06 核实）。包命名为 `@cinba/agent`、`@cinba/contract`、`@cinba/server` 等。

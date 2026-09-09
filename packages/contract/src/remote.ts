@@ -1,10 +1,10 @@
 // The client side of the connection.
 //
-// It sits beside CoreClient rather than on top of it: CoreClient speaks Pi's
+// It sits beside PiClient rather than on top of it: PiClient speaks Pi's
 // JSONL protocol, while this speaks the protocol between this project's server
 // and its clients.
 
-import type { ViewAction } from "./events.ts";
+import type { ViewAction } from "./actions.ts";
 import type { Snapshot } from "./session.ts";
 import type {
   ClientMessage,

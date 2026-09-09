@@ -4,7 +4,7 @@
   "type": "module",
   "version": "0.0.0",
   "dependencies": {
-    "@cinba/core-client": "*",
+    "@cinba/contract": "*",
     "@earendil-works/pi-tui": "^0.85.1"
   }
 }

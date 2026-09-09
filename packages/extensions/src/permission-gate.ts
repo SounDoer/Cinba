@@ -18,9 +18,9 @@ export default function (pi: ExtensionAPI) {
     // than allow: when the responsible party cannot be reached, the correct
     // default is to refuse (fail closed).
     //
-    // Nothing reaches this today: core-host always starts Pi through rpc-entry,
+    // Nothing reaches this today: the agent package always starts Pi through rpc-entry,
     // and hasUI is always true in RPC mode (measured in phase 0). But if
-    // core-host is ever used for headless automation, allowing here would mean
+    // the agent package is ever used for headless automation, allowing here would mean
     // every tool passes silently, with no error to notice.
     if (!ctx.hasUI) {
       return { block: true, reason: "No UI available to confirm, so blocked by default" };

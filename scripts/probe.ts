@@ -12,7 +12,7 @@ const prompt = process.argv[2] ?? "Say in one sentence what you can do.";
 //
 // --provider deepseek is temporary: settings.json defaults the provider to
 // anthropic while we only have a DeepSeek key. Phase 1 moves this decision into
-// core-host, where it is managed in one place.
+// the agent package, where it is managed in one place.
 const pi = spawn("pi", ["--mode", "rpc", "--provider", "deepseek"], {
   stdio: ["pipe", "pipe", "inherit"], // stderr passes straight to our terminal so errors are visible
   shell: true,

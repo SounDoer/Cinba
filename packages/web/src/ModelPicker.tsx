@@ -5,7 +5,7 @@
 // would both go stale and offer entries that fail the moment they are picked.
 
 import { useEffect } from "react";
-import type { ModelRef, RemoteSession } from "@cinba/core-client";
+import type { ModelRef, RemoteSession } from "@cinba/contract";
 
 export function ModelPicker({
   remote,

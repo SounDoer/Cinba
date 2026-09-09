@@ -79,7 +79,7 @@ before(async () => {
 
   server = spawn(
     process.execPath,
-    ["--experimental-strip-types", "packages/core-server/src/index.ts"],
+    ["--experimental-strip-types", "packages/server/src/index.ts"],
     {
       // The whole home directory rather than PI_CODING_AGENT_DIR, which is what
       // the credential tests redirect: a core writes ~/.cinba/config.json as

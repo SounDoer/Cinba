@@ -1,0 +1,40 @@
+// What the interface is told to do.
+//
+// The vocabulary both ends speak: the core produces these, every frontend
+// applies them to its mirror of the ledger. It sits here rather than beside the
+// folders that emit them because a browser needs the words without needing to
+// know that Pi exists.
+
+export type ToolStatus = "pending" | "running" | "done" | "error";
+
+export type ViewAction =
+  | { type: "message_added"; messageId: string; role: "user" | "assistant" }
+  | { type: "text_appended"; messageId: string; text: string }
+  | { type: "thinking_appended"; messageId: string; text: string }
+  | {
+      type: "tool_changed";
+      toolCallId: string;
+      toolName: string;
+      args?: unknown;
+      status: ToolStatus;
+      result?: string;
+    }
+  | { type: "confirm_requested"; requestId: string }
+  /**
+   * Marks the point from which a given model was answering.
+   *
+   * Not invented here: Pi writes a model_change entry into its session file, so
+   * this is a projection of that, both live and when a session is reopened.
+   */
+  | { type: "model_in_use"; provider: string; modelId: string }
+  /**
+   * A system notice such as "aborted".
+   *
+   * The folder never produces one: it does not come from Pi's event stream but
+   * from the host or a frontend after the user acts. It travels this channel
+   * rather than being printed straight to the screen so that it enters the
+   * ledger like everything else and survives a reload.
+   */
+  | { type: "notice"; text: string }
+  | { type: "usage_changed"; totalTokens: number; totalCost: number }
+  | { type: "busy_changed"; busy: boolean };

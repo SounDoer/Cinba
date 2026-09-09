@@ -35,7 +35,7 @@ export type UiRequestHandler = (request: UiRequest) => Promise<UiReply>;
  * are private, so extension_ui_response cannot be written back to stdin, which
  * leaves the permission gate unable to work.
  */
-export class CoreClient {
+export class PiClient {
   #transport: Transport;
   #pending = new Map<string, (response: CoreResponse) => void>();
   #eventListeners: Array<(event: CoreEvent) => void> = [];

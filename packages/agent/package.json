@@ -1,10 +1,11 @@
 {
-  "name": "@cinba/core-host",
+  "name": "@cinba/agent",
   "private": true,
   "type": "module",
   "version": "0.0.0",
   "exports": "./src/index.ts",
   "dependencies": {
+    "@cinba/contract": "*",
     "@cinba/extensions": "*",
     "@earendil-works/pi-coding-agent": "^0.85.1"
   }

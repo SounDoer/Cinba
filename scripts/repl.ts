@@ -1,19 +1,19 @@
-// The phase 1a end-to-end check: core-host, core-client and the permission
+// The phase 1a end-to-end check: the agent package, the contract and the permission
 // gate strung together.
 //
 // Usage: node scripts/repl.ts "your question"
 
 import { createInterface } from "node:readline/promises";
-import { startCore } from "@cinba/core-host";
-import { CoreClient, StdioTransport } from "@cinba/core-client";
+import { startPi } from "@cinba/agent";
+import { PiClient, StdioTransport } from "@cinba/agent";
 
-const child = startCore();
+const child = startPi();
 
-// startCore leaves stderr to the caller; forward it to the terminal as is.
+// startPi leaves stderr to the caller; forward it to the terminal as is.
 child.stderr?.setEncoding("utf8");
 child.stderr?.on("data", (chunk: string) => process.stderr.write(chunk));
 
-const client = new CoreClient(new StdioTransport(child));
+const client = new PiClient(new StdioTransport(child));
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 

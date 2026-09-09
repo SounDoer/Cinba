@@ -15,7 +15,7 @@
 // the same kind of act.
 
 import { useEffect, useState } from "react";
-import type { ProviderStatus, RemoteSession } from "@cinba/core-client";
+import type { ProviderStatus, RemoteSession } from "@cinba/contract";
 
 export function ProviderPicker({
   remote,

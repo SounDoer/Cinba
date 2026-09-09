@@ -5,7 +5,7 @@
 // React does the diffing, so the textNodes / toolNodes bookkeeping is gone.
 
 import Markdown from "react-markdown";
-import type { Entry, MessageEntry, ModelEntry, NoticeEntry, ToolEntry } from "@cinba/core-client";
+import type { Entry, MessageEntry, ModelEntry, NoticeEntry, ToolEntry } from "@cinba/contract";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "awaiting approval",

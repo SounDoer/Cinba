@@ -1,6 +1,6 @@
 // Cinba's terminal client.
 //
-// It is a client of core-server, exactly like the browser and the Electron
+// It is a client of the core service, exactly like the browser and the Electron
 // window: same protocol, same ledger, same conversations. Only the drawing
 // layer differs. It used to start a Pi of its own, which made it a second core
 // host and left it quietly out of step with the GUI — a model switched there
@@ -44,7 +44,7 @@ import {
   RemoteSession,
   sessionSubtitle,
   sessionTitle,
-} from "@cinba/core-client";
+} from "@cinba/contract";
 import type {
   Command,
   Entry,
@@ -53,7 +53,7 @@ import type {
   Snapshot,
   Socket,
   ViewAction,
-} from "@cinba/core-client";
+} from "@cinba/contract";
 
 /**
  * Which core to talk to. Nothing here starts one: the service has to be running.

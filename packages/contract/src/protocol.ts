@@ -5,7 +5,7 @@
 // actions and sits a level higher. Both sides share this single definition so
 // the two ends cannot drift apart.
 
-import type { ViewAction } from "./events.ts";
+import type { ViewAction } from "./actions.ts";
 import type { Snapshot } from "./session.ts";
 
 /** Points at one model. Provider and id together, because ids are only unique within a provider. */
@@ -22,7 +22,7 @@ export type ModelRef = { provider: string; id: string };
  * Whether a provider can be used, and never how.
  *
  * Shaped so it cannot carry a secret: a key travels to the core and never
- * comes back. See core-host/credentials.ts.
+ * comes back. See agent/credentials.ts.
  */
 export type ProviderStatus = {
   id: string;

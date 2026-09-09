@@ -35,7 +35,7 @@ function makeCtx(hasUI: boolean, answer?: boolean): Ctx {
 test("blocks when there is no UI, rather than allowing", async () => {
   // A safety gate must fail closed: when the responsible party cannot be
   // reached the default is to refuse, not to allow. hasUI is always true in
-  // RPC mode today, but if core-host is ever used for headless automation,
+  // RPC mode today, but if the agent package is ever used for headless automation,
   // failing open would let every tool pass silently — with no error either.
   const handler = captureHandler();
 

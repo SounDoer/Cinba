@@ -5,14 +5,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { createSession, nameColourIndex, RemoteSession } from "@cinba/core-client";
+import { createSession, nameColourIndex, RemoteSession } from "@cinba/contract";
 import type {
   ModelRef,
   ProviderStatus,
   Session,
   SessionSummary,
   Snapshot,
-} from "@cinba/core-client";
+} from "@cinba/contract";
 import { Transcript } from "./Transcript.tsx";
 import { ProjectPicker } from "./ProjectPicker.tsx";
 import type { Listing } from "./ProjectPicker.tsx";

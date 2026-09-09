@@ -8,7 +8,7 @@
 // no longer a mode the whole service is in: each conversation carries its own.
 
 import { useEffect, useState } from "react";
-import type { RemoteSession } from "@cinba/core-client";
+import type { RemoteSession } from "@cinba/contract";
 
 export type Listing = { path: string; parent: string | null; dirs: string[] };
 

@@ -1,7 +1,7 @@
 // The Electron main process.
 //
 // Since 3b-1 it does one thing: open a window pointing at the UI that
-// core-server serves. That UI is the same code the browser gets, reaching the
+// the server serves. That UI is the same code the browser gets, reaching the
 // server over the same WebSocket, so nothing here needs a preload script, IPC,
 // or any knowledge of the protocol.
 

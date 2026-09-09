@@ -5,8 +5,8 @@
 // holding a real conversation, and nothing puts it back.
 
 import { useEffect, useState } from "react";
-import { sessionSubtitle, sessionTitle } from "@cinba/core-client";
-import type { RemoteSession, SessionSummary } from "@cinba/core-client";
+import { sessionSubtitle, sessionTitle } from "@cinba/contract";
+import type { RemoteSession, SessionSummary } from "@cinba/contract";
 
 function when(iso: string): string {
   const date = new Date(iso);

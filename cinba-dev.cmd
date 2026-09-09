@@ -8,7 +8,7 @@ cd /d "%~dp0"
 netstat -ano | findstr "127.0.0.1:4517" >nul
 if errorlevel 1 (
   echo Starting the core service...
-  start "Cinba core service" cmd /k node packages\core-server\src\index.ts
+  start "Cinba core service" cmd /k node packages\server\src\index.ts
 ) else (
   echo The core service is already running, reusing it.
 )

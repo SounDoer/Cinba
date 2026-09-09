@@ -14,7 +14,7 @@
 // run any command on this machine, so opening a door outward is a different
 // order of problem and belongs to form C's later steps.
 //
-// Usage: node <repo>/packages/core-server/src/index.ts
+// Usage: node <repo>/packages/server/src/index.ts
 
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
@@ -31,27 +31,25 @@ import {
   listProviders,
   listSessions as storedSessions,
   setApiKey,
-  startCore,
-} from "@cinba/core-host";
+  startPi,
+} from "@cinba/agent";
 import { isLoopback } from "./loopback.ts";
 import { assessIdle, canStopNow, IDLE_TIMEOUT_MS } from "./reclaim.ts";
 import {
-  CoreClient,
   createEventFolder,
-  createSession,
   foldSessionEntries,
   foldUiRequest,
-  parseClientMessage,
-  sameTranscript,
+  PiClient,
   StdioTransport,
-} from "@cinba/core-client";
+} from "@cinba/agent";
+import { createSession, parseClientMessage, sameTranscript } from "@cinba/contract";
 import type {
   ModelRef,
   ServerMessage,
   Session,
   SessionSummary,
   ViewAction,
-} from "@cinba/core-client";
+} from "@cinba/contract";
 
 const HOST = "127.0.0.1";
 
@@ -119,7 +117,7 @@ async function serveStatic(request: IncomingMessage, response: ServerResponse): 
 type Live = {
   id: string;
   cwd: string;
-  pi: CoreClient;
+  pi: PiClient;
   ledger: Session;
   fold: (event: { type: string; [key: string]: unknown }) => ViewAction[];
   model: ModelRef | undefined;
@@ -288,7 +286,7 @@ async function open(options: {
   console.log(`[cinba] starting Pi in ${options.cwd}${options.sessionPath ? " (resuming)" : ""}`);
 
   const starting = options.model ?? model;
-  const child = startCore({
+  const child = startPi({
     cwd: options.cwd,
     provider: starting?.provider,
     model: starting?.id,
@@ -308,7 +306,7 @@ async function open(options: {
     });
   });
 
-  const pi = new CoreClient(new StdioTransport(child));
+  const pi = new PiClient(new StdioTransport(child));
 
   // Ask Pi who it is. With no session file it has just made a new one, and only
   // it knows the id; with one, this confirms what came back. Racing this against

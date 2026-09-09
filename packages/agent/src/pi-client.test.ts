@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CoreClient } from "./client.ts";
+import { PiClient } from "./pi-client.ts";
 import type { Transport } from "./transport.ts";
 
 /** A fake transport, for testing protocol logic without starting Pi. */
@@ -27,7 +27,7 @@ function createFakeTransport(): {
 
 test("prompt sends a command with an id and resolves once the reply arrives", async () => {
   const fake = createFakeTransport();
-  const client = new CoreClient(fake.transport);
+  const client = new PiClient(fake.transport);
 
   const pending = client.prompt("hello");
 
@@ -50,7 +50,7 @@ test("prompt sends a command with an id and resolves once the reply arrives", as
 
 test("events are fanned out to subscribers", () => {
   const fake = createFakeTransport();
-  const client = new CoreClient(fake.transport);
+  const client = new PiClient(fake.transport);
 
   const seen: string[] = [];
   client.onEvent((event) => seen.push(event.type));
@@ -63,7 +63,7 @@ test("events are fanned out to subscribers", () => {
 
 test("a blocking UI request goes to the handler and the answer is written back under its id", async () => {
   const fake = createFakeTransport();
-  const client = new CoreClient(fake.transport);
+  const client = new PiClient(fake.transport);
 
   client.onUiRequest(async (request) => {
     assert.equal(request.method, "confirm");
@@ -88,7 +88,7 @@ test("a blocking UI request goes to the handler and the answer is written back u
 
 test("a broadcast UI request writes nothing back", async () => {
   const fake = createFakeTransport();
-  const client = new CoreClient(fake.transport);
+  const client = new PiClient(fake.transport);
 
   client.onUiRequest(async () => ({ confirmed: true }));
 
@@ -106,7 +106,7 @@ test("a broadcast UI request writes nothing back", async () => {
 
 test("the model commands go out in the shape Pi expects", async () => {
   const fake = createFakeTransport();
-  const client = new CoreClient(fake.transport);
+  const client = new PiClient(fake.transport);
 
   void client.getState();
   void client.getAvailableModels();
@@ -127,7 +127,7 @@ test("the model commands go out in the shape Pi expects", async () => {
 
 test("the session commands go out in the shape Pi expects", () => {
   const fake = createFakeTransport();
-  const client = new CoreClient(fake.transport);
+  const client = new PiClient(fake.transport);
 
   void client.getEntries();
   void client.getEntries("e42");

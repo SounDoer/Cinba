@@ -1,8 +1,28 @@
+// Everything that touches Pi.
+//
+// One package, so "the Pi contact surface" is a place rather than a habit —
+// the interface inventory in section 9 of the design doc is an inventory of
+// this directory. Two things live here: how a Pi is started and configured
+// (which provider, which conversation, and the permission gate that is mounted
+// unconditionally), and how we speak to one once it is running.
+//
+// It depends on @cinba/contract because it produces view actions. Nothing here
+// is imported by a frontend: a frontend that needed any of it would be reaching
+// past the service into the core, which is the one rule the design has always
+// had.
+
 export { clearCredential, listProviders, setApiKey } from "./credentials.ts";
-export type { ProviderStatus } from "./credentials.ts";
-// The definition of "my core": how Pi starts, which provider and model it uses,
-// which extensions it loads. All frontends share this one file, so the brain
-// that wakes up is always the same one.
+export { PiClient } from "./pi-client.ts";
+export type { CoreEvent, CoreResponse, UiReply, UiRequest, UiRequestHandler } from "./pi-client.ts";
+export { foldSessionEntries } from "./entries.ts";
+export { createEventFolder, foldUiRequest } from "./events.ts";
+export { StdioTransport } from "./transport.ts";
+export type { Transport } from "./transport.ts";
+
+// How a Pi is started: which provider and model, which conversation, which
+// extensions. One definition, so whichever interface you are sitting in front
+// of, the same agent wakes up — and so the permission gate cannot be left off
+// by a caller who forgot it.
 
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
@@ -85,7 +105,7 @@ export function buildSpawnPlan(
  * (EINVAL), and working around that with shell: true trips the DEP0190
  * deprecation warning. Running the entry JS has neither problem.
  */
-export function startCore(options: CoreOptions = {}): ChildProcess {
+export function startPi(options: CoreOptions = {}): ChildProcess {
   // import.meta.resolve returns a file:// URL and spawn wants a plain path, so
   // convert. It has to be import.meta.resolve: that subpath declares only the
   // import condition, and CJS require.resolve fails with
