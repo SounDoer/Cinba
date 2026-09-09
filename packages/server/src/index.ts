@@ -16,9 +16,7 @@
 //
 // Usage: node <repo>/packages/server/src/index.ts
 
-import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
-import { createServer } from "node:http";
 import type { IncomingMessage } from "node:http";
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { homedir, hostname } from "node:os";
@@ -35,6 +33,7 @@ import {
 import { isLoopback } from "./loopback.ts";
 import { assessIdle, canStopNow, IDLE_TIMEOUT_MS } from "./reclaim.ts";
 import { createConfigStore } from "./config.ts";
+import { createServerRuntime } from "./server-runtime.ts";
 import { createStaticFileHandler } from "./static-files.ts";
 import {
   createEventFolder,
@@ -747,34 +746,7 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
 
 // ---- Starting the service ----
 
-// The WebSocket and the static files share one port: the UI loads from here and connects back here.
-const httpServer = createServer((request, response) => void serveStatic(request, response));
-// The WebSocket gets its own path and static files take the rest, so in
-// development Vite only has to proxy /ws here while still serving the page
-// itself, which keeps hot reload.
-const server = new WebSocketServer({ server: httpServer, path: "/ws" });
-
-// Checked every minute rather than on a timer per conversation: one timer is
-// easier to reason about, and a minute of imprecision on a ten-minute rule
-// changes nothing.
-setInterval(() => {
-  sweepIdle();
-  // The retry for conversations that were mid-turn when the credentials
-  // changed. The common case is handled the moment the change happens.
-  void recycleStale();
-}, 60_000).unref();
-
-httpServer.listen(PORT, HOST, () => {
-  const currentConfig = config.get();
-  console.log(`[cinba] core "${currentConfig.coreName}" - UI at http://${HOST}:${PORT}`);
-  console.log(`[cinba] working directory ${currentConfig.cwd}`);
-  console.log(`[cinba] idle conversations release their process after ${IDLE_TIMEOUT_MS / 60_000} minutes`);
-  if (currentConfig.model) {
-    console.log(`[cinba] model ${currentConfig.model.provider}/${currentConfig.model.id}`);
-  }
-});
-
-server.on("connection", (socket: WebSocket, request: IncomingMessage) => {
+function onConnection(socket: WebSocket, request: IncomingMessage): void {
   clients.add(socket);
   if (isLoopback(request.socket.remoteAddress)) local.add(socket);
 
@@ -794,15 +766,57 @@ server.on("connection", (socket: WebSocket, request: IncomingMessage) => {
     viewing.delete(socket);
     console.log(`[cinba] client disconnected, ${clients.size} left`);
   });
-});
-
-function shutdown(): void {
-  console.log(`\n[cinba] shutting down, reclaiming ${live.size} Pi child process(es)`);
-  for (const id of [...live.keys()]) stop(id);
-  server.close();
-  httpServer.close();
-  process.exit(0);
 }
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+// HTTP, WebSocket, and maintenance share one lifecycle owner. The WebSocket
+// gets /ws while static files take the other paths, so Vite only proxies /ws.
+const runtime = createServerRuntime({
+  host: HOST,
+  port: PORT,
+  serveHttp: serveStatic,
+  onConnection,
+  maintain: () => {
+    // Checked every minute rather than on a timer per conversation: a minute
+    // of imprecision on a ten-minute idle rule changes nothing.
+    sweepIdle();
+    // Retry conversations that were mid-turn when credentials changed.
+    void recycleStale();
+  },
+});
+
+let shuttingDown = false;
+function shutdown(): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n[cinba] shutting down, reclaiming ${live.size} Pi child process(es)`);
+  for (const id of [...live.keys()]) stop(id);
+  void runtime.stop().finally(() => process.exit(0));
+}
+
+function startService(): void {
+  void runtime
+    .start()
+    .then((address) => {
+      const currentConfig = config.get();
+      console.log(
+        `[cinba] core "${currentConfig.coreName}" - UI at http://${address.host}:${address.port}`,
+      );
+      console.log(`[cinba] working directory ${currentConfig.cwd}`);
+      console.log(
+        `[cinba] idle conversations release their process after ${IDLE_TIMEOUT_MS / 60_000} minutes`,
+      );
+      if (currentConfig.model) {
+        console.log(`[cinba] model ${currentConfig.model.provider}/${currentConfig.model.id}`);
+      }
+    })
+    .catch((error: unknown) => {
+      console.error("[cinba] service failed to start:", error);
+      process.exitCode = 1;
+    });
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
+
+// Importing the module is inert; only executing it as the program opens ports.
+if (import.meta.main) startService();
