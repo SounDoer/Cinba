@@ -20,7 +20,7 @@ import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { createServer } from "node:http";
 import type { IncomingMessage } from "node:http";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,6 +34,7 @@ import {
 } from "@cinba/agent";
 import { isLoopback } from "./loopback.ts";
 import { assessIdle, canStopNow, IDLE_TIMEOUT_MS } from "./reclaim.ts";
+import { createConfigStore } from "./config.ts";
 import { createStaticFileHandler } from "./static-files.ts";
 import {
   createEventFolder,
@@ -68,6 +69,10 @@ const FLUSH_INTERVAL_MS = 30;
 /** Where the built UI lives. Located relative to the repo layout, not through package resolution. */
 const WEB_DIST = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
 const serveStatic = createStaticFileHandler(WEB_DIST);
+const config = createConfigStore(join(homedir(), ".cinba", "config.json"), {
+  cwd: homedir(),
+  coreName: hostname(),
+});
 
 // ---- State ----
 
@@ -119,56 +124,6 @@ const clients = new Set<WebSocket>();
 const local = new WeakSet<WebSocket>();
 
 
-
-/** Defaults for a newly started Pi, and where to pick up on restart. */
-let cwd = homedir();
-let model: ModelRef | undefined;
-let lastSessionId: string | undefined;
-
-/**
- * What this core calls itself.
- *
- * Defaults to the machine's name so identity costs no setup. It exists because
- * two cores are otherwise indistinguishable — same interface, same lists — and
- * each can run any command on its own machine. Saying "clean this up" to the
- * wrong one is a real mistake to make, and the fix is that the interface always
- * says where you are.
- */
-let coreName = hostname();
-
-// ---- Remembering ----
-
-const configDir = join(homedir(), ".cinba");
-
-function configPath(): string {
-  return join(configDir, "config.json");
-}
-
-function loadConfig(): void {
-  try {
-    const parsed = JSON.parse(readFileSync(configPath(), "utf8")) as Record<string, unknown>;
-    if (typeof parsed.cwd === "string" && existsSync(parsed.cwd)) cwd = parsed.cwd;
-    if (typeof parsed.provider === "string" && typeof parsed.modelId === "string") {
-      model = { provider: parsed.provider, id: parsed.modelId };
-    }
-    if (typeof parsed.lastSessionId === "string") lastSessionId = parsed.lastSessionId;
-    if (typeof parsed.coreName === "string" && parsed.coreName.trim() !== "") {
-      coreName = parsed.coreName.trim();
-    }
-  } catch {
-    // On first start the file does not exist, which is normal.
-  }
-}
-
-function saveConfig(): void {
-  try {
-    mkdirSync(configDir, { recursive: true });
-    const body = { cwd, provider: model?.provider, modelId: model?.id, lastSessionId, coreName };
-    writeFileSync(configPath(), JSON.stringify(body, null, 2), "utf8");
-  } catch {
-    // Failing to remember does not affect this run, and is not worth interrupting the service for.
-  }
-}
 
 // ---- Sending ----
 
@@ -250,7 +205,7 @@ async function open(options: {
 
   console.log(`[cinba] starting Pi in ${options.cwd}${options.sessionPath ? " (resuming)" : ""}`);
 
-  const starting = options.model ?? model;
+  const starting = options.model ?? config.get().model;
   const child = startPi({
     cwd: options.cwd,
     provider: starting?.provider,
@@ -403,6 +358,7 @@ function defaultSession(): Promise<Live | undefined> {
 }
 
 async function resolveDefaultSession(): Promise<Live | undefined> {
+  const { cwd, lastSessionId } = config.get();
   if (lastSessionId) {
     const existing = live.get(lastSessionId);
     if (existing) return existing;
@@ -424,10 +380,11 @@ async function resolveDefaultSession(): Promise<Live | undefined> {
 /** Point a client at a conversation and hand it the full picture. */
 function show(socket: WebSocket, session: Live): void {
   viewing.set(socket, session.id);
-  lastSessionId = session.id;
-  // New conversations start where the last one you looked at lives.
-  cwd = session.cwd;
-  saveConfig();
+  config.update({
+    lastSessionId: session.id,
+    // New conversations start where the last one you looked at lives.
+    cwd: session.cwd,
+  });
   sendTo(socket, { type: "session_opened", sessionId: session.id });
   sendTo(socket, snapshotOf(session));
 }
@@ -663,8 +620,7 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
       }
       current.model = target;
       // Remembered as the default for conversations started from now on.
-      model = target;
-      saveConfig();
+      config.update({ model: target });
       // Pi writes a model_change entry of its own, so this marker is a
       // projection of that rather than a fact only we hold.
       emit(current, [
@@ -735,13 +691,15 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
       if (!stored) return; // Deleted from under us; the client's next listing will show that
       // Its own directory, not whichever one is current: a conversation about
       // one project must not resume with its tools pointed at another.
-      const opened = await open({ sessionPath: stored.path, cwd: stored.cwd || cwd });
+      const opened = await open({ sessionPath: stored.path, cwd: stored.cwd || config.get().cwd });
       if (opened) show(socket, opened);
       return;
     }
 
     case "create_session": {
-      cwd = message.cwd;
+      // Preserve the previous behavior: this becomes the in-memory default
+      // immediately, while show() persists it only after the session opens.
+      config.update({ cwd: message.cwd }, { persist: false });
       const created = await open({ cwd: message.cwd });
       if (created) show(socket, created);
       return;
@@ -773,9 +731,8 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
           // Already gone, or not ours to remove. The listing below tells the truth either way.
         }
       }
-      if (lastSessionId === message.sessionId) {
-        lastSessionId = undefined;
-        saveConfig();
+      if (config.get().lastSessionId === message.sessionId) {
+        config.update({ lastSessionId: undefined });
       }
 
       // Anyone who was looking at it needs somewhere to go.
@@ -792,8 +749,6 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
 }
 
 // ---- Starting the service ----
-
-loadConfig();
 
 // The WebSocket and the static files share one port: the UI loads from here and connects back here.
 const httpServer = createServer((request, response) => void serveStatic(request, response));
@@ -813,10 +768,13 @@ setInterval(() => {
 }, 60_000).unref();
 
 httpServer.listen(PORT, HOST, () => {
-  console.log(`[cinba] core "${coreName}" - UI at http://${HOST}:${PORT}`);
-  console.log(`[cinba] working directory ${cwd}`);
+  const currentConfig = config.get();
+  console.log(`[cinba] core "${currentConfig.coreName}" - UI at http://${HOST}:${PORT}`);
+  console.log(`[cinba] working directory ${currentConfig.cwd}`);
   console.log(`[cinba] idle conversations release their process after ${IDLE_TIMEOUT_MS / 60_000} minutes`);
-  if (model) console.log(`[cinba] model ${model.provider}/${model.id}`);
+  if (currentConfig.model) {
+    console.log(`[cinba] model ${currentConfig.model.provider}/${currentConfig.model.id}`);
+  }
 });
 
 server.on("connection", (socket: WebSocket, request: IncomingMessage) => {
@@ -824,7 +782,7 @@ server.on("connection", (socket: WebSocket, request: IncomingMessage) => {
   if (isLoopback(request.socket.remoteAddress)) local.add(socket);
 
   // Before anything else: which machine the client has reached.
-  sendTo(socket, { type: "core_identity", name: coreName });
+  sendTo(socket, { type: "core_identity", name: config.get().coreName });
   console.log(`[cinba] client connected, ${clients.size} now`);
 
   // A new connection lands on the conversation it was last on. Its Pi starts
