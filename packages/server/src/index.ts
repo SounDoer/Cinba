@@ -697,9 +697,6 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
     }
 
     case "create_session": {
-      // Preserve the previous behavior: this becomes the in-memory default
-      // immediately, while show() persists it only after the session opens.
-      config.update({ cwd: message.cwd }, { persist: false });
       const created = await open({ cwd: message.cwd });
       if (created) show(socket, created);
       return;

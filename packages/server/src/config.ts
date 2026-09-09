@@ -15,8 +15,8 @@ export type CinbaConfig = {
 export type ConfigStore = {
   /** Return a copy so callers cannot bypass update() and persistence. */
   get(): CinbaConfig;
-  /** Change memory first, then persist the complete current state unless explicitly deferred. */
-  update(changes: Partial<CinbaConfig>, options?: { persist?: boolean }): void;
+  /** Change memory and persist the complete current state as one operation. */
+  update(changes: Partial<CinbaConfig>): void;
 };
 
 type ConfigDefaults = Pick<CinbaConfig, "cwd" | "coreName">;
@@ -48,7 +48,7 @@ export function createConfigStore(path: string, defaults: ConfigDefaults): Confi
     return { ...state, model: state.model ? { ...state.model } : undefined };
   }
 
-  function update(changes: Partial<CinbaConfig>, options?: { persist?: boolean }): void {
+  function update(changes: Partial<CinbaConfig>): void {
     if (changes.cwd !== undefined) state.cwd = changes.cwd;
     if (Object.hasOwn(changes, "model")) {
       state.model = changes.model ? { ...changes.model } : undefined;
@@ -57,8 +57,6 @@ export function createConfigStore(path: string, defaults: ConfigDefaults): Confi
       state.lastSessionId = changes.lastSessionId;
     }
     if (changes.coreName !== undefined) state.coreName = changes.coreName;
-
-    if (options?.persist === false) return;
 
     try {
       mkdirSync(dirname(path), { recursive: true });
