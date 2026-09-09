@@ -43,6 +43,7 @@ export type RemoteHandlers = {
   onSessionListing?: (sessions: SessionSummary[]) => void;
   onSessionOpened?: (sessionId: string) => void;
   onProviderListing?: (providers: ProviderStatus[]) => void;
+  onCoreIdentity?: (name: string) => void;
 };
 
 export class RemoteSession {
@@ -137,6 +138,9 @@ export class RemoteSession {
         return;
       case "actions":
         this.#handlers.onActions?.(message.actions);
+        return;
+      case "core_identity":
+        this.#handlers.onCoreIdentity?.(message.name);
         return;
       case "provider_listing":
         this.#handlers.onProviderListing?.(message.providers);

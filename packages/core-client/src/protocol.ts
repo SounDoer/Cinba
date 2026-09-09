@@ -78,7 +78,16 @@ export type ServerMessage =
   | { type: "session_listing"; sessions: SessionSummary[] }
   /** Which session this client is now looking at. The snapshot for it follows. */
   | { type: "session_opened"; sessionId: string }
-  | { type: "provider_listing"; providers: ProviderStatus[] };
+  | { type: "provider_listing"; providers: ProviderStatus[] }
+  /**
+   * Which core this is. Sent once, as soon as a client connects.
+   *
+   * Asserted by the core rather than remembered by the client on purpose: the
+   * point is that the machine tells you what it is. A client that stored the
+   * name against an address would show the wrong one the moment the address was
+   * wrong, which is precisely the mistake this exists to prevent.
+   */
+  | { type: "core_identity"; name: string };
 
 /**
  * Validate a message from a client; return undefined for anything unrecognized

@@ -29,3 +29,26 @@ export function sessionTitle(session: SessionSummary): string {
 export function sessionSubtitle(session: SessionSummary): string {
   return `${projectName(session.cwd)} · ${session.messageCount} messages`;
 }
+
+/** How many colours a core's name can land on. Both frontends use this many, so a name lands on the same slot in each. */
+export const NAME_COLOURS = 6;
+
+/**
+ * A stable colour slot for a name.
+ *
+ * Two cores look identical otherwise — same interface, same lists — and both
+ * can run any command on their machine. The name says which one you are on; the
+ * colour is what makes you notice without reading. Derived rather than
+ * configured so it needs no setup and never disagrees between frontends.
+ *
+ * The slot is shared; what each slot looks like is not, because a terminal and
+ * a browser do not draw colour the same way.
+ */
+export function nameColourIndex(name: string): number {
+  let hash = 0;
+  for (const character of name) {
+    // Ordinary string hash: shift, add, keep it a 32-bit integer.
+    hash = (hash * 31 + character.codePointAt(0)!) | 0;
+  }
+  return Math.abs(hash) % NAME_COLOURS;
+}

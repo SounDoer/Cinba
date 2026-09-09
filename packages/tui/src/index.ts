@@ -38,6 +38,7 @@ import {
   COMMANDS,
   commandArgument,
   createSession,
+  nameColourIndex,
   isCommand,
   matchCommands,
   RemoteSession,
@@ -54,8 +55,15 @@ import type {
   ViewAction,
 } from "@cinba/core-client";
 
-/** Same address the browser uses. Nothing here starts a core: the service has to be running. */
-const SERVER_URL = "ws://127.0.0.1:4517/ws";
+/**
+ * Which core to talk to. Nothing here starts one: the service has to be running.
+ *
+ * Configurable because a terminal has no address bar. The browser picks its
+ * core by the address it was opened at — that is what a bookmark is — and this
+ * is the equivalent. An environment variable rather than an argument so it
+ * composes with cinba-tui.cmd, which already spends its argument on a folder.
+ */
+const SERVER_URL = process.env.CINBA_SERVER || "ws://127.0.0.1:4517/ws";
 
 const DIM = "\x1b[2m";
 const BOLD = "\x1b[1m";
@@ -65,6 +73,19 @@ const RED = "\x1b[31m";
 const YELLOW = "\x1b[33m";
 const MAGENTA = "\x1b[35m";
 const RESET = "\x1b[0m";
+
+/**
+ * One per colour slot from nameColourIndex, as ANSI foreground codes. The slot
+ * is shared with the browser; the rendering is not.
+ */
+const CORE_COLOURS = [
+  "[34m",
+  "[32m",
+  "[33m",
+  "[35m",
+  "[31m",
+  "[36m",
+];
 
 const SELECT_THEME: SelectListTheme = {
   selectedPrefix: (text) => `${MAGENTA}${text}${RESET}`,
@@ -276,10 +297,18 @@ class StatusBar implements Component {
   totalCost = 0;
   busy = false;
   model = "";
+  /** Which machine this terminal is talking to. Empty until the core says. */
+  core = "";
 
   invalidate(): void {}
 
   render(width: number): string[] {
+    // First on the line, because "which machine am I on" outranks everything
+    // else here: both cores can run any command on their own.
+    const where =
+      this.core === ""
+        ? ""
+        : `${CORE_COLOURS[nameColourIndex(this.core)]}${BOLD}● ${this.core}${RESET}  `;
     const usage = `${DIM}${this.totalTokens} tokens · $${this.totalCost.toFixed(4)}${RESET}`;
     // Highlight while busy: this line sits pinned at the bottom of a fast-scrolling screen, and all-dim means invisible.
     const hint = this.busy
@@ -287,7 +316,7 @@ class StatusBar implements Component {
       : `${DIM}/ for commands · ^C exit${RESET}`;
     const model = this.model ? `${DIM} · ${this.model}${RESET}` : "";
     // Truncated by display columns as well; see the note in Transcript.render.
-    return [truncateToWidth(`${usage}${model}    ${hint}`, width)];
+    return [truncateToWidth(`${where}${usage}${model}    ${hint}`, width)];
   }
 }
 
@@ -696,6 +725,10 @@ const remote = new RemoteSession(socket as unknown as Socket, {
       mirror.apply(action);
       applyAction(action);
     }
+  },
+  onCoreIdentity: (name) => {
+    statusBar.core = name;
+    tui.requestRender();
   },
   onProviderListing: (providers) => {
     if (providerIntent === "list") {

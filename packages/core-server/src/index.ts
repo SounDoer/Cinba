@@ -22,7 +22,7 @@ import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { dirname, extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -54,7 +54,15 @@ import type {
 } from "@cinba/core-client";
 
 const HOST = "127.0.0.1";
-const PORT = 4517;
+
+/**
+ * Configurable so a second core can run on this machine.
+ *
+ * The real arrangement is one core per machine, all on the default port. This
+ * exists so the two-core case can be built and tested on one desk rather than
+ * only after a second machine is set up.
+ */
+const PORT = Number(process.env.CINBA_PORT) || 4517;
 
 /** Text deltas arrive token by token; batch them so each character is not its own round trip. */
 const FLUSH_INTERVAL_MS = 30;
@@ -152,6 +160,17 @@ let cwd = homedir();
 let model: ModelRef | undefined;
 let lastSessionId: string | undefined;
 
+/**
+ * What this core calls itself.
+ *
+ * Defaults to the machine's name so identity costs no setup. It exists because
+ * two cores are otherwise indistinguishable — same interface, same lists — and
+ * each can run any command on its own machine. Saying "clean this up" to the
+ * wrong one is a real mistake to make, and the fix is that the interface always
+ * says where you are.
+ */
+let coreName = hostname();
+
 // ---- Remembering ----
 
 const configDir = join(homedir(), ".cinba");
@@ -168,6 +187,9 @@ function loadConfig(): void {
       model = { provider: parsed.provider, id: parsed.modelId };
     }
     if (typeof parsed.lastSessionId === "string") lastSessionId = parsed.lastSessionId;
+    if (typeof parsed.coreName === "string" && parsed.coreName.trim() !== "") {
+      coreName = parsed.coreName.trim();
+    }
   } catch {
     // On first start the file does not exist, which is normal.
   }
@@ -176,7 +198,7 @@ function loadConfig(): void {
 function saveConfig(): void {
   try {
     mkdirSync(configDir, { recursive: true });
-    const body = { cwd, provider: model?.provider, modelId: model?.id, lastSessionId };
+    const body = { cwd, provider: model?.provider, modelId: model?.id, lastSessionId, coreName };
     writeFileSync(configPath(), JSON.stringify(body, null, 2), "utf8");
   } catch {
     // Failing to remember does not affect this run, and is not worth interrupting the service for.
@@ -721,7 +743,7 @@ const server = new WebSocketServer({ server: httpServer, path: "/ws" });
 setInterval(sweepIdle, 60_000).unref();
 
 httpServer.listen(PORT, HOST, () => {
-  console.log(`[cinba] UI at http://${HOST}:${PORT}`);
+  console.log(`[cinba] core "${coreName}" - UI at http://${HOST}:${PORT}`);
   console.log(`[cinba] working directory ${cwd}`);
   console.log(`[cinba] idle conversations release their process after ${IDLE_TIMEOUT_MS / 60_000} minutes`);
   if (model) console.log(`[cinba] model ${model.provider}/${model.id}`);
@@ -730,6 +752,9 @@ httpServer.listen(PORT, HOST, () => {
 server.on("connection", (socket: WebSocket, request: IncomingMessage) => {
   clients.add(socket);
   if (isLoopback(request.socket.remoteAddress)) local.add(socket);
+
+  // Before anything else: which machine the client has reached.
+  sendTo(socket, { type: "core_identity", name: coreName });
   console.log(`[cinba] client connected, ${clients.size} now`);
 
   // A new connection lands on the conversation it was last on. Its Pi starts

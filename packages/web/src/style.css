@@ -29,6 +29,8 @@ header {
 }
 
 header span { color: #888; font-size: 12px; }
+.core { display: inline-flex; align-items: center; gap: 0.4rem; color: #333 !important; font-weight: 600; }
+.core-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 
 #transcript {
   overflow-y: auto;

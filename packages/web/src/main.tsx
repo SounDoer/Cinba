@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { createSession, RemoteSession } from "@cinba/core-client";
+import { createSession, nameColourIndex, RemoteSession } from "@cinba/core-client";
 import type {
   ModelRef,
   ProviderStatus,
@@ -22,6 +22,13 @@ import { ProviderPicker } from "./ProviderPicker.tsx";
 import "./style.css";
 
 const EMPTY: Snapshot = { entries: [], totalTokens: 0, totalCost: 0, busy: false };
+
+/**
+ * One per colour slot from nameColourIndex. Which slot a core lands on is
+ * shared with the terminal; what the slot looks like is not, because the two
+ * draw colour nothing alike.
+ */
+const CORE_COLOURS = ["#3b6fd4", "#2e9166", "#b4642a", "#8b4bc4", "#b03a52", "#2b7f96"];
 
 /** Connect back to wherever the page came from, so neither the browser nor Electron needs an address configured. */
 const SERVER_URL = `ws://${location.host}/ws`;
@@ -40,6 +47,7 @@ function App() {
   const [sessions, setSessions] = useState<SessionSummary[] | undefined>(undefined);
   const [pickingProvider, setPickingProvider] = useState(false);
   const [providers, setProviders] = useState<ProviderStatus[] | undefined>(undefined);
+  const [core, setCore] = useState("");
 
   const remoteRef = useRef<RemoteSession | undefined>(undefined);
   const mirrorRef = useRef<Session>(createSession());
@@ -66,6 +74,7 @@ function App() {
       onSessionListing: (next) => setSessions(next),
       onSessionOpened: (id) => setSessionId(id),
       onProviderListing: (next) => setProviders(next),
+      onCoreIdentity: (name) => setCore(name),
     });
 
     return () => socket.close();
@@ -99,6 +108,15 @@ function App() {
   return (
     <>
       <header>
+        {/* Which machine this is. Two cores are otherwise identical on screen,
+            and each can run any command on its own machine. */}
+        <span className="core" title="the machine this interface is talking to">
+          <span
+            className="core-dot"
+            style={{ background: CORE_COLOURS[nameColourIndex(core)] }}
+          />
+          {core || "..."}
+        </span>
         {/* The way in to every conversation, so it carries the current one's project as its label. */}
         <button onClick={() => setPickingSession(true)}>
           {cwd.split(/[\\/]/).pop() || "..."} — conversations
