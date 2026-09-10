@@ -18,7 +18,6 @@
 
 import {
   Container,
-  Input,
   matchesKey,
   ProcessTerminal,
   SelectList,
@@ -37,7 +36,6 @@ import {
   createSession,
   nameColourIndex,
   isCommand,
-  matchCommands,
   sessionSubtitle,
   sessionTitle,
 } from "@cinba/contract";
@@ -63,6 +61,7 @@ import {
   YELLOW,
 } from "./theme.ts";
 import { Transcript } from "./transcript.ts";
+import { PromptInput } from "./prompt-input.ts";
 
 /**
  * Which core to talk to. Nothing here starts one: the service has to be running.
@@ -73,96 +72,6 @@ import { Transcript } from "./transcript.ts";
  * composes with cinba-tui.cmd, which already spends its argument on a folder.
  */
 const SERVER_URL = process.env.CINBA_SERVER || "ws://127.0.0.1:4517/ws";
-
-/**
- * The input line, plus the command menu above it.
- *
- * Input has no hook for "the text changed", so the menu is refreshed here,
- * where keystrokes already pass through on their way in. That is cheaper than
- * swapping in Editor, which does support completion providers but brings a lot
- * else with it.
- *
- * While the menu is up it takes the arrow keys and Tab for itself: it looks
- * like a list to choose from, so it has to behave like one. Everything else
- * still reaches the input, so typing keeps narrowing the list.
- */
-class PromptInput implements Component, Focusable {
-  readonly input = new Input();
-  #hints: Command[] = [];
-  #selected = 0;
-  #focused = false;
-
-  /**
-   * Focus has to land on this wrapper, not on the Input inside it, or
-   * handleInput below never runs and the menu never appears. The flag is passed
-   * through so the Input still draws the cursor: TUI sets it on whatever it
-   * focused, and only the Input knows where the cursor goes.
-   */
-  get focused(): boolean {
-    return this.#focused;
-  }
-
-  set focused(value: boolean) {
-    this.#focused = value;
-    this.input.focused = value;
-  }
-
-  handleInput(data: string): void {
-    if (this.#hints.length > 0) {
-      if (matchesKey(data, "up")) {
-        // Wrapping, so a list of four is never more than two presses away.
-        this.#selected = (this.#selected + this.#hints.length - 1) % this.#hints.length;
-        return;
-      }
-      if (matchesKey(data, "down") || matchesKey(data, "tab")) {
-        this.#selected = (this.#selected + 1) % this.#hints.length;
-        return;
-      }
-    }
-
-    this.input.handleInput(data);
-
-    // Typing a slash opens the menu; typing on narrows it; deleting the slash closes it.
-    const before = this.#hints[this.#selected]?.id;
-    this.#hints = matchCommands(this.input.getValue());
-
-    // Keep the highlight on the same command if it survived the narrowing,
-    // otherwise start again at the top rather than pointing somewhere arbitrary.
-    const stillThere = this.#hints.findIndex((command) => command.id === before);
-    this.#selected = stillThere >= 0 ? stillThere : 0;
-  }
-
-  /** The command Enter would run, if any. */
-  pending(): Command | undefined {
-    return this.#hints[this.#selected];
-  }
-
-  clearHints(): void {
-    this.#hints = [];
-    this.#selected = 0;
-  }
-
-  invalidate(): void {
-    this.input.invalidate();
-  }
-
-  render(width: number): string[] {
-    const menu: string[] = [];
-    for (const [index, command] of this.#hints.entries()) {
-      const chosen = index === this.#selected;
-      const line = chosen
-        ? `${MAGENTA}> /${command.name}${RESET}  ${DIM}${command.summary}${RESET}`
-        : `${DIM}  /${command.name}  ${command.summary}${RESET}`;
-      menu.push(...wrapTextWithAnsi(line, width));
-    }
-
-    if (menu.length > 0) {
-      menu.push(`${DIM}  up/down to choose, Enter to run${RESET}`);
-    }
-
-    return [...menu, `${GREEN}${BOLD}You:${RESET}`, ...this.input.render(width)];
-  }
-}
 
 /** The bottom line: cumulative usage and the keys available right now. */
 class StatusBar implements Component {
