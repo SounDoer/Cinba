@@ -22,15 +22,11 @@ import { rmSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  clearCredential,
-  findSession,
-  listProviders,
-  setApiKey,
-} from "@cinba/agent";
+import { findSession } from "@cinba/agent";
 import { isLoopback } from "./loopback.ts";
 import { assessIdle, canStopNow, IDLE_TIMEOUT_MS } from "./reclaim.ts";
 import { createConfigStore } from "./config.ts";
+import { createCredentialService } from "./credential-service.ts";
 import { listDirectories } from "./directory-browser.ts";
 import { createServerRuntime } from "./server-runtime.ts";
 import { createSessionRegistry } from "./session-registry.ts";
@@ -99,6 +95,8 @@ const sessions = createSessionRegistry({
   },
   onSnapshot: toViewers,
 });
+
+const credentials = createCredentialService({ onChanged: markCredentialsStale });
 
 /**
  * The conversation to show a client that has not chosen one: the last one used,
@@ -223,7 +221,9 @@ async function recycleStale(): Promise<void> {
   // it reports when it has none at all. Getting this wrong leaves a
   // conversation with no process rather than with the wrong model.
   const reachable = new Set(
-    (await listProviders()).filter((provider) => provider.configured).map((provider) => provider.id),
+    (await credentials.list())
+      .filter((provider) => provider.configured)
+      .map((provider) => provider.id),
   );
 
   for (const session of sessions.values()) {
@@ -325,7 +325,7 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
 
     case "list_providers":
       // Status only: which providers are usable. Never how.
-      sendTo(socket, { type: "provider_listing", providers: await listProviders() });
+      sendTo(socket, { type: "provider_listing", providers: await credentials.list() });
       return;
 
     case "set_api_key": {
@@ -340,25 +340,9 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
         }
         return;
       }
-      try {
-        await setApiKey(message.providerId, message.apiKey);
-        // The provider's name, never the key, and never the fact that it has one logged.
-        if (current) {
-          sessions.emit(current, [
-            { type: "notice", text: `${message.providerId} is configured` },
-          ]);
-        }
-        markCredentialsStale();
-      } catch (error) {
-        // The message from a failed login can be shown; it never contains the key.
-        const reason = error instanceof Error ? error.message : String(error);
-        if (current) {
-          sessions.emit(current, [
-            { type: "notice", text: `could not configure: ${reason}` },
-          ]);
-        }
-      }
-      sendTo(socket, { type: "provider_listing", providers: await listProviders() });
+      const result = await credentials.configure(message.providerId, message.apiKey);
+      if (current) sessions.emit(current, [{ type: "notice", text: result.notice }]);
+      sendTo(socket, { type: "provider_listing", providers: await credentials.list() });
       return;
     }
 
@@ -367,16 +351,9 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
         console.warn("[cinba] refused a credential change from a non-local client");
         return;
       }
-      await clearCredential(message.providerId);
-      if (current) {
-        sessions.emit(current, [
-          { type: "notice", text: `${message.providerId} is no longer configured` },
-        ]);
-      }
-      // A removed key matters as much as an added one: a Pi that still holds it
-      // would go on offering models this machine can no longer reach.
-      markCredentialsStale();
-      sendTo(socket, { type: "provider_listing", providers: await listProviders() });
+      const result = await credentials.remove(message.providerId);
+      if (current) sessions.emit(current, [{ type: "notice", text: result.notice }]);
+      sendTo(socket, { type: "provider_listing", providers: await credentials.list() });
       return;
     }
 
