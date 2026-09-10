@@ -83,6 +83,7 @@ test("malformed messages are ignored rather than crashing", () => {
   fake.socket.onmessage?.({ data: "this is not JSON" });
   fake.socket.onmessage?.({ data: 42 });
   fake.receive({ type: "never heard of this type" });
+  fake.receive({ type: "actions", actions: "not an array" });
 });
 
 test("the model commands go out, and both model messages reach their handlers", () => {
@@ -163,8 +164,30 @@ test("the session commands go out, and both session messages reach their handler
     ],
   );
 
-  fake.receive({ type: "session_listing", sessions: [{ id: "s1" }] });
+  fake.receive({
+    type: "session_listing",
+    sessions: [
+      {
+        id: "s1",
+        cwd: "C:/p",
+        messageCount: 1,
+        firstMessage: "hello",
+        modified: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+  });
   fake.receive({ type: "session_opened", sessionId: "s1" });
 
-  assert.deepEqual(seen, [[{ id: "s1" }], "s1"]);
+  assert.deepEqual(seen, [
+    [
+      {
+        id: "s1",
+        cwd: "C:/p",
+        messageCount: 1,
+        firstMessage: "hello",
+        modified: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+    "s1",
+  ]);
 });

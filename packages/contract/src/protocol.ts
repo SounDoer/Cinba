@@ -12,13 +12,6 @@ import type { Snapshot } from "./session.ts";
 export type ModelRef = { provider: string; id: string };
 
 /**
- * One row of the session list.
- *
- * Straight out of Pi's SessionInfo, trimmed to what a picker draws. firstMessage
- * is the opening line of the conversation and serves as the title: Pi already
- * has it, so nothing has to invent one.
- */
-/**
  * Whether a provider can be used, and never how.
  *
  * Shaped so it cannot carry a secret: a key travels to the core and never
@@ -180,6 +173,157 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
       if (typeof message.name !== "string" || message.name.trim() === "") return undefined;
       return { type: "rename_session", name: message.name.trim() };
 
+    default:
+      return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isModelRef(value: unknown): value is ModelRef {
+  return (
+    isRecord(value) && typeof value.provider === "string" && typeof value.id === "string"
+  );
+}
+
+function isViewAction(value: unknown): value is ViewAction {
+  if (!isRecord(value)) return false;
+  switch (value.type) {
+    case "message_added":
+      return (
+        typeof value.messageId === "string" &&
+        (value.role === "user" || value.role === "assistant")
+      );
+    case "text_appended":
+    case "thinking_appended":
+      return typeof value.messageId === "string" && typeof value.text === "string";
+    case "tool_changed":
+      return (
+        typeof value.toolCallId === "string" &&
+        typeof value.toolName === "string" &&
+        ["pending", "running", "done", "error"].includes(String(value.status)) &&
+        (value.result === undefined || typeof value.result === "string")
+      );
+    case "confirm_requested":
+      return typeof value.requestId === "string";
+    case "model_in_use":
+      return typeof value.provider === "string" && typeof value.modelId === "string";
+    case "notice":
+      return typeof value.text === "string";
+    case "usage_changed":
+      return typeof value.totalTokens === "number" && typeof value.totalCost === "number";
+    case "busy_changed":
+      return typeof value.busy === "boolean";
+    default:
+      return false;
+  }
+}
+
+function isEntry(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  switch (value.kind) {
+    case "message":
+      return (
+        typeof value.messageId === "string" &&
+        (value.role === "user" || value.role === "assistant") &&
+        typeof value.text === "string" &&
+        typeof value.thinking === "string"
+      );
+    case "tool":
+      return (
+        typeof value.toolCallId === "string" &&
+        typeof value.toolName === "string" &&
+        ["pending", "running", "done", "error"].includes(String(value.status)) &&
+        (value.result === undefined || typeof value.result === "string") &&
+        (value.confirmRequestId === undefined || typeof value.confirmRequestId === "string")
+      );
+    case "notice":
+      return typeof value.text === "string";
+    case "model":
+      return typeof value.provider === "string" && typeof value.modelId === "string";
+    default:
+      return false;
+  }
+}
+
+function isSnapshot(value: unknown): value is Snapshot {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.entries) &&
+    value.entries.every(isEntry) &&
+    typeof value.totalTokens === "number" &&
+    typeof value.totalCost === "number" &&
+    typeof value.busy === "boolean"
+  );
+}
+
+function isSessionSummary(value: unknown): value is SessionSummary {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.cwd === "string" &&
+    (value.name === undefined || typeof value.name === "string") &&
+    typeof value.messageCount === "number" &&
+    typeof value.firstMessage === "string" &&
+    typeof value.modified === "string"
+  );
+}
+
+function isProviderStatus(value: unknown): value is ProviderStatus {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    typeof value.configured === "boolean"
+  );
+}
+
+/** Validate a message received by a client before dispatching it to UI code. */
+export function parseServerMessage(raw: unknown): ServerMessage | undefined {
+  if (!isRecord(raw)) return undefined;
+
+  switch (raw.type) {
+    case "snapshot":
+      if (
+        !isSnapshot(raw.snapshot) ||
+        typeof raw.cwd !== "string" ||
+        typeof raw.sessionId !== "string" ||
+        (raw.model !== undefined && !isModelRef(raw.model))
+      ) {
+        return undefined;
+      }
+      return raw as ServerMessage;
+    case "actions":
+      return Array.isArray(raw.actions) && raw.actions.every(isViewAction)
+        ? (raw as ServerMessage)
+        : undefined;
+    case "dir_listing":
+      return typeof raw.path === "string" &&
+        (raw.parent === null || typeof raw.parent === "string") &&
+        Array.isArray(raw.dirs) &&
+        raw.dirs.every((dir) => typeof dir === "string")
+        ? (raw as ServerMessage)
+        : undefined;
+    case "model_listing":
+      return Array.isArray(raw.models) && raw.models.every(isModelRef)
+        ? (raw as ServerMessage)
+        : undefined;
+    case "model_changed":
+      return isModelRef(raw.model) ? (raw as ServerMessage) : undefined;
+    case "session_listing":
+      return Array.isArray(raw.sessions) && raw.sessions.every(isSessionSummary)
+        ? (raw as ServerMessage)
+        : undefined;
+    case "session_opened":
+      return typeof raw.sessionId === "string" ? (raw as ServerMessage) : undefined;
+    case "provider_listing":
+      return Array.isArray(raw.providers) && raw.providers.every(isProviderStatus)
+        ? (raw as ServerMessage)
+        : undefined;
+    case "core_identity":
+      return typeof raw.name === "string" ? (raw as ServerMessage) : undefined;
     default:
       return undefined;
   }

@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseClientMessage } from "./protocol.ts";
+import { parseClientMessage, parseServerMessage } from "./protocol.ts";
 
-test("the four client messages are recognized", () => {
+test("the basic client messages are recognized", () => {
   assert.deepEqual(parseClientMessage({ type: "prompt", text: "hello" }), {
     type: "prompt",
     text: "hello",
@@ -12,6 +12,59 @@ test("the four client messages are recognized", () => {
     parseClientMessage({ type: "respond_confirm", requestId: "u1", confirmed: true }),
     { type: "respond_confirm", requestId: "u1", confirmed: true },
   );
+});
+
+test("server messages are validated before reaching a client", () => {
+  const snapshot = {
+    type: "snapshot",
+    snapshot: { entries: [], totalTokens: 0, totalCost: 0, busy: false },
+    cwd: "C:/work",
+    sessionId: "s1",
+  };
+  const messages = [
+    snapshot,
+    { type: "actions", actions: [{ type: "busy_changed", busy: true }] },
+    { type: "dir_listing", path: "C:/", parent: null, dirs: ["work"] },
+    { type: "model_listing", models: [{ provider: "test", id: "model" }] },
+    { type: "model_changed", model: { provider: "test", id: "model" } },
+    {
+      type: "session_listing",
+      sessions: [
+        {
+          id: "s1",
+          cwd: "C:/work",
+          messageCount: 1,
+          firstMessage: "hello",
+          modified: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    },
+    { type: "session_opened", sessionId: "s1" },
+    { type: "provider_listing", providers: [{ id: "test", name: "Test", configured: true }] },
+    { type: "core_identity", name: "home" },
+  ];
+
+  for (const message of messages) assert.equal(parseServerMessage(message), message);
+});
+
+test("malformed server messages are dropped", () => {
+  assert.equal(parseServerMessage(null), undefined);
+  assert.equal(parseServerMessage({ type: "actions", actions: "busy" }), undefined);
+  assert.equal(
+    parseServerMessage({ type: "actions", actions: [{ type: "busy_changed", busy: "yes" }] }),
+    undefined,
+  );
+  assert.equal(
+    parseServerMessage({
+      type: "snapshot",
+      snapshot: { entries: [], totalTokens: 0, totalCost: 0 },
+      cwd: "C:/work",
+      sessionId: "s1",
+    }),
+    undefined,
+  );
+  assert.equal(parseServerMessage({ type: "session_listing", sessions: [{ id: "s1" }] }), undefined);
+  assert.equal(parseServerMessage({ type: "never_heard_of_this" }), undefined);
 });
 
 test("list_dir is recognized", () => {

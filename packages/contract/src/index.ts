@@ -15,7 +15,7 @@ export {
   sessionSubtitle,
   sessionTitle,
 } from "./labels.ts";
-export { parseClientMessage } from "./protocol.ts";
+export { parseClientMessage, parseServerMessage } from "./protocol.ts";
 export type {
   ClientMessage,
   ModelRef,

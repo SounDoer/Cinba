@@ -10,9 +10,9 @@ import type {
   ClientMessage,
   ModelRef,
   ProviderStatus,
-  ServerMessage,
   SessionSummary,
 } from "./protocol.ts";
+import { parseServerMessage } from "./protocol.ts";
 
 /**
  * A connection that can send and receive text messages.
@@ -125,12 +125,14 @@ export class RemoteSession {
   #receive(data: unknown): void {
     if (typeof data !== "string") return;
 
-    let message: ServerMessage;
+    let parsed: unknown;
     try {
-      message = JSON.parse(data) as ServerMessage;
+      parsed = JSON.parse(data);
     } catch {
       return; // Not JSON, ignore it
     }
+    const message = parseServerMessage(parsed);
+    if (!message) return;
 
     switch (message.type) {
       case "snapshot":
