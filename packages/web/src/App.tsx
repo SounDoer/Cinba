@@ -13,12 +13,11 @@ import { useCore } from "./use-core.ts";
 /** One web colour for each stable slot supplied by the shared naming rules. */
 const CORE_COLOURS = ["#3b6fd4", "#2e9166", "#b4642a", "#8b4bc4", "#b03a52", "#2b7f96"];
 
+type ActivePicker = "project" | "model" | "session" | "provider" | null;
+
 export function App({ serverUrl }: { serverUrl: string }) {
   const core = useCore(serverUrl);
-  const [picking, setPicking] = useState(false);
-  const [pickingModel, setPickingModel] = useState(false);
-  const [pickingSession, setPickingSession] = useState(false);
-  const [pickingProvider, setPickingProvider] = useState(false);
+  const [activePicker, setActivePicker] = useState<ActivePicker>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -41,7 +40,7 @@ export function App({ serverUrl }: { serverUrl: string }) {
         </span>
         <button
           onClick={() => {
-            if (core.listSessions()) setPickingSession(true);
+            if (core.listSessions()) setActivePicker("session");
           }}
           disabled={!core.connected}
         >
@@ -49,7 +48,7 @@ export function App({ serverUrl }: { serverUrl: string }) {
         </button>
         <button
           onClick={() => {
-            if (core.listModels()) setPickingModel(true);
+            if (core.listModels()) setActivePicker("model");
           }}
           disabled={!core.connected || core.snapshot.busy}
         >
@@ -57,7 +56,7 @@ export function App({ serverUrl }: { serverUrl: string }) {
         </button>
         <button
           onClick={() => {
-            if (core.listProviders()) setPickingProvider(true);
+            if (core.listProviders()) setActivePicker("provider");
           }}
           disabled={!core.connected}
         >
@@ -83,16 +82,16 @@ export function App({ serverUrl }: { serverUrl: string }) {
         onAbort={core.abort}
       />
 
-      {pickingProvider ? (
+      {activePicker === "provider" ? (
         <ProviderPicker
           providers={core.providers}
           onSetApiKey={core.setApiKey}
           onClearCredential={core.clearCredential}
-          onClose={() => setPickingProvider(false)}
+          onClose={() => setActivePicker(null)}
         />
       ) : null}
 
-      {pickingSession ? (
+      {activePicker === "session" ? (
         <SessionPicker
           sessions={core.sessions}
           currentId={core.sessionId}
@@ -100,29 +99,28 @@ export function App({ serverUrl }: { serverUrl: string }) {
           onRename={core.renameSession}
           onDelete={core.deleteSession}
           onNewHere={() => {
-            setPickingSession(false);
-            setPicking(true);
+            setActivePicker("project");
           }}
-          onClose={() => setPickingSession(false)}
+          onClose={() => setActivePicker(null)}
         />
       ) : null}
 
-      {picking ? (
+      {activePicker === "project" ? (
         <ProjectPicker
           listing={core.listing}
           startPath={core.cwd}
           onListDirectory={core.listDirectory}
           onCreateConversation={core.createConversation}
-          onClose={() => setPicking(false)}
+          onClose={() => setActivePicker(null)}
         />
       ) : null}
 
-      {pickingModel ? (
+      {activePicker === "model" ? (
         <ModelPicker
           models={core.models}
           current={core.model}
           onSelect={core.selectModel}
-          onClose={() => setPickingModel(false)}
+          onClose={() => setActivePicker(null)}
         />
       ) : null}
     </>
