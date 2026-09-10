@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { nameColourIndex } from "@cinba/contract";
 import { Transcript } from "./Transcript.tsx";
+import { PromptComposer } from "./PromptComposer.tsx";
 import { ProjectPicker } from "./ProjectPicker.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { SessionPicker } from "./SessionPicker.tsx";
@@ -14,7 +15,6 @@ const CORE_COLOURS = ["#3b6fd4", "#2e9166", "#b4642a", "#8b4bc4", "#b03a52", "#2
 
 export function App({ serverUrl }: { serverUrl: string }) {
   const core = useCore(serverUrl);
-  const [draft, setDraft] = useState("");
   const [picking, setPicking] = useState(false);
   const [pickingModel, setPickingModel] = useState(false);
   const [pickingSession, setPickingSession] = useState(false);
@@ -25,25 +25,6 @@ export function App({ serverUrl }: { serverUrl: string }) {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [core.snapshot]);
 
-  // Esc aborts even while the textarea is disabled during a reply.
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape" && core.snapshot.busy) {
-        event.preventDefault();
-        core.abort();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [core.abort, core.snapshot.busy]);
-
-  function send() {
-    const text = draft.trim();
-    if (core.snapshot.busy || text === "") return;
-    if (!core.prompt(text)) return;
-    setDraft("");
-  }
-
   return (
     <>
       <header>
@@ -52,7 +33,7 @@ export function App({ serverUrl }: { serverUrl: string }) {
             className="core-dot"
             style={{ background: CORE_COLOURS[nameColourIndex(core.coreName)] }}
           />
-          {core.connectionState === "connected"
+          {core.connected
             ? core.coreName || "..."
             : core.connectionState === "connecting"
               ? "Connecting..."
@@ -95,30 +76,12 @@ export function App({ serverUrl }: { serverUrl: string }) {
         <div ref={bottomRef} />
       </main>
 
-      <footer>
-        <textarea
-          id="input"
-          rows={3}
-          placeholder="Say something (Enter to send, Shift+Enter for a new line)"
-          value={draft}
-          disabled={!core.connected || core.snapshot.busy}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              send();
-            }
-          }}
-        />
-        <button onClick={send} disabled={!core.connected || core.snapshot.busy}>
-          Send
-        </button>
-        {core.snapshot.busy ? (
-          <button onClick={core.abort} disabled={!core.connected}>
-            Stop
-          </button>
-        ) : null}
-      </footer>
+      <PromptComposer
+        connected={core.connected}
+        busy={core.snapshot.busy}
+        onSend={core.prompt}
+        onAbort={core.abort}
+      />
 
       {pickingProvider ? (
         <ProviderPicker
