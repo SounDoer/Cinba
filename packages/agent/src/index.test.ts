@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildSpawnPlan } from "./index.ts";
+import { buildSpawnPlan } from "./pi-process.ts";
 
 const GATE = "/gate.ts";
 
