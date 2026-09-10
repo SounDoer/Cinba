@@ -20,7 +20,6 @@ import {
   Container,
   Input,
   matchesKey,
-  Markdown,
   ProcessTerminal,
   SelectList,
   truncateToWidth,
@@ -58,12 +57,12 @@ import {
   DIM,
   GREEN,
   MAGENTA,
-  MARKDOWN_THEME,
   RED,
   RESET,
   SELECT_THEME,
   YELLOW,
 } from "./theme.ts";
+import { Transcript } from "./transcript.ts";
 
 /**
  * Which core to talk to. Nothing here starts one: the service has to be running.
@@ -74,88 +73,6 @@ import {
  * composes with cinba-tui.cmd, which already spends its argument on a folder.
  */
 const SERVER_URL = process.env.CINBA_SERVER || "ws://127.0.0.1:4517/ws";
-
-/**
- * The output area.
- *
- * It holds blocks rather than bare lines. Most blocks are plain lines, but a
- * finished message is kept as its Markdown source and rendered at draw time,
- * because Markdown only makes sense once the width is known and once the text
- * has stopped growing. While an answer streams it is plain lines; the redraw at
- * the end of the turn turns it into Markdown.
- *
- * Still append-only in spirit: TuiMainScreen diffs against the previous frame,
- * so only what is still on screen can change. A whole conversation arriving at
- * once is handled by clearing and drawing again, not by editing in place.
- */
-type Block = { kind: "lines"; lines: string[] } | { kind: "markdown"; source: Markdown };
-
-class Transcript implements Component {
-  #blocks: Block[] = [];
-  #max = 400;
-
-  #tail(): string[] {
-    const last = this.#blocks.at(-1);
-    if (last?.kind === "lines") return last.lines;
-    const lines: string[] = [];
-    this.#blocks.push({ kind: "lines", lines });
-    this.#trim();
-    return lines;
-  }
-
-  #trim(): void {
-    if (this.#blocks.length > this.#max) this.#blocks = this.#blocks.slice(-this.#max);
-  }
-
-  append(line: string): void {
-    this.#tail().push(line);
-  }
-
-  /** Append to the end of the last line. This is how streaming text grows character by character. */
-  appendInline(text: string): void {
-    const lines = this.#tail();
-    if (lines.length === 0) lines.push("");
-    lines[lines.length - 1] += text;
-  }
-
-  /** Add a block of Markdown, rendered when the width is known. */
-  appendMarkdown(text: string): void {
-    this.#blocks.push({
-      kind: "markdown",
-      source: new Markdown(text, 0, 0, MARKDOWN_THEME),
-    });
-    this.#trim();
-  }
-
-  /** Start over. A whole conversation arrives at once when one is opened, and when the server corrects the transcript. */
-  clear(): void {
-    this.#blocks = [];
-  }
-
-  invalidate(): void {}
-
-  render(width: number): string[] {
-    const out: string[] = [];
-    for (const block of this.#blocks) {
-      if (block.kind === "markdown") {
-        out.push(...block.source.render(width));
-        continue;
-      }
-      for (const line of block.lines) {
-        if (line === "") {
-          out.push(""); // A blank line separates paragraphs and must not be swallowed by the wrapper
-          continue;
-        }
-        // line.slice(0, width) will not do: it counts characters, while a
-        // terminal cares about display columns. A CJK character takes 2 columns
-        // and an ANSI escape takes 0, so either one puts the counts out of step
-        // -- and pi-tui throws outright when a rendered line comes out too wide.
-        out.push(...wrapTextWithAnsi(line, width));
-      }
-    }
-    return out;
-  }
-}
 
 /**
  * The input line, plus the command menu above it.
