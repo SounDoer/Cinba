@@ -14,26 +14,23 @@
 // reading a conversation and changing which key the machine bills to are not
 // the same kind of act.
 
-import { useEffect, useState } from "react";
-import type { CoreClient } from "@cinba/core-client";
+import { useState } from "react";
 import type { ProviderStatus } from "@cinba/contract";
 
 export function ProviderPicker({
-  client,
   providers,
+  onSetApiKey,
+  onClearCredential,
   onClose,
 }: {
-  client: CoreClient | undefined;
   providers: ProviderStatus[] | undefined;
+  onSetApiKey: (providerId: string, apiKey: string) => boolean;
+  onClearCredential: (providerId: string) => boolean;
   onClose: () => void;
 }) {
   const [adding, setAdding] = useState<string | undefined>(undefined);
   const [draft, setDraft] = useState("");
   const [showAll, setShowAll] = useState(false);
-
-  useEffect(() => {
-    client?.listProviders();
-  }, [client]);
 
   const configured = providers?.filter((provider) => provider.configured) ?? [];
   const rest = providers?.filter((provider) => !provider.configured) ?? [];
@@ -41,7 +38,7 @@ export function ProviderPicker({
 
   function save(providerId: string) {
     if (draft.trim() === "") return;
-    client?.setApiKey(providerId, draft.trim());
+    if (!onSetApiKey(providerId, draft.trim())) return;
     // Cleared immediately: a key has no business sitting in component state
     // after it has been sent.
     setDraft("");
@@ -108,7 +105,7 @@ export function ProviderPicker({
                 {provider.configured ? (
                   <button
                     className="session-delete"
-                    onClick={() => client?.clearCredential(provider.id)}
+                    onClick={() => onClearCredential(provider.id)}
                   >
                     Forget
                   </button>

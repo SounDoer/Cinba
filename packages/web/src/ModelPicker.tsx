@@ -4,25 +4,19 @@
 // returns only the models this machine has credentials for, so a hardcoded list
 // would both go stale and offer entries that fail the moment they are picked.
 
-import { useEffect } from "react";
-import type { CoreClient } from "@cinba/core-client";
 import type { ModelRef } from "@cinba/contract";
 
 export function ModelPicker({
-  client,
   models,
   current,
+  onSelect,
   onClose,
 }: {
-  client: CoreClient | undefined;
   models: ModelRef[] | undefined;
   current: ModelRef | undefined;
+  onSelect: (model: ModelRef) => boolean;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    client?.listModels();
-  }, [client]);
-
   return (
     <div className="picker" onClick={onClose}>
       <div className="picker-box" onClick={(event) => event.stopPropagation()}>
@@ -40,8 +34,7 @@ export function ModelPicker({
                 className="picker-item"
                 key={`${model.provider}/${model.id}`}
                 onClick={() => {
-                  if (!active) client?.setModel(model.provider, model.id);
-                  onClose();
+                  if (active || onSelect(model)) onClose();
                 }}
               >
                 {active ? "● " : "  "}

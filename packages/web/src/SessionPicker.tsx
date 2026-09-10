@@ -4,9 +4,8 @@
 // is also why deleting one is worded plainly and asks twice: it removes a file
 // holding a real conversation, and nothing puts it back.
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { sessionSubtitle, sessionTitle } from "@cinba/contract";
-import type { CoreClient } from "@cinba/core-client";
 import type { SessionSummary } from "@cinba/contract";
 
 function when(iso: string): string {
@@ -15,25 +14,25 @@ function when(iso: string): string {
 }
 
 export function SessionPicker({
-  client,
   sessions,
   currentId,
+  onOpen,
+  onRename,
+  onDelete,
   onNewHere,
   onClose,
 }: {
-  client: CoreClient | undefined;
   sessions: SessionSummary[] | undefined;
   currentId: string;
+  onOpen: (sessionId: string) => boolean;
+  onRename: (name: string) => boolean;
+  onDelete: (sessionId: string) => boolean;
   onNewHere: () => void;
   onClose: () => void;
 }) {
   const [confirming, setConfirming] = useState<string | undefined>(undefined);
   /** The draft name while renaming the current conversation; undefined when not renaming. */
   const [renaming, setRenaming] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    client?.listSessions();
-  }, [client]);
 
   return (
     <div className="picker" onClick={onClose}>
@@ -59,8 +58,7 @@ export function SessionPicker({
                     onChange={(event) => setRenaming(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" && renaming.trim() !== "") {
-                        client?.renameSession(renaming.trim());
-                        setRenaming(undefined);
+                        if (onRename(renaming.trim())) setRenaming(undefined);
                       }
                       if (event.key === "Escape") setRenaming(undefined);
                     }}
@@ -68,8 +66,7 @@ export function SessionPicker({
                   <button
                     disabled={renaming.trim() === ""}
                     onClick={() => {
-                      client?.renameSession(renaming.trim());
-                      setRenaming(undefined);
+                      if (onRename(renaming.trim())) setRenaming(undefined);
                     }}
                   >
                     Save
@@ -85,8 +82,7 @@ export function SessionPicker({
                   Delete this conversation for good?{" "}
                   <button
                     onClick={() => {
-                      client?.deleteSession(session.id);
-                      setConfirming(undefined);
+                      if (onDelete(session.id)) setConfirming(undefined);
                     }}
                   >
                     Delete
@@ -101,8 +97,7 @@ export function SessionPicker({
                 <button
                   className="session-open"
                   onClick={() => {
-                    if (!active) client?.openSession(session.id);
-                    onClose();
+                    if (active || onOpen(session.id)) onClose();
                   }}
                 >
                   <span className="session-title">

@@ -8,7 +8,6 @@
 // no longer a mode the whole service is in: each conversation carries its own.
 
 import { useEffect, useState } from "react";
-import type { CoreClient } from "@cinba/core-client";
 import type { DirectoryListing } from "./use-core.ts";
 
 /** Build a subdirectory path, following whichever separator the server returned so the two slashes never mix. */
@@ -18,25 +17,27 @@ function childPath(current: string, name: string): string {
 }
 
 export function ProjectPicker({
-  client,
   listing,
   startPath,
+  onListDirectory,
+  onCreateConversation,
   onClose,
 }: {
-  client: CoreClient | undefined;
   listing: DirectoryListing | undefined;
   startPath: string;
+  onListDirectory: (path: string) => boolean;
+  onCreateConversation: (path: string) => boolean;
   onClose: () => void;
 }) {
   const [current, setCurrent] = useState(startPath);
 
   useEffect(() => {
-    client?.listDir(startPath);
-  }, [client, startPath]);
+    onListDirectory(startPath);
+  }, [onListDirectory, startPath]);
 
   function go(path: string) {
     setCurrent(path);
-    client?.listDir(path);
+    onListDirectory(path);
   }
 
   // Render only when the server's listing is for the current directory, so entering one does not briefly show its parent.
@@ -67,8 +68,7 @@ export function ProjectPicker({
           <button onClick={onClose}>Cancel</button>
           <button
             onClick={() => {
-              client?.createSession(current);
-              onClose();
+              if (onCreateConversation(current)) onClose();
             }}
           >
             Start a conversation here

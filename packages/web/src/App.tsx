@@ -30,17 +30,17 @@ export function App({ serverUrl }: { serverUrl: string }) {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape" && core.snapshot.busy) {
         event.preventDefault();
-        core.client?.abort();
+        core.abort();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [core.client, core.snapshot.busy]);
+  }, [core.abort, core.snapshot.busy]);
 
   function send() {
     const text = draft.trim();
     if (core.snapshot.busy || text === "") return;
-    if (!core.client?.prompt(text)) return;
+    if (!core.prompt(text)) return;
     setDraft("");
   }
 
@@ -58,16 +58,28 @@ export function App({ serverUrl }: { serverUrl: string }) {
               ? "Connecting..."
               : "Disconnected"}
         </span>
-        <button onClick={() => setPickingSession(true)} disabled={!core.connected}>
+        <button
+          onClick={() => {
+            if (core.listSessions()) setPickingSession(true);
+          }}
+          disabled={!core.connected}
+        >
           {core.cwd.split(/[\\/]/).pop() || "..."} — conversations
         </button>
         <button
-          onClick={() => setPickingModel(true)}
+          onClick={() => {
+            if (core.listModels()) setPickingModel(true);
+          }}
           disabled={!core.connected || core.snapshot.busy}
         >
           Model: {core.model?.id ?? "..."}
         </button>
-        <button onClick={() => setPickingProvider(true)} disabled={!core.connected}>
+        <button
+          onClick={() => {
+            if (core.listProviders()) setPickingProvider(true);
+          }}
+          disabled={!core.connected}
+        >
           Providers
         </button>
         <span>
@@ -78,9 +90,7 @@ export function App({ serverUrl }: { serverUrl: string }) {
       <main id="transcript">
         <Transcript
           entries={core.snapshot.entries}
-          onRespond={(requestId, confirmed) =>
-            core.client?.respondConfirm(requestId, confirmed)
-          }
+          onRespond={core.respondConfirm}
         />
         <div ref={bottomRef} />
       </main>
@@ -104,7 +114,7 @@ export function App({ serverUrl }: { serverUrl: string }) {
           Send
         </button>
         {core.snapshot.busy ? (
-          <button onClick={() => core.client?.abort()} disabled={!core.connected}>
+          <button onClick={core.abort} disabled={!core.connected}>
             Stop
           </button>
         ) : null}
@@ -112,17 +122,20 @@ export function App({ serverUrl }: { serverUrl: string }) {
 
       {pickingProvider ? (
         <ProviderPicker
-          client={core.client}
           providers={core.providers}
+          onSetApiKey={core.setApiKey}
+          onClearCredential={core.clearCredential}
           onClose={() => setPickingProvider(false)}
         />
       ) : null}
 
       {pickingSession ? (
         <SessionPicker
-          client={core.client}
           sessions={core.sessions}
           currentId={core.sessionId}
+          onOpen={core.openSession}
+          onRename={core.renameSession}
+          onDelete={core.deleteSession}
           onNewHere={() => {
             setPickingSession(false);
             setPicking(true);
@@ -133,18 +146,19 @@ export function App({ serverUrl }: { serverUrl: string }) {
 
       {picking ? (
         <ProjectPicker
-          client={core.client}
           listing={core.listing}
           startPath={core.cwd}
+          onListDirectory={core.listDirectory}
+          onCreateConversation={core.createConversation}
           onClose={() => setPicking(false)}
         />
       ) : null}
 
       {pickingModel ? (
         <ModelPicker
-          client={core.client}
           models={core.models}
           current={core.model}
+          onSelect={core.selectModel}
           onClose={() => setPickingModel(false)}
         />
       ) : null}

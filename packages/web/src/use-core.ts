@@ -3,7 +3,7 @@
 // CoreClient reports callbacks; React renders state. This hook owns the mirror
 // ledger and translates between those two shapes so the page does not have to.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CoreClient } from "@cinba/core-client";
 import type { CoreConnectionState } from "@cinba/core-client";
 import { createSession } from "@cinba/contract";
@@ -74,8 +74,68 @@ export function useCore(serverUrl: string) {
     };
   }, [serverUrl]);
 
+  const withClient = useCallback((operation: (client: CoreClient) => boolean): boolean => {
+    const client = clientRef.current;
+    return client ? operation(client) : false;
+  }, []);
+
+  const prompt = useCallback(
+    (text: string) => withClient((client) => client.prompt(text)),
+    [withClient],
+  );
+  const abort = useCallback(() => withClient((client) => client.abort()), [withClient]);
+  const respondConfirm = useCallback(
+    (requestId: string, confirmed: boolean) =>
+      withClient((client) => client.respondConfirm(requestId, confirmed)),
+    [withClient],
+  );
+  const listDirectory = useCallback(
+    (path: string) => withClient((client) => client.listDir(path)),
+    [withClient],
+  );
+  const listModels = useCallback(
+    () => withClient((client) => client.listModels()),
+    [withClient],
+  );
+  const selectModel = useCallback(
+    (next: ModelRef) => withClient((client) => client.setModel(next.provider, next.id)),
+    [withClient],
+  );
+  const listSessions = useCallback(
+    (directory?: string) => withClient((client) => client.listSessions(directory)),
+    [withClient],
+  );
+  const openSession = useCallback(
+    (id: string) => withClient((client) => client.openSession(id)),
+    [withClient],
+  );
+  const createConversation = useCallback(
+    (directory: string) => withClient((client) => client.createSession(directory)),
+    [withClient],
+  );
+  const deleteSession = useCallback(
+    (id: string) => withClient((client) => client.deleteSession(id)),
+    [withClient],
+  );
+  const renameSession = useCallback(
+    (name: string) => withClient((client) => client.renameSession(name)),
+    [withClient],
+  );
+  const listProviders = useCallback(
+    () => withClient((client) => client.listProviders()),
+    [withClient],
+  );
+  const setApiKey = useCallback(
+    (providerId: string, apiKey: string) =>
+      withClient((client) => client.setApiKey(providerId, apiKey)),
+    [withClient],
+  );
+  const clearCredential = useCallback(
+    (providerId: string) => withClient((client) => client.clearCredential(providerId)),
+    [withClient],
+  );
+
   return {
-    client: clientRef.current,
     connectionState,
     connected: connectionState === "connected",
     coreName,
@@ -87,5 +147,19 @@ export function useCore(serverUrl: string) {
     sessionId,
     sessions,
     providers,
+    prompt,
+    abort,
+    respondConfirm,
+    listDirectory,
+    listModels,
+    selectModel,
+    listSessions,
+    openSession,
+    createConversation,
+    deleteSession,
+    renameSession,
+    listProviders,
+    setApiKey,
+    clearCredential,
   };
 }
