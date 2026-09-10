@@ -9,8 +9,7 @@
 
 import { useEffect, useState } from "react";
 import type { CoreClient } from "@cinba/core-client";
-
-export type Listing = { path: string; parent: string | null; dirs: string[] };
+import type { DirectoryListing } from "./use-core.ts";
 
 /** Build a subdirectory path, following whichever separator the server returned so the two slashes never mix. */
 function childPath(current: string, name: string): string {
@@ -25,7 +24,7 @@ export function ProjectPicker({
   onClose,
 }: {
   client: CoreClient | undefined;
-  listing: Listing | undefined;
+  listing: DirectoryListing | undefined;
   startPath: string;
   onClose: () => void;
 }) {
