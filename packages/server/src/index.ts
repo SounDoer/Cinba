@@ -18,7 +18,7 @@
 
 import type { WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
-import { readdirSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,6 +31,7 @@ import {
 import { isLoopback } from "./loopback.ts";
 import { assessIdle, canStopNow, IDLE_TIMEOUT_MS } from "./reclaim.ts";
 import { createConfigStore } from "./config.ts";
+import { listDirectories } from "./directory-browser.ts";
 import { createServerRuntime } from "./server-runtime.ts";
 import { createSessionRegistry } from "./session-registry.ts";
 import type { LiveSession } from "./session-registry.ts";
@@ -302,25 +303,7 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
       return;
 
     case "list_dir": {
-      // A browser cannot see local paths, deliberately, so the server lists
-      // directories and the UI only draws them. Listing directories adds no new
-      // capability: this service can already run any command.
-      let dirs: string[] = [];
-      try {
-        dirs = readdirSync(message.path, { withFileTypes: true })
-          .filter((item) => item.isDirectory() && !item.name.startsWith("."))
-          .map((item) => item.name)
-          .sort();
-      } catch {
-        // Unreadable (missing, no permission) counts as empty; the UI can just show nothing.
-      }
-      const parent = dirname(message.path);
-      sendTo(socket, {
-        type: "dir_listing",
-        path: message.path,
-        parent: parent === message.path ? null : parent,
-        dirs,
-      });
+      sendTo(socket, listDirectories(message.path));
       return;
     }
 
