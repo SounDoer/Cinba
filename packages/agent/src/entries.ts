@@ -97,10 +97,11 @@ export function foldSessionEntries(entries: readonly unknown[]): ViewAction[] {
     }
 
     if (message.role !== "user" && message.role !== "assistant") continue;
+    if (typeof entry.id !== "string" || entry.id === "") continue;
 
     // Pi's own entry id, rather than a counter of our own: it is stable across
     // rebuilds, which is what the reconciliation pass in the server needs.
-    const messageId = String(entry.id);
+    const messageId = entry.id;
     actions.push({ type: "message_added", messageId, role: message.role });
 
     // Walk the parts in their stored order so a tool call raised midway through

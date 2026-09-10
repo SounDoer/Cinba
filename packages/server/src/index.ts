@@ -436,7 +436,14 @@ function onConnection(socket: WebSocket, request: IncomingMessage): void {
     if (session) show(socket, session);
   });
 
-  socket.on("message", (data: unknown) => void handle(socket, String(data)));
+  socket.on("message", (data: unknown) => {
+    void handle(socket, String(data)).catch((error: unknown) => {
+      console.error(
+        "[cinba] client message failed:",
+        error instanceof Error ? error.message : String(error),
+      );
+    });
+  });
   socket.on("close", () => {
     clients.delete(socket);
     viewing.delete(socket);

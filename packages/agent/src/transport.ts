@@ -10,6 +10,8 @@ export type Transport = {
   send(line: string): void;
   /** Subscribe to every line received. */
   onLine(handler: (line: string) => void): void;
+  /** Subscribe to connection loss. An error is present when the loss was unexpected. */
+  onClose(handler: (error?: Error) => void): void;
   /** Close the connection. */
   close(): Promise<void>;
 };
@@ -18,6 +20,10 @@ export type Transport = {
 export class StdioTransport {
   #child: ChildProcess;
   #handlers: Array<(line: string) => void> = [];
+  #closeHandlers: Array<(error?: Error) => void> = [];
+  #closing = false;
+  #closed = false;
+  #closeError: Error | undefined;
 
   constructor(child: ChildProcess) {
     this.#child = child;
@@ -31,6 +37,11 @@ export class StdioTransport {
     }
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => feed(chunk));
+    child.once("error", (error) => this.#notifyClose(error));
+    child.once("close", (code, signal) => {
+      const detail = signal ? `signal ${signal}` : `code ${code ?? "unknown"}`;
+      this.#notifyClose(this.#closing ? undefined : new Error(`Pi process exited with ${detail}`));
+    });
   }
 
   send(line: string): void {
@@ -43,7 +54,37 @@ export class StdioTransport {
     this.#handlers.push(handler);
   }
 
-  async close(): Promise<void> {
-    this.#child.kill();
+  onClose(handler: (error?: Error) => void): void {
+    if (this.#closed) {
+      handler(this.#closeError);
+      return;
+    }
+    this.#closeHandlers.push(handler);
+  }
+
+  close(): Promise<void> {
+    if (this.#closed || this.#child.exitCode !== null || this.#child.signalCode !== null) {
+      this.#notifyClose();
+      return Promise.resolve();
+    }
+
+    this.#closing = true;
+    return new Promise((resolve) => {
+      const done = () => resolve();
+      this.#child.once("close", done);
+      this.#child.once("error", done);
+      if (!this.#child.kill()) {
+        this.#notifyClose();
+        done();
+      }
+    });
+  }
+
+  #notifyClose(error?: Error): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    this.#closeError = error;
+    for (const handler of this.#closeHandlers) handler(error);
+    this.#closeHandlers = [];
   }
 }

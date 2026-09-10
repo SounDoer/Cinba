@@ -119,6 +119,18 @@ test("unknown and malformed entries are skipped, not fatal", () => {
   );
 });
 
+test("a stored message without an id is skipped", () => {
+  assert.deepEqual(
+    foldSessionEntries([
+      {
+        type: "message",
+        message: { role: "assistant", content: [{ type: "text", text: "orphan" }] },
+      },
+    ]),
+    [],
+  );
+});
+
 test("message ids come from Pi, so a rebuild lands on the same ids", () => {
   const actions = foldSessionEntries([
     { type: "message", id: "d1", message: { role: "user", content: [{ type: "text", text: "hi" }] } },

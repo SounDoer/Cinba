@@ -77,6 +77,24 @@ test("unrecognized inner events are ignored", () => {
   );
 });
 
+test("events with missing or wrong fields are ignored safely", () => {
+  const fold = createEventFolder();
+
+  assert.deepEqual(
+    fold({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "orphan" } }),
+    [],
+  );
+  assert.deepEqual(fold({ type: "tool_execution_start", toolName: "bash" }), []);
+  assert.deepEqual(fold({ type: "tool_execution_end", toolCallId: "call_1" }), []);
+  assert.deepEqual(
+    fold({
+      type: "message_end",
+      message: { usage: { totalTokens: "many", cost: { total: "free" } } },
+    }),
+    [],
+  );
+});
+
 test("tool_execution_start means awaiting approval, never already executed", () => {
   const fold = createEventFolder();
 

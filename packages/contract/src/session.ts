@@ -202,24 +202,41 @@ export function createSession(initial?: Snapshot): Session {
  * expected rather than a disagreement.
  */
 export function sameTranscript(a: readonly Entry[], b: readonly Entry[]): boolean {
-  const meaningful = (entries: readonly Entry[]) =>
-    entries.filter((entry) => entry.kind !== "notice").map(signature);
+  const meaningful = (entries: readonly Entry[]) => entries.filter((entry) => entry.kind !== "notice");
   const left = meaningful(a);
   const right = meaningful(b);
-  return left.length === right.length && left.every((line, index) => line === right[index]);
+  return (
+    left.length === right.length &&
+    left.every((entry, index) => sameMeaningfulEntry(entry, right[index]!))
+  );
 }
 
-function signature(entry: Entry): string {
-  switch (entry.kind) {
+function sameMeaningfulEntry(left: Entry, right: Entry): boolean {
+  if (left.kind !== right.kind) return false;
+  switch (left.kind) {
     case "message":
-      return `m|${entry.role}|${entry.text}|${entry.thinking}`;
+      return (
+        right.kind === "message" &&
+        left.role === right.role &&
+        left.text === right.text &&
+        left.thinking === right.thinking
+      );
     case "tool":
       // The pending flag is left out: a card awaiting approval is part of the
       // present, and the present is not in Pi's file yet.
-      return `t|${entry.toolName}|${entry.status}|${entry.result ?? ""}`;
+      return (
+        right.kind === "tool" &&
+        left.toolName === right.toolName &&
+        left.status === right.status &&
+        (left.result ?? "") === (right.result ?? "")
+      );
     case "model":
-      return `p|${entry.provider}|${entry.modelId}`;
+      return (
+        right.kind === "model" &&
+        left.provider === right.provider &&
+        left.modelId === right.modelId
+      );
     default:
-      return "";
+      return false;
   }
 }

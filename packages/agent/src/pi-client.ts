@@ -37,14 +37,27 @@ export type UiRequestHandler = (request: UiRequest) => Promise<UiReply>;
  */
 export class PiClient {
   #transport: Transport;
-  #pending = new Map<string, (response: CoreResponse) => void>();
+  #pending = new Map<
+    string,
+    {
+      resolve: (response: CoreResponse) => void;
+      reject: (error: Error) => void;
+      timer: NodeJS.Timeout;
+    }
+  >();
   #eventListeners: Array<(event: CoreEvent) => void> = [];
   #uiHandler: UiRequestHandler | undefined;
   #nextId = 0;
+  #closedError: Error | undefined;
+  #requestTimeoutMs: number;
 
-  constructor(transport: Transport) {
+  constructor(transport: Transport, requestTimeoutMs = 30_000) {
     this.#transport = transport;
+    this.#requestTimeoutMs = requestTimeoutMs;
     this.#transport.onLine((line) => this.#handleLine(line));
+    this.#transport.onClose((error) => {
+      this.#failPending(error ?? new Error("Pi transport closed"));
+    });
   }
 
   /** Subscribe to the event stream. Returns a function that unsubscribes. */
@@ -120,44 +133,70 @@ export class PiClient {
     return this.#send({ type: "set_session_name", name });
   }
 
-  close(): Promise<void> {
-    return this.#transport.close();
+  async close(): Promise<void> {
+    this.#failPending(new Error("Pi transport closed"));
+    await this.#transport.close();
   }
 
   #send(command: Record<string, unknown>): Promise<CoreResponse> {
+    if (this.#closedError) return Promise.reject(this.#closedError);
     const id = String(++this.#nextId);
-    return new Promise((resolve) => {
-      this.#pending.set(id, resolve);
-      this.#transport.send(JSON.stringify({ ...command, id }));
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.#pending.delete(id);
+        reject(new Error(`Pi command ${String(command.type)} timed out`));
+      }, this.#requestTimeoutMs);
+      timer.unref();
+      this.#pending.set(id, { resolve, reject, timer });
+      try {
+        this.#transport.send(JSON.stringify({ ...command, id }));
+      } catch (error) {
+        this.#pending.delete(id);
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
     });
   }
 
   #handleLine(line: string): void {
-    let data: CoreEvent;
+    let raw: unknown;
     try {
-      data = JSON.parse(line) as CoreEvent;
+      raw = JSON.parse(line);
     } catch {
       return; // Not a JSON line, ignore it
     }
+    if (typeof raw !== "object" || raw === null) return;
+    const data = raw as Record<string, unknown>;
+    if (typeof data.type !== "string") return;
 
     // Command reply: find the waiting promise by id
-    if (data.type === "response" && typeof data.id === "string") {
-      const resolve = this.#pending.get(data.id);
-      if (resolve) {
-        this.#pending.delete(data.id);
-        resolve(data as CoreResponse);
+    if (data.type === "response") {
+      if (
+        typeof data.id !== "string" ||
+        typeof data.command !== "string" ||
+        typeof data.success !== "boolean"
+      ) {
         return;
       }
+      const pending = this.#pending.get(data.id);
+      if (pending) {
+        this.#pending.delete(data.id);
+        clearTimeout(pending.timer);
+        pending.resolve(data as CoreResponse);
+        return;
+      }
+      return;
     }
 
     // An extension UI request
     if (data.type === "extension_ui_request") {
+      if (typeof data.id !== "string" || typeof data.method !== "string") return;
       void this.#handleUiRequest(data as UiRequest);
       return;
     }
 
     // Everything else is an event
-    for (const listener of this.#eventListeners) listener(data);
+    for (const listener of this.#eventListeners) listener(data as CoreEvent);
   }
 
   async #handleUiRequest(request: UiRequest): Promise<void> {
@@ -167,26 +206,49 @@ export class PiClient {
     if (!this.#uiHandler) {
       // With nobody to handle a blocking request the core would stall, so answer "cancelled".
       if (needsReply) {
-        this.#transport.send(
-          JSON.stringify({
-            type: "extension_ui_response",
-            id: request.id,
-            cancelled: true,
-          }),
-        );
+        try {
+          this.#transport.send(
+            JSON.stringify({
+              type: "extension_ui_response",
+              id: request.id,
+              cancelled: true,
+            }),
+          );
+        } catch {
+          // The transport is already gone; there is nobody left to answer.
+        }
       }
       return;
     }
 
-    const reply = await this.#uiHandler(request);
+    let reply: UiReply;
+    try {
+      reply = await this.#uiHandler(request);
+    } catch {
+      reply = { cancelled: true };
+    }
     if (!needsReply) return;
 
-    this.#transport.send(
-      JSON.stringify({
-        type: "extension_ui_response",
-        id: request.id,
-        ...reply,
-      }),
-    );
+    try {
+      this.#transport.send(
+        JSON.stringify({
+          type: "extension_ui_response",
+          id: request.id,
+          ...reply,
+        }),
+      );
+    } catch {
+      // The transport is already gone; there is nobody left to answer.
+    }
+  }
+
+  #failPending(error: Error): void {
+    if (this.#closedError) return;
+    this.#closedError = error;
+    for (const pending of this.#pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.#pending.clear();
   }
 }

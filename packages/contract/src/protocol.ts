@@ -188,6 +188,10 @@ function isModelRef(value: unknown): value is ModelRef {
   );
 }
 
+function isToolStatus(value: unknown): boolean {
+  return value === "pending" || value === "running" || value === "done" || value === "error";
+}
+
 function isViewAction(value: unknown): value is ViewAction {
   if (!isRecord(value)) return false;
   switch (value.type) {
@@ -203,7 +207,7 @@ function isViewAction(value: unknown): value is ViewAction {
       return (
         typeof value.toolCallId === "string" &&
         typeof value.toolName === "string" &&
-        ["pending", "running", "done", "error"].includes(String(value.status)) &&
+        isToolStatus(value.status) &&
         (value.result === undefined || typeof value.result === "string")
       );
     case "confirm_requested":
@@ -235,7 +239,7 @@ function isEntry(value: unknown): boolean {
       return (
         typeof value.toolCallId === "string" &&
         typeof value.toolName === "string" &&
-        ["pending", "running", "done", "error"].includes(String(value.status)) &&
+        isToolStatus(value.status) &&
         (value.result === undefined || typeof value.result === "string") &&
         (value.confirmRequestId === undefined || typeof value.confirmRequestId === "string")
       );

@@ -8,19 +8,25 @@ function createFakeTransport(): {
   transport: Transport;
   sent: string[];
   receive: (obj: unknown) => void;
+  disconnect: (error?: Error) => void;
 } {
   const sent: string[] = [];
   let handler: ((line: string) => void) | undefined;
+  let closeHandler: ((error?: Error) => void) | undefined;
 
   return {
     sent,
     receive: (obj) => handler?.(JSON.stringify(obj)),
+    disconnect: (error) => closeHandler?.(error),
     transport: {
       send: (line) => sent.push(line),
       onLine: (h) => {
         handler = h;
       },
-      close: async () => {},
+      onClose: (h) => {
+        closeHandler = h;
+      },
+      close: async () => closeHandler?.(),
     },
   };
 }
@@ -61,6 +67,38 @@ test("events are fanned out to subscribers", () => {
   assert.deepEqual(seen, ["agent_start", "agent_settled"]);
 });
 
+test("valid JSON with the wrong shape is ignored", () => {
+  const fake = createFakeTransport();
+  const client = new PiClient(fake.transport);
+  const seen: string[] = [];
+  client.onEvent((event) => seen.push(event.type));
+
+  fake.receive(null);
+  fake.receive(42);
+  fake.receive({ nope: "missing a type" });
+  fake.receive({ type: "response", id: "1", success: "yes" });
+
+  assert.deepEqual(seen, []);
+});
+
+test("disconnecting rejects pending and future commands", async () => {
+  const fake = createFakeTransport();
+  const client = new PiClient(fake.transport);
+  const pending = client.getState();
+
+  fake.disconnect(new Error("Pi went away"));
+
+  await assert.rejects(pending, /Pi went away/);
+  await assert.rejects(client.getState(), /Pi went away/);
+});
+
+test("a command that receives no response times out", async () => {
+  const fake = createFakeTransport();
+  const client = new PiClient(fake.transport, 5);
+
+  await assert.rejects(client.getState(), /get_state timed out/);
+});
+
 test("a blocking UI request goes to the handler and the answer is written back under its id", async () => {
   const fake = createFakeTransport();
   const client = new PiClient(fake.transport);
@@ -84,6 +122,23 @@ test("a blocking UI request goes to the handler and the answer is written back u
   assert.equal(reply.type, "extension_ui_response");
   assert.equal(reply.id, "uuid-1");
   assert.equal(reply.confirmed, true);
+});
+
+test("a failed UI handler safely cancels a blocking request", async () => {
+  const fake = createFakeTransport();
+  const client = new PiClient(fake.transport);
+  client.onUiRequest(async () => {
+    throw new Error("UI disappeared");
+  });
+
+  fake.receive({ type: "extension_ui_request", id: "uuid-failed", method: "confirm" });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(JSON.parse(fake.sent.at(-1)!), {
+    type: "extension_ui_response",
+    id: "uuid-failed",
+    cancelled: true,
+  });
 });
 
 test("a broadcast UI request writes nothing back", async () => {

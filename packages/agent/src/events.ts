@@ -69,7 +69,7 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
         const inner = event.assistantMessageEvent as
           | { type?: string; delta?: unknown }
           | undefined;
-        if (typeof inner?.delta !== "string") return [];
+        if (currentMessageId === "" || typeof inner?.delta !== "string") return [];
         if (inner.type === "text_delta") {
           return [{ type: "text_appended", messageId: currentMessageId, text: inner.delta }];
         }
@@ -82,39 +82,51 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
       case "message_end": {
         const usage = (
           event.message as
-            | { usage?: { totalTokens?: number; cost?: { total?: number } } }
+            | { usage?: { totalTokens?: unknown; cost?: { total?: unknown } } }
             | undefined
         )?.usage;
         if (!usage) return [];
-        totalTokens += usage.totalTokens ?? 0;
-        totalCost += usage.cost?.total ?? 0;
+        let changed = false;
+        if (typeof usage.totalTokens === "number") {
+          totalTokens += usage.totalTokens;
+          changed = true;
+        }
+        if (typeof usage.cost?.total === "number") {
+          totalCost += usage.cost.total;
+          changed = true;
+        }
+        if (!changed) return [];
         return [{ type: "usage_changed", totalTokens, totalCost }];
       }
 
-      case "tool_execution_start":
+      case "tool_execution_start": {
+        if (typeof event.toolCallId !== "string" || typeof event.toolName !== "string") return [];
         // Note: this only means processing started. Execution happens after the
         // permission confirmation, so the status here can only be pending —
         // rendering it as executed would give the user false reassurance.
         return [
           {
             type: "tool_changed",
-            toolCallId: String(event.toolCallId),
-            toolName: String(event.toolName),
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
             args: event.args,
             status: "pending",
           },
         ];
+      }
 
-      case "tool_execution_end":
+      case "tool_execution_end": {
+        if (typeof event.toolCallId !== "string" || typeof event.toolName !== "string") return [];
         return [
           {
             type: "tool_changed",
-            toolCallId: String(event.toolCallId),
-            toolName: String(event.toolName),
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
             status: event.isError === true ? "error" : "done",
             result: extractText(event.result),
           },
         ];
+      }
 
       // Busy and idle are both derivable from the event stream, and emitting
       // both halves here saves every frontend from patching it in itself.

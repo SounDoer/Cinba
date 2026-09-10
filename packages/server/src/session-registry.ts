@@ -170,8 +170,21 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     );
     const starting = openOptions.model ?? options.defaultModel();
     const launch = launchPi({ ...openOptions, model: starting });
-    const state = await Promise.race([launch.pi.getState(), launch.failed]);
-    if (!state) return undefined;
+    let state;
+    try {
+      state = await Promise.race([launch.pi.getState(), launch.failed]);
+    } catch (error) {
+      console.error(
+        `[cinba] Pi stopped while starting in ${openOptions.cwd}:`,
+        error instanceof Error ? error.message : String(error),
+      );
+      void launch.pi.close();
+      return undefined;
+    }
+    if (!state) {
+      void launch.pi.close();
+      return undefined;
+    }
 
     const data = state.data as
       | { sessionId?: unknown; model?: { provider?: unknown; id?: unknown } }
@@ -203,7 +216,14 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
 
     launch.pi.onEvent((event) => {
       emitManaged(session, session.fold(event));
-      if (event.type === "agent_settled") void reconcile(session);
+      if (event.type === "agent_settled") {
+        void reconcile(session).catch((error: unknown) => {
+          console.error(
+            `[cinba] could not reconcile ${session.id}:`,
+            error instanceof Error ? error.message : String(error),
+          );
+        });
+      }
     });
     launch.pi.onUiRequest(async (request) => {
       const action = foldUiRequest(request);
@@ -225,7 +245,14 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     const session = live.get(id);
     if (!session) return;
     if (session.flushTimer) clearTimeout(session.flushTimer);
-    void session.pi.close();
+    for (const resolve of session.pendingConfirms.values()) resolve(false);
+    session.pendingConfirms.clear();
+    void session.pi.close().catch((error: unknown) => {
+      console.error(
+        `[cinba] could not close Pi for ${session.id}:`,
+        error instanceof Error ? error.message : String(error),
+      );
+    });
     live.delete(id);
   }
 
@@ -242,13 +269,22 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     const managed = findManaged(session);
     if (!managed) return;
     emitManaged(managed, [{ type: "busy_changed", busy: true }]);
-    void managed.pi.prompt(message);
+    void managed.pi.prompt(message).catch((error: unknown) => {
+      if (findManaged(managed) !== managed) return;
+      emitManaged(managed, [
+        {
+          type: "notice",
+          text: `prompt failed: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        { type: "busy_changed", busy: false },
+      ]);
+    });
   }
 
   function abort(session: LiveSession): void {
     const managed = findManaged(session);
     if (!managed) return;
-    void managed.pi.abort();
+    void managed.pi.abort().catch(() => {});
     emitManaged(managed, [{ type: "notice", text: "aborted" }]);
   }
 

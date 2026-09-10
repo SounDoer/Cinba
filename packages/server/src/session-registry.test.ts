@@ -9,6 +9,7 @@ import { createSessionRegistry } from "./session-registry.ts";
 
 class FakeTransport implements Transport {
   #onLine: (line: string) => void = () => {};
+  #onClose: (error?: Error) => void = () => {};
   closed = false;
   commands: Array<Record<string, unknown>> = [];
 
@@ -40,12 +41,17 @@ class FakeTransport implements Transport {
     this.#onLine = callback;
   }
 
+  onClose(callback: (error?: Error) => void): void {
+    this.#onClose = callback;
+  }
+
   emit(event: Record<string, unknown>): void {
     this.#onLine(JSON.stringify(event));
   }
 
   async close(): Promise<void> {
     this.closed = true;
+    this.#onClose();
   }
 }
 

@@ -209,3 +209,17 @@ test("a missing tool card counts as a difference", () => {
 
   assert.equal(sameTranscript(withTool.snapshot().entries, []), false);
 });
+
+test("separator characters in content cannot hide a transcript difference", () => {
+  const left = createSession();
+  left.apply({ type: "message_added", messageId: "left", role: "assistant" });
+  left.apply({ type: "text_appended", messageId: "left", text: "a|b" });
+  left.apply({ type: "thinking_appended", messageId: "left", text: "c" });
+
+  const right = createSession();
+  right.apply({ type: "message_added", messageId: "right", role: "assistant" });
+  right.apply({ type: "text_appended", messageId: "right", text: "a" });
+  right.apply({ type: "thinking_appended", messageId: "right", text: "b|c" });
+
+  assert.equal(sameTranscript(left.snapshot().entries, right.snapshot().entries), false);
+});
