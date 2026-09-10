@@ -143,6 +143,7 @@ function App() {
 
       <footer>
         <textarea
+          id="input"
           rows={3}
           placeholder="Say something (Enter to send, Shift+Enter for a new line)"
           value={draft}
