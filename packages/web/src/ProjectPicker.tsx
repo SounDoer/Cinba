@@ -8,7 +8,7 @@
 // no longer a mode the whole service is in: each conversation carries its own.
 
 import { useEffect, useState } from "react";
-import type { RemoteSession } from "@cinba/contract";
+import type { CoreClient } from "@cinba/core-client";
 
 export type Listing = { path: string; parent: string | null; dirs: string[] };
 
@@ -19,12 +19,12 @@ function childPath(current: string, name: string): string {
 }
 
 export function ProjectPicker({
-  remote,
+  client,
   listing,
   startPath,
   onClose,
 }: {
-  remote: RemoteSession | undefined;
+  client: CoreClient | undefined;
   listing: Listing | undefined;
   startPath: string;
   onClose: () => void;
@@ -32,12 +32,12 @@ export function ProjectPicker({
   const [current, setCurrent] = useState(startPath);
 
   useEffect(() => {
-    remote?.listDir(startPath);
-  }, [remote, startPath]);
+    client?.listDir(startPath);
+  }, [client, startPath]);
 
   function go(path: string) {
     setCurrent(path);
-    remote?.listDir(path);
+    client?.listDir(path);
   }
 
   // Render only when the server's listing is for the current directory, so entering one does not briefly show its parent.
@@ -68,7 +68,7 @@ export function ProjectPicker({
           <button onClick={onClose}>Cancel</button>
           <button
             onClick={() => {
-              remote?.createSession(current);
+              client?.createSession(current);
               onClose();
             }}
           >

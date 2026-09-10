@@ -6,7 +6,7 @@
 //
 // Usage: node scripts/watch.ts
 
-import { RemoteSession } from "@cinba/contract";
+import { CoreClient } from "@cinba/core-client";
 
 const socket = new WebSocket("ws://127.0.0.1:4517/ws");
 
@@ -15,7 +15,7 @@ socket.addEventListener("error", () => {
   process.exit(1);
 });
 
-new RemoteSession(socket, {
+new CoreClient(socket, {
   onSnapshot: ({ snapshot, cwd }) => {
     console.log(
       `[snapshot] cwd=${cwd} entries=${snapshot.entries.length} ` +

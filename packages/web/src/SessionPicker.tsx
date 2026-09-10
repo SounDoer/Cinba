@@ -6,7 +6,8 @@
 
 import { useEffect, useState } from "react";
 import { sessionSubtitle, sessionTitle } from "@cinba/contract";
-import type { RemoteSession, SessionSummary } from "@cinba/contract";
+import type { CoreClient } from "@cinba/core-client";
+import type { SessionSummary } from "@cinba/contract";
 
 function when(iso: string): string {
   const date = new Date(iso);
@@ -14,13 +15,13 @@ function when(iso: string): string {
 }
 
 export function SessionPicker({
-  remote,
+  client,
   sessions,
   currentId,
   onNewHere,
   onClose,
 }: {
-  remote: RemoteSession | undefined;
+  client: CoreClient | undefined;
   sessions: SessionSummary[] | undefined;
   currentId: string;
   onNewHere: () => void;
@@ -31,8 +32,8 @@ export function SessionPicker({
   const [renaming, setRenaming] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    remote?.listSessions();
-  }, [remote]);
+    client?.listSessions();
+  }, [client]);
 
   return (
     <div className="picker" onClick={onClose}>
@@ -58,7 +59,7 @@ export function SessionPicker({
                     onChange={(event) => setRenaming(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" && renaming.trim() !== "") {
-                        remote?.renameSession(renaming.trim());
+                        client?.renameSession(renaming.trim());
                         setRenaming(undefined);
                       }
                       if (event.key === "Escape") setRenaming(undefined);
@@ -67,7 +68,7 @@ export function SessionPicker({
                   <button
                     disabled={renaming.trim() === ""}
                     onClick={() => {
-                      remote?.renameSession(renaming.trim());
+                      client?.renameSession(renaming.trim());
                       setRenaming(undefined);
                     }}
                   >
@@ -84,7 +85,7 @@ export function SessionPicker({
                   Delete this conversation for good?{" "}
                   <button
                     onClick={() => {
-                      remote?.deleteSession(session.id);
+                      client?.deleteSession(session.id);
                       setConfirming(undefined);
                     }}
                   >
@@ -100,7 +101,7 @@ export function SessionPicker({
                 <button
                   className="session-open"
                   onClick={() => {
-                    if (!active) remote?.openSession(session.id);
+                    if (!active) client?.openSession(session.id);
                     onClose();
                   }}
                 >

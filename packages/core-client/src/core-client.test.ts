@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { RemoteSession } from "./remote.ts";
-import type { Socket } from "./remote.ts";
+import { CoreClient } from "./core-client.ts";
+import type { Socket } from "./core-client.ts";
 
 /** A fake connection, for testing protocol logic without starting a server. */
 function createFakeSocket(): { socket: Socket; sent: string[]; receive: (obj: unknown) => void } {
@@ -19,11 +19,11 @@ function createFakeSocket(): { socket: Socket; sent: string[]; receive: (obj: un
 
 test("the conversation commands go out in protocol form", () => {
   const fake = createFakeSocket();
-  const remote = new RemoteSession(fake.socket, {});
+  const client = new CoreClient(fake.socket, {});
 
-  remote.prompt("hello");
-  remote.abort();
-  remote.respondConfirm("u1", false);
+  client.prompt("hello");
+  client.abort();
+  client.respondConfirm("u1", false);
 
   assert.deepEqual(
     fake.sent.map((line) => JSON.parse(line)),
@@ -39,11 +39,11 @@ test("listDir goes out in protocol form and the listing reaches the handler", ()
   const fake = createFakeSocket();
   const listings: unknown[] = [];
 
-  const remote = new RemoteSession(fake.socket, {
+  const client = new CoreClient(fake.socket, {
     onDirListing: (listing) => listings.push(listing),
   });
 
-  remote.listDir("C:\\Users");
+  client.listDir("C:\\Users");
   assert.deepEqual(JSON.parse(fake.sent[0]!), { type: "list_dir", path: "C:\\Users" });
 
   fake.receive({
@@ -63,7 +63,7 @@ test("snapshots and actions reach their respective handlers", () => {
   const snapshots: unknown[] = [];
   const batches: unknown[] = [];
 
-  new RemoteSession(fake.socket, {
+  new CoreClient(fake.socket, {
     onSnapshot: (state) => snapshots.push([state.snapshot, state.cwd]),
     onActions: (actions) => batches.push(actions),
   });
@@ -78,7 +78,7 @@ test("snapshots and actions reach their respective handlers", () => {
 
 test("malformed messages are ignored rather than crashing", () => {
   const fake = createFakeSocket();
-  new RemoteSession(fake.socket, { onActions: () => assert.fail("must not be called") });
+  new CoreClient(fake.socket, { onActions: () => assert.fail("must not be called") });
 
   fake.socket.onmessage?.({ data: "this is not JSON" });
   fake.socket.onmessage?.({ data: 42 });
@@ -89,13 +89,13 @@ test("malformed messages are ignored rather than crashing", () => {
 test("the model commands go out, and both model messages reach their handlers", () => {
   const fake = createFakeSocket();
   const seen: unknown[] = [];
-  const remote = new RemoteSession(fake.socket, {
+  const client = new CoreClient(fake.socket, {
     onModelListing: (models) => seen.push(models),
     onModelChanged: (model) => seen.push(model),
   });
 
-  remote.listModels();
-  remote.setModel("deepseek", "deepseek-v4-pro");
+  client.listModels();
+  client.setModel("deepseek", "deepseek-v4-pro");
 
   assert.deepEqual(
     fake.sent.map((line) => JSON.parse(line)),
@@ -117,12 +117,12 @@ test("the model commands go out, and both model messages reach their handlers", 
 test("a snapshot carries the current model alongside the working directory", () => {
   const fake = createFakeSocket();
   let got: unknown;
-  const remote = new RemoteSession(fake.socket, {
+  const client = new CoreClient(fake.socket, {
     onSnapshot: (state) => {
       got = { cwd: state.cwd, model: state.model, sessionId: state.sessionId };
     },
   });
-  void remote;
+  void client;
 
   fake.receive({
     type: "snapshot",
@@ -142,16 +142,16 @@ test("a snapshot carries the current model alongside the working directory", () 
 test("the session commands go out, and both session messages reach their handlers", () => {
   const fake = createFakeSocket();
   const seen: unknown[] = [];
-  const remote = new RemoteSession(fake.socket, {
+  const client = new CoreClient(fake.socket, {
     onSessionListing: (sessions) => seen.push(sessions),
     onSessionOpened: (id) => seen.push(id),
   });
 
-  remote.listSessions();
-  remote.listSessions("C:/p");
-  remote.openSession("s1");
-  remote.createSession("C:/p");
-  remote.deleteSession("s2");
+  client.listSessions();
+  client.listSessions("C:/p");
+  client.openSession("s1");
+  client.createSession("C:/p");
+  client.deleteSession("s2");
 
   assert.deepEqual(
     fake.sent.map((line) => JSON.parse(line)),

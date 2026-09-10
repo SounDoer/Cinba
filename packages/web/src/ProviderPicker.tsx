@@ -15,14 +15,15 @@
 // the same kind of act.
 
 import { useEffect, useState } from "react";
-import type { ProviderStatus, RemoteSession } from "@cinba/contract";
+import type { CoreClient } from "@cinba/core-client";
+import type { ProviderStatus } from "@cinba/contract";
 
 export function ProviderPicker({
-  remote,
+  client,
   providers,
   onClose,
 }: {
-  remote: RemoteSession | undefined;
+  client: CoreClient | undefined;
   providers: ProviderStatus[] | undefined;
   onClose: () => void;
 }) {
@@ -31,8 +32,8 @@ export function ProviderPicker({
   const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
-    remote?.listProviders();
-  }, [remote]);
+    client?.listProviders();
+  }, [client]);
 
   const configured = providers?.filter((provider) => provider.configured) ?? [];
   const rest = providers?.filter((provider) => !provider.configured) ?? [];
@@ -40,7 +41,7 @@ export function ProviderPicker({
 
   function save(providerId: string) {
     if (draft.trim() === "") return;
-    remote?.setApiKey(providerId, draft.trim());
+    client?.setApiKey(providerId, draft.trim());
     // Cleared immediately: a key has no business sitting in component state
     // after it has been sent.
     setDraft("");
@@ -107,7 +108,7 @@ export function ProviderPicker({
                 {provider.configured ? (
                   <button
                     className="session-delete"
-                    onClick={() => remote?.clearCredential(provider.id)}
+                    onClick={() => client?.clearCredential(provider.id)}
                   >
                     Forget
                   </button>

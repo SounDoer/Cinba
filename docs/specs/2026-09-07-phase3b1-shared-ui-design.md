@@ -136,7 +136,8 @@ Electron 始终加载构建产物，不搞两套加载逻辑。热更新只在�
 ## 8. 依赖形状
 
 ```
-web         → @cinba/core-client   （RemoteSession、ViewAction、Snapshot 等类型）
+web         → @cinba/core-client   （CoreClient）
+            → @cinba/contract      （ViewAction、Snapshot 等共享类型与逻辑）
             → react / react-dom / react-markdown
             → vite / @vitejs/plugin-react（构建期）
 
@@ -144,11 +145,11 @@ desktop     → 无运行时依赖（只剩 electron 与开窗口的代码）
 
 core-server → 不变，另加静态文件服务（用 Node 内置 http，不引入框架）
 
-core-client → 保持零依赖
+core-client → @cinba/contract
 ```
 
-`core-client` 被编译进浏览器包，这正是它从第一天起坚持零依赖换来的——**它能整个搬进浏览器，
-是因为它什么都不依赖，且唯一一处 `node:child_process` 是纯类型引用，编译时就擦掉了。**
+`core-client` 被编译进浏览器包；它只依赖同样不绑定运行平台的 `contract`，因此 Web 和 TUI
+可以共用同一套连接逻辑，而不用引入任何 Node 专属运行时能力。
 
 ## 9. 测试策略
 

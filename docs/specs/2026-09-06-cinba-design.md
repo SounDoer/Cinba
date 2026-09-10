@@ -151,10 +151,15 @@ Cinba/
     │   ├── package.json
     │   └── src/
     │       ├── protocol.ts      #   两端之间的消息
-    │       ├── remote.ts        #   前端这一侧的连接
     │       ├── actions.ts       #   界面动作的词汇表
     │       ├── session.ts       #   账本
     │       └── labels.ts commands.ts  #   两端必须一致的措辞
+    │
+    ├── core-client/             # Web/TUI 连接 Cinba Core 的无界面客户端
+    │   ├── package.json
+    │   └── src/
+    │       ├── index.ts         #   公共出口
+    │       └── core-client.ts   #   WebSocket 收发与消息分发
     │
     ├── extensions/              # Pi 扩展（自定义工具、权限门、上下文注入）
     │   ├── package.json
@@ -410,7 +415,7 @@ VPS      ─► server（听 Tailscale 内网）      ─► 管 VPS
   终端里的选择器本来就该和浏览器里的不一样。
 
   改造本身不大：TUI 那 344 行里画的部分几乎不动，换的是入口那三行
-  （`startCore + CoreClient + fold` → `WebSocket + RemoteSession + createSession`）。
+  （`startCore + PiClient + fold` → `WebSocket + CoreClient + createSession`）。
   **但它必须和「多会话」一起做**：服务当时只有一个当前项目、一条消息流，
   而 TUI 现在的用法是多开几个各干各的，不先补多会话会明确变难用。
 

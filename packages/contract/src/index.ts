@@ -23,8 +23,6 @@ export type {
   ServerMessage,
   SessionSummary,
 } from "./protocol.ts";
-export { RemoteSession } from "./remote.ts";
-export type { RemoteHandlers, SnapshotState, Socket } from "./remote.ts";
 export { createSession, sameTranscript } from "./session.ts";
 export type {
   Entry,

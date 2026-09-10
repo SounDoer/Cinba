@@ -41,10 +41,10 @@ import {
   nameColourIndex,
   isCommand,
   matchCommands,
-  RemoteSession,
   sessionSubtitle,
   sessionTitle,
 } from "@cinba/contract";
+import { CoreClient } from "@cinba/core-client";
 import type {
   Command,
   Entry,
@@ -706,13 +706,13 @@ function raiseConfirm(requestId: string): void {
     confirming = false;
     transcript.append(confirmed ? `${DIM}   -> allowed${RESET}` : `${DIM}   -> denied${RESET}`);
     showPrompt();
-    remote.respondConfirm(requestId, confirmed);
+    coreClient.respondConfirm(requestId, confirmed);
   };
   setBottom(dialog);
   tui.setFocus(dialog);
 }
 
-const remote = new RemoteSession(socket, {
+const coreClient = new CoreClient(socket, {
   onSnapshot: (state) => {
     mirror = createSession(state.snapshot);
     sessionId = state.sessionId;
@@ -755,7 +755,7 @@ const remote = new RemoteSession(socket, {
         (id) => {
           if (!id) return;
           askSecret(`API key for ${id}`, (secret) => {
-            if (secret) remote.setApiKey(id, secret);
+            if (secret) coreClient.setApiKey(id, secret);
           });
         },
       );
@@ -777,7 +777,7 @@ const remote = new RemoteSession(socket, {
           description: provider.id,
         })),
         (id) => {
-          if (id) remote.clearCredential(id);
+          if (id) coreClient.clearCredential(id);
         },
       );
       return;
@@ -797,7 +797,7 @@ const remote = new RemoteSession(socket, {
         description: sessionSubtitle(session),
       })),
       (id) => {
-        if (id) remote.openSession(id);
+        if (id) coreClient.openSession(id);
       },
     );
   },
@@ -811,7 +811,7 @@ const remote = new RemoteSession(socket, {
       (picked) => {
         if (!picked) return;
         const [provider, ...rest] = picked.split("/");
-        remote.setModel(provider ?? "", rest.join("/"));
+        coreClient.setModel(provider ?? "", rest.join("/"));
       },
     );
   },
@@ -842,14 +842,14 @@ function land(sessions: SessionSummary[]): void {
   const recent = here[0];
 
   if (!recent) {
-    remote.createSession(process.cwd());
+    coreClient.createSession(process.cwd());
     return;
   }
-  if (recent.id !== sessionId) remote.openSession(recent.id);
+  if (recent.id !== sessionId) coreClient.openSession(recent.id);
 }
 
 socket.addEventListener("open", () => {
-  remote.listSessions(process.cwd());
+  coreClient.listSessions(process.cwd());
 });
 
 socket.addEventListener("error", () => {
@@ -888,33 +888,33 @@ function runCommand(command: Command, line: string): void {
         applyAction({ type: "notice", text: "give it a name, e.g. /name parser work" });
         return;
       }
-      remote.renameSession(name);
+      coreClient.renameSession(name);
       return;
     }
 
     case "sessions":
-      remote.listSessions();
+      coreClient.listSessions();
       return;
     case "model":
-      remote.listModels();
+      coreClient.listModels();
       return;
     case "new":
       // The terminal's rule throughout: you are in the directory you started in.
-      remote.createSession(process.cwd());
+      coreClient.createSession(process.cwd());
       return;
     case "providers":
       providerIntent = "list";
-      remote.listProviders();
+      coreClient.listProviders();
       return;
 
     case "login":
       providerIntent = "login";
-      remote.listProviders();
+      coreClient.listProviders();
       return;
 
     case "logout":
       providerIntent = "logout";
-      remote.listProviders();
+      coreClient.listProviders();
       return;
 
     case "help":
@@ -956,14 +956,14 @@ promptInput.input.onSubmit = (value: string) => {
   // the socket. The server sends the same thing; this only locks the input at once.
   applyAction({ type: "busy_changed", busy: true });
 
-  remote.prompt(text);
+  coreClient.prompt(text);
 };
 
 // Esc stops an answer in progress. Pressing it while idle does nothing: exiting
 // is Ctrl+C, so a slip of the hand cannot close the conversation.
 promptInput.input.onEscape = () => {
   if (!busy) return;
-  remote.abort();
+  coreClient.abort();
 };
 
 function exit(): void {
@@ -979,11 +979,11 @@ tui.addInputListener((data: string) => {
   // way in; these stay for the hands that already know them. Not available
   // mid-answer, for the same reason the GUI disables its header buttons.
   if (matchesKey(data, "ctrl+o") && !busy && !confirming) {
-    remote.listSessions();
+    coreClient.listSessions();
     return { consume: true };
   }
   if (matchesKey(data, "ctrl+p") && !busy && !confirming) {
-    remote.listModels();
+    coreClient.listModels();
     return { consume: true };
   }
   return undefined;

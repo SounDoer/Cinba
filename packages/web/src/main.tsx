@@ -5,7 +5,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { createSession, nameColourIndex, RemoteSession } from "@cinba/contract";
+import { CoreClient } from "@cinba/core-client";
+import { createSession, nameColourIndex } from "@cinba/contract";
 import type {
   ModelRef,
   ProviderStatus,
@@ -49,14 +50,14 @@ function App() {
   const [providers, setProviders] = useState<ProviderStatus[] | undefined>(undefined);
   const [core, setCore] = useState("");
 
-  const remoteRef = useRef<RemoteSession | undefined>(undefined);
+  const coreClientRef = useRef<CoreClient | undefined>(undefined);
   const mirrorRef = useRef<Session>(createSession());
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const socket = new WebSocket(SERVER_URL);
 
-    remoteRef.current = new RemoteSession(socket, {
+    coreClientRef.current = new CoreClient(socket, {
       onSnapshot: (state) => {
         mirrorRef.current = createSession(state.snapshot);
         setSnapshot(state.snapshot);
@@ -91,7 +92,7 @@ function App() {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape" && snapshot.busy) {
         event.preventDefault();
-        remoteRef.current?.abort();
+        coreClientRef.current?.abort();
       }
     }
     window.addEventListener("keydown", onKey);
@@ -102,7 +103,7 @@ function App() {
     const text = draft.trim();
     if (snapshot.busy || text === "") return;
     setDraft("");
-    remoteRef.current?.prompt(text);
+    coreClientRef.current?.prompt(text);
   }
 
   return (
@@ -135,7 +136,7 @@ function App() {
         <Transcript
           entries={snapshot.entries}
           onRespond={(requestId, confirmed) =>
-            remoteRef.current?.respondConfirm(requestId, confirmed)
+            coreClientRef.current?.respondConfirm(requestId, confirmed)
           }
         />
         <div ref={bottomRef} />
@@ -159,12 +160,12 @@ function App() {
         <button onClick={send} disabled={snapshot.busy}>
           Send
         </button>
-        {snapshot.busy ? <button onClick={() => remoteRef.current?.abort()}>Stop</button> : null}
+        {snapshot.busy ? <button onClick={() => coreClientRef.current?.abort()}>Stop</button> : null}
       </footer>
 
       {pickingProvider ? (
         <ProviderPicker
-          remote={remoteRef.current}
+          client={coreClientRef.current}
           providers={providers}
           onClose={() => setPickingProvider(false)}
         />
@@ -172,7 +173,7 @@ function App() {
 
       {pickingSession ? (
         <SessionPicker
-          remote={remoteRef.current}
+          client={coreClientRef.current}
           sessions={sessions}
           currentId={sessionId}
           onNewHere={() => {
@@ -185,7 +186,7 @@ function App() {
 
       {picking ? (
         <ProjectPicker
-          remote={remoteRef.current}
+          client={coreClientRef.current}
           listing={listing}
           startPath={cwd}
           onClose={() => setPicking(false)}
@@ -194,7 +195,7 @@ function App() {
 
       {pickingModel ? (
         <ModelPicker
-          remote={remoteRef.current}
+          client={coreClientRef.current}
           models={models}
           current={model}
           onClose={() => setPickingModel(false)}

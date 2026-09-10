@@ -4,15 +4,15 @@
 // JSONL protocol, while this speaks the protocol between this project's server
 // and its clients.
 
-import type { ViewAction } from "./actions.ts";
-import type { Snapshot } from "./session.ts";
 import type {
   ClientMessage,
   ModelRef,
   ProviderStatus,
   SessionSummary,
-} from "./protocol.ts";
-import { parseServerMessage } from "./protocol.ts";
+  Snapshot,
+  ViewAction,
+} from "@cinba/contract";
+import { parseServerMessage } from "@cinba/contract";
 
 /**
  * A connection that can send and receive text messages.
@@ -26,7 +26,7 @@ export type Socket = {
   /**
    * Browser and Node WebSockets give this event different nominal types even
    * though both expose data. Keep the platform event opaque at this boundary;
-   * RemoteSession immediately treats its data as unknown and validates JSON.
+   * CoreClient immediately treats its data as unknown and validates JSON.
    */
   onmessage: ((event: any) => void) | null;
 };
@@ -39,7 +39,7 @@ export type SnapshotState = {
   model: ModelRef | undefined;
 };
 
-export type RemoteHandlers = {
+export type CoreClientHandlers = {
   onSnapshot?: (state: SnapshotState) => void;
   onActions?: (actions: ViewAction[]) => void;
   onDirListing?: (listing: { path: string; parent: string | null; dirs: string[] }) => void;
@@ -51,11 +51,12 @@ export type RemoteHandlers = {
   onCoreIdentity?: (name: string) => void;
 };
 
-export class RemoteSession {
+/** The client-side connection to one running Cinba Core. */
+export class CoreClient {
   #socket: Socket;
-  #handlers: RemoteHandlers;
+  #handlers: CoreClientHandlers;
 
-  constructor(socket: Socket, handlers: RemoteHandlers) {
+  constructor(socket: Socket, handlers: CoreClientHandlers) {
     this.#socket = socket;
     this.#handlers = handlers;
     socket.onmessage = (event) => this.#receive(event.data);

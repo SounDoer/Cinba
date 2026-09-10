@@ -5,22 +5,23 @@
 // would both go stale and offer entries that fail the moment they are picked.
 
 import { useEffect } from "react";
-import type { ModelRef, RemoteSession } from "@cinba/contract";
+import type { CoreClient } from "@cinba/core-client";
+import type { ModelRef } from "@cinba/contract";
 
 export function ModelPicker({
-  remote,
+  client,
   models,
   current,
   onClose,
 }: {
-  remote: RemoteSession | undefined;
+  client: CoreClient | undefined;
   models: ModelRef[] | undefined;
   current: ModelRef | undefined;
   onClose: () => void;
 }) {
   useEffect(() => {
-    remote?.listModels();
-  }, [remote]);
+    client?.listModels();
+  }, [client]);
 
   return (
     <div className="picker" onClick={onClose}>
@@ -39,7 +40,7 @@ export function ModelPicker({
                 className="picker-item"
                 key={`${model.provider}/${model.id}`}
                 onClick={() => {
-                  if (!active) remote?.setModel(model.provider, model.id);
+                  if (!active) client?.setModel(model.provider, model.id);
                   onClose();
                 }}
               >
