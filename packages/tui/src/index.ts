@@ -30,8 +30,6 @@ import {
 import type {
   Component,
   Focusable,
-  MarkdownTheme,
-  SelectListTheme,
   TUI,
 } from "@earendil-works/pi-tui";
 import {
@@ -53,6 +51,19 @@ import type {
   Snapshot,
   ViewAction,
 } from "@cinba/contract";
+import {
+  BLUE,
+  BOLD,
+  CORE_COLOURS,
+  DIM,
+  GREEN,
+  MAGENTA,
+  MARKDOWN_THEME,
+  RED,
+  RESET,
+  SELECT_THEME,
+  YELLOW,
+} from "./theme.ts";
 
 /**
  * Which core to talk to. Nothing here starts one: the service has to be running.
@@ -63,60 +74,6 @@ import type {
  * composes with cinba-tui.cmd, which already spends its argument on a folder.
  */
 const SERVER_URL = process.env.CINBA_SERVER || "ws://127.0.0.1:4517/ws";
-
-const DIM = "\x1b[2m";
-const BOLD = "\x1b[1m";
-const GREEN = "\x1b[32m";
-const BLUE = "\x1b[34m";
-const RED = "\x1b[31m";
-const YELLOW = "\x1b[33m";
-const MAGENTA = "\x1b[35m";
-const RESET = "\x1b[0m";
-
-/**
- * One per colour slot from nameColourIndex, as ANSI foreground codes. The slot
- * is shared with the browser; the rendering is not.
- */
-const CORE_COLOURS = [
-  "[34m",
-  "[32m",
-  "[33m",
-  "[35m",
-  "[31m",
-  "[36m",
-];
-
-const SELECT_THEME: SelectListTheme = {
-  selectedPrefix: (text) => `${MAGENTA}${text}${RESET}`,
-  selectedText: (text) => `${MAGENTA}${text}${RESET}`,
-  description: (text) => `${DIM}${text}${RESET}`,
-  scrollInfo: (text) => `${DIM}${text}${RESET}`,
-  noMatch: (text) => `${YELLOW}${text}${RESET}`,
-};
-
-/**
- * Markdown styling for the terminal, in the colours already used here.
- *
- * Written out rather than borrowed from pi-coding-agent's getMarkdownTheme:
- * this package must not depend on Pi, which is the dependency rule the whole
- * design rests on.
- */
-const MARKDOWN_THEME: MarkdownTheme = {
-  heading: (text) => `${BOLD}${BLUE}${text}${RESET}`,
-  link: (text) => `${BLUE}${text}${RESET}`,
-  linkUrl: (text) => `${DIM}${text}${RESET}`,
-  code: (text) => `${YELLOW}${text}${RESET}`,
-  codeBlock: (text) => `${YELLOW}${text}${RESET}`,
-  codeBlockBorder: (text) => `${DIM}${text}${RESET}`,
-  quote: (text) => `${DIM}${text}${RESET}`,
-  quoteBorder: (text) => `${DIM}${text}${RESET}`,
-  hr: (text) => `${DIM}${text}${RESET}`,
-  listBullet: (text) => `${MAGENTA}${text}${RESET}`,
-  bold: (text) => `${BOLD}${text}${RESET}`,
-  italic: (text) => `${DIM}${text}${RESET}`,
-  strikethrough: (text) => `${DIM}${text}${RESET}`,
-  underline: (text) => `${BOLD}${text}${RESET}`,
-};
 
 /**
  * The output area.
