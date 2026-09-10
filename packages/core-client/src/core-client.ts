@@ -15,20 +15,32 @@ import type {
 import { parseServerMessage } from "@cinba/contract";
 
 /**
- * A connection that can send and receive text messages.
+ * The lifecycle and text-message capabilities CoreClient needs from a connection.
  *
  * The native WebSocket fits this shape exactly, and browsers, the Electron
- * renderer and Node 24 all ship it, so this module pulls in no dependencies.
- * Tests can pass a fake.
+ * renderer and Node 24 all ship it, so this module needs no WebSocket library.
+ * Tests and unusual platforms can provide a factory that returns a fake or adapter.
  */
 export type Socket = {
   send(data: string): void;
+  close(): void;
   /**
    * Browser and Node WebSockets give this event different nominal types even
    * though both expose data. Keep the platform event opaque at this boundary;
    * CoreClient immediately treats its data as unknown and validates JSON.
    */
   onmessage: ((event: any) => void) | null;
+  onopen: ((event: any) => void) | null;
+  onerror: ((event: any) => void) | null;
+  onclose: ((event: any) => void) | null;
+};
+
+export type SocketFactory = (url: string) => Socket;
+
+export type CoreConnectionState = "connecting" | "connected" | "disconnected";
+
+export type CoreClientOptions = {
+  socketFactory?: SocketFactory;
 };
 
 /** Everything a snapshot says about the session it describes. An object rather than four positional arguments, which this had grown to. */
@@ -40,6 +52,8 @@ export type SnapshotState = {
 };
 
 export type CoreClientHandlers = {
+  onConnectionChanged?: (state: CoreConnectionState) => void;
+  onError?: (error: unknown) => void;
   onSnapshot?: (state: SnapshotState) => void;
   onActions?: (actions: ViewAction[]) => void;
   onDirListing?: (listing: { path: string; parent: string | null; dirs: string[] }) => void;
@@ -51,79 +65,116 @@ export type CoreClientHandlers = {
   onCoreIdentity?: (name: string) => void;
 };
 
+type WebSocketConstructor = new (url: string) => Socket;
+
+function createDefaultSocket(url: string): Socket {
+  const constructor = (globalThis as unknown as { WebSocket?: WebSocketConstructor }).WebSocket;
+  if (!constructor) throw new Error("This platform does not provide WebSocket");
+  return new constructor(url);
+}
+
 /** The client-side connection to one running Cinba Core. */
 export class CoreClient {
   #socket: Socket;
   #handlers: CoreClientHandlers;
+  #connectionState: CoreConnectionState = "connecting";
 
-  constructor(socket: Socket, handlers: CoreClientHandlers) {
-    this.#socket = socket;
+  constructor(url: string, handlers: CoreClientHandlers, options: CoreClientOptions = {}) {
     this.#handlers = handlers;
-    socket.onmessage = (event) => this.#receive(event.data);
+    this.#socket = (options.socketFactory ?? createDefaultSocket)(url);
+    this.#socket.onopen = () => this.#transition("connected");
+    this.#socket.onmessage = (event) => this.#receive(event.data);
+    this.#socket.onerror = (event) => this.#handlers.onError?.(event);
+    this.#socket.onclose = () => {
+      this.#transition("disconnected");
+      this.#detach();
+    };
+    this.#handlers.onConnectionChanged?.("connecting");
   }
 
-  prompt(text: string): void {
-    this.#send({ type: "prompt", text });
+  get connectionState(): CoreConnectionState {
+    return this.#connectionState;
   }
 
-  abort(): void {
-    this.#send({ type: "abort" });
+  prompt(text: string): boolean {
+    return this.#send({ type: "prompt", text });
   }
 
-  respondConfirm(requestId: string, confirmed: boolean): void {
-    this.#send({ type: "respond_confirm", requestId, confirmed });
+  abort(): boolean {
+    return this.#send({ type: "abort" });
   }
 
-  listDir(path: string): void {
-    this.#send({ type: "list_dir", path });
+  respondConfirm(requestId: string, confirmed: boolean): boolean {
+    return this.#send({ type: "respond_confirm", requestId, confirmed });
   }
 
-  listModels(): void {
-    this.#send({ type: "list_models" });
+  listDir(path: string): boolean {
+    return this.#send({ type: "list_dir", path });
   }
 
-  setModel(provider: string, modelId: string): void {
-    this.#send({ type: "set_model", provider, modelId });
+  listModels(): boolean {
+    return this.#send({ type: "list_models" });
   }
 
-  listSessions(cwd?: string): void {
-    this.#send(cwd === undefined ? { type: "list_sessions" } : { type: "list_sessions", cwd });
+  setModel(provider: string, modelId: string): boolean {
+    return this.#send({ type: "set_model", provider, modelId });
   }
 
-  openSession(sessionId: string): void {
-    this.#send({ type: "open_session", sessionId });
+  listSessions(cwd?: string): boolean {
+    return this.#send(
+      cwd === undefined ? { type: "list_sessions" } : { type: "list_sessions", cwd },
+    );
   }
 
-  createSession(cwd: string): void {
-    this.#send({ type: "create_session", cwd });
+  openSession(sessionId: string): boolean {
+    return this.#send({ type: "open_session", sessionId });
   }
 
-  deleteSession(sessionId: string): void {
-    this.#send({ type: "delete_session", sessionId });
+  createSession(cwd: string): boolean {
+    return this.#send({ type: "create_session", cwd });
   }
 
-  renameSession(name: string): void {
-    this.#send({ type: "rename_session", name });
+  deleteSession(sessionId: string): boolean {
+    return this.#send({ type: "delete_session", sessionId });
   }
 
-  listProviders(): void {
-    this.#send({ type: "list_providers" });
+  renameSession(name: string): boolean {
+    return this.#send({ type: "rename_session", name });
+  }
+
+  listProviders(): boolean {
+    return this.#send({ type: "list_providers" });
   }
 
   /** Sends a secret. The reply never contains one; nothing here logs it. */
-  setApiKey(providerId: string, apiKey: string): void {
-    this.#send({ type: "set_api_key", providerId, apiKey });
+  setApiKey(providerId: string, apiKey: string): boolean {
+    return this.#send({ type: "set_api_key", providerId, apiKey });
   }
 
-  clearCredential(providerId: string): void {
-    this.#send({ type: "clear_credential", providerId });
+  clearCredential(providerId: string): boolean {
+    return this.#send({ type: "clear_credential", providerId });
   }
 
-  #send(message: ClientMessage): void {
-    this.#socket.send(JSON.stringify(message));
+  close(): void {
+    if (this.#connectionState === "disconnected") return;
+    this.#transition("disconnected");
+    this.#detach();
+    this.#socket.close();
+  }
+
+  #send(message: ClientMessage): boolean {
+    if (this.#connectionState !== "connected") return false;
+    try {
+      this.#socket.send(JSON.stringify(message));
+      return true;
+    } catch (error) {
+      this.#handlers.onError?.(error);
+      return false;
+    }
   }
 
   #receive(data: unknown): void {
+    if (this.#connectionState !== "connected") return;
     if (typeof data !== "string") return;
 
     let parsed: unknown;
@@ -175,5 +226,18 @@ export class CoreClient {
       default:
         return;
     }
+  }
+
+  #transition(state: CoreConnectionState): void {
+    if (this.#connectionState === state) return;
+    this.#connectionState = state;
+    this.#handlers.onConnectionChanged?.(state);
+  }
+
+  #detach(): void {
+    this.#socket.onopen = null;
+    this.#socket.onmessage = null;
+    this.#socket.onerror = null;
+    this.#socket.onclose = null;
   }
 }

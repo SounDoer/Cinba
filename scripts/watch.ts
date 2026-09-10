@@ -8,14 +8,20 @@
 
 import { CoreClient } from "@cinba/core-client";
 
-const socket = new WebSocket("ws://127.0.0.1:4517/ws");
+const SERVER_URL = "ws://127.0.0.1:4517/ws";
+let exiting = false;
 
-socket.addEventListener("error", () => {
-  console.error("cannot reach ws://127.0.0.1:4517/ws - is the core service running?");
-  process.exit(1);
-});
-
-new CoreClient(socket, {
+const client = new CoreClient(SERVER_URL, {
+  onConnectionChanged: (state) => {
+    if (state === "disconnected" && !exiting) {
+      console.error("the core service went away");
+      process.exit(1);
+    }
+  },
+  onError: () => {
+    console.error(`cannot reach ${SERVER_URL} - is the core service running?`);
+    process.exit(1);
+  },
   onSnapshot: ({ snapshot, cwd }) => {
     console.log(
       `[snapshot] cwd=${cwd} entries=${snapshot.entries.length} ` +
@@ -31,6 +37,12 @@ new CoreClient(socket, {
       }
     }
   },
+});
+
+process.once("SIGINT", () => {
+  exiting = true;
+  client.close();
+  process.exit(0);
 });
 
 console.log("watching, Ctrl+C to exit");

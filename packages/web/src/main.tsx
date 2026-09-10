@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { CoreClient } from "@cinba/core-client";
+import type { CoreConnectionState } from "@cinba/core-client";
 import { createSession, nameColourIndex } from "@cinba/contract";
 import type {
   ModelRef,
@@ -49,15 +50,20 @@ function App() {
   const [pickingProvider, setPickingProvider] = useState(false);
   const [providers, setProviders] = useState<ProviderStatus[] | undefined>(undefined);
   const [core, setCore] = useState("");
+  const [connectionState, setConnectionState] =
+    useState<CoreConnectionState>("connecting");
 
   const coreClientRef = useRef<CoreClient | undefined>(undefined);
   const mirrorRef = useRef<Session>(createSession());
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const socket = new WebSocket(SERVER_URL);
+    let active = true;
 
-    coreClientRef.current = new CoreClient(socket, {
+    const client = new CoreClient(SERVER_URL, {
+      onConnectionChanged: (state) => {
+        if (active) setConnectionState(state);
+      },
       onSnapshot: (state) => {
         mirrorRef.current = createSession(state.snapshot);
         setSnapshot(state.snapshot);
@@ -77,8 +83,13 @@ function App() {
       onProviderListing: (next) => setProviders(next),
       onCoreIdentity: (name) => setCore(name),
     });
+    coreClientRef.current = client;
 
-    return () => socket.close();
+    return () => {
+      active = false;
+      coreClientRef.current = undefined;
+      client.close();
+    };
   }, []);
 
   useEffect(() => {
@@ -102,9 +113,11 @@ function App() {
   function send() {
     const text = draft.trim();
     if (snapshot.busy || text === "") return;
+    if (!coreClientRef.current?.prompt(text)) return;
     setDraft("");
-    coreClientRef.current?.prompt(text);
   }
+
+  const connected = connectionState === "connected";
 
   return (
     <>
@@ -116,17 +129,23 @@ function App() {
             className="core-dot"
             style={{ background: CORE_COLOURS[nameColourIndex(core)] }}
           />
-          {core || "..."}
+          {connectionState === "connected"
+            ? core || "..."
+            : connectionState === "connecting"
+              ? "Connecting..."
+              : "Disconnected"}
         </span>
         {/* The way in to every conversation, so it carries the current one's project as its label. */}
-        <button onClick={() => setPickingSession(true)}>
+        <button onClick={() => setPickingSession(true)} disabled={!connected}>
           {cwd.split(/[\\/]/).pop() || "..."} — conversations
         </button>
         {/* Disabled while busy for the same reason as the input box: do not swap brains mid-sentence. */}
-        <button onClick={() => setPickingModel(true)} disabled={snapshot.busy}>
+        <button onClick={() => setPickingModel(true)} disabled={!connected || snapshot.busy}>
           Model: {model?.id ?? "..."}
         </button>
-        <button onClick={() => setPickingProvider(true)}>Providers</button>
+        <button onClick={() => setPickingProvider(true)} disabled={!connected}>
+          Providers
+        </button>
         <span>
           {snapshot.totalTokens} tokens · ${snapshot.totalCost.toFixed(4)}
         </span>
@@ -148,7 +167,7 @@ function App() {
           rows={3}
           placeholder="Say something (Enter to send, Shift+Enter for a new line)"
           value={draft}
-          disabled={snapshot.busy}
+          disabled={!connected || snapshot.busy}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
@@ -157,10 +176,14 @@ function App() {
             }
           }}
         />
-        <button onClick={send} disabled={snapshot.busy}>
+        <button onClick={send} disabled={!connected || snapshot.busy}>
           Send
         </button>
-        {snapshot.busy ? <button onClick={() => coreClientRef.current?.abort()}>Stop</button> : null}
+        {snapshot.busy ? (
+          <button onClick={() => coreClientRef.current?.abort()} disabled={!connected}>
+            Stop
+          </button>
+        ) : null}
       </footer>
 
       {pickingProvider ? (

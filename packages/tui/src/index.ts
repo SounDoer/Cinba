@@ -533,13 +533,12 @@ function ask(title: string): Promise<boolean> {
 
 // ---- Talking to the core ----
 
-const socket = new WebSocket(SERVER_URL);
-
 /** The mirror ledger, the same one the web UI keeps. The server owns the real one. */
 let mirror: Session = createSession();
 let busy = false;
 let sessionId = "";
 let statusModel = "";
+let exiting = false;
 
 /**
  * Redraw the whole transcript from the mirror, once the current burst of
@@ -712,7 +711,28 @@ function raiseConfirm(requestId: string): void {
   tui.setFocus(dialog);
 }
 
-const coreClient = new CoreClient(socket, {
+const coreClient = new CoreClient(SERVER_URL, {
+  onConnectionChanged: (state) => {
+    if (state === "connected") {
+      coreClient.listSessions(process.cwd());
+      return;
+    }
+    if (state !== "disconnected" || exiting) return;
+
+    // Exit rather than wait and reconnect. Reliable reconnect needs command
+    // deduplication before it can safely retry anything sent near a disconnect.
+    tui.stop();
+    console.error("The Cinba service went away.");
+    process.exit(1);
+  },
+  onError: () => {
+    // Nothing is started here on purpose. Whoever owns that process should own
+    // its lifetime and its log.
+    tui.stop();
+    console.error(`Cannot reach the Cinba service at ${SERVER_URL}.`);
+    console.error("Start it first: double-click cinba.cmd in the repository root.");
+    process.exit(1);
+  },
   onSnapshot: (state) => {
     mirror = createSession(state.snapshot);
     sessionId = state.sessionId;
@@ -848,35 +868,6 @@ function land(sessions: SessionSummary[]): void {
   if (recent.id !== sessionId) coreClient.openSession(recent.id);
 }
 
-socket.addEventListener("open", () => {
-  coreClient.listSessions(process.cwd());
-});
-
-socket.addEventListener("error", () => {
-  // Nothing is started here on purpose. Whoever owns that process should own
-  // its lifetime and its log, and a core quietly outliving this terminal --
-  // still able to run any command -- would be worse than an error message.
-  tui.stop();
-  console.error(`Cannot reach the Cinba service at ${SERVER_URL}.`);
-  console.error("Start it first: double-click cinba.cmd in the repository root.");
-  process.exit(1);
-});
-
-socket.addEventListener("close", () => {
-  // Exit rather than wait and reconnect. Reconnecting was considered on
-  // 2026-09-08 and deferred: it would want backoff, a re-landing on the same
-  // conversation, and a locked input meanwhile — worth it only once restarting
-  // the service under a running terminal becomes a habit rather than a one-off.
-  //
-  // Note this fires the moment Ctrl+C is pressed in the service's window, not
-  // when its "Terminate batch job (Y/N)?" is answered: the console delivers
-  // Ctrl+C to every process in the group, so the service is already gone while
-  // cmd.exe is still asking about its own script.
-  tui.stop();
-  console.error("The Cinba service went away.");
-  process.exit(1);
-});
-
 // ---- Interaction ----
 
 /** Carry out one of Cinba's own commands. What it means here; the catalogue says which exist. */
@@ -950,13 +941,13 @@ promptInput.input.onSubmit = (value: string) => {
     return;
   }
 
+  if (!coreClient.prompt(text)) return;
   promptInput.input.setValue("");
 
   // Go busy immediately rather than waiting for the signal to come back over
   // the socket. The server sends the same thing; this only locks the input at once.
   applyAction({ type: "busy_changed", busy: true });
 
-  coreClient.prompt(text);
 };
 
 // Esc stops an answer in progress. Pressing it while idle does nothing: exiting
@@ -967,8 +958,9 @@ promptInput.input.onEscape = () => {
 };
 
 function exit(): void {
+  exiting = true;
   tui.stop();
-  socket.close();
+  coreClient.close();
   process.exit(0);
 }
 

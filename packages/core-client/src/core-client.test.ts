@@ -1,25 +1,98 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { CoreClient } from "./core-client.ts";
-import type { Socket } from "./core-client.ts";
+import type { CoreClientHandlers, Socket } from "./core-client.ts";
 
 /** A fake connection, for testing protocol logic without starting a server. */
-function createFakeSocket(): { socket: Socket; sent: string[]; receive: (obj: unknown) => void } {
+function createFakeSocket(): {
+  socket: Socket;
+  sent: string[];
+  closeCount: () => number;
+  open: () => void;
+  receive: (obj: unknown) => void;
+  fail: (error: unknown) => void;
+  disconnect: () => void;
+} {
   const sent: string[] = [];
+  let closes = 0;
   const socket: Socket = {
     send: (data) => sent.push(data),
+    close: () => {
+      closes++;
+    },
     onmessage: null,
+    onopen: null,
+    onerror: null,
+    onclose: null,
   };
   return {
     socket,
     sent,
+    closeCount: () => closes,
+    open: () => socket.onopen?.({}),
     receive: (obj) => socket.onmessage?.({ data: JSON.stringify(obj) }),
+    fail: (error) => socket.onerror?.(error),
+    disconnect: () => socket.onclose?.({}),
   };
 }
 
+const TEST_URL = "ws://core.test/ws";
+
+function connect(fake: ReturnType<typeof createFakeSocket>, handlers: CoreClientHandlers): CoreClient {
+  const client = new CoreClient(TEST_URL, handlers, {
+    socketFactory: (url) => {
+      assert.equal(url, TEST_URL);
+      return fake.socket;
+    },
+  });
+  fake.open();
+  return client;
+}
+
+test("owns the socket lifecycle and rejects sends outside an open connection", () => {
+  const fake = createFakeSocket();
+  const states: string[] = [];
+  const errors: unknown[] = [];
+  const client = new CoreClient(TEST_URL, {
+    onConnectionChanged: (state) => states.push(state),
+    onError: (error) => errors.push(error),
+  }, { socketFactory: () => fake.socket });
+
+  assert.equal(client.connectionState, "connecting");
+  assert.equal(client.prompt("too soon"), false);
+  assert.deepEqual(fake.sent, []);
+
+  fake.open();
+  assert.equal(client.connectionState, "connected");
+  assert.equal(client.prompt("hello"), true);
+
+  const failure = new Error("network failed");
+  fake.fail(failure);
+  assert.deepEqual(errors, [failure]);
+
+  fake.disconnect();
+  assert.equal(client.connectionState, "disconnected");
+  assert.equal(client.prompt("too late"), false);
+  assert.deepEqual(states, ["connecting", "connected", "disconnected"]);
+});
+
+test("close is idempotent and detaches the socket", () => {
+  const fake = createFakeSocket();
+  const states: string[] = [];
+  const client = connect(fake, { onConnectionChanged: (state) => states.push(state) });
+
+  client.close();
+  client.close();
+
+  assert.equal(fake.closeCount(), 1);
+  assert.equal(client.connectionState, "disconnected");
+  assert.equal(fake.socket.onmessage, null);
+  assert.deepEqual(states, ["connecting", "connected", "disconnected"]);
+});
+
 test("the conversation commands go out in protocol form", () => {
   const fake = createFakeSocket();
-  const client = new CoreClient(fake.socket, {});
+  const client = connect(fake, {});
 
   client.prompt("hello");
   client.abort();
@@ -39,7 +112,7 @@ test("listDir goes out in protocol form and the listing reaches the handler", ()
   const fake = createFakeSocket();
   const listings: unknown[] = [];
 
-  const client = new CoreClient(fake.socket, {
+  const client = connect(fake, {
     onDirListing: (listing) => listings.push(listing),
   });
 
@@ -63,7 +136,7 @@ test("snapshots and actions reach their respective handlers", () => {
   const snapshots: unknown[] = [];
   const batches: unknown[] = [];
 
-  new CoreClient(fake.socket, {
+  connect(fake, {
     onSnapshot: (state) => snapshots.push([state.snapshot, state.cwd]),
     onActions: (actions) => batches.push(actions),
   });
@@ -78,7 +151,7 @@ test("snapshots and actions reach their respective handlers", () => {
 
 test("malformed messages are ignored rather than crashing", () => {
   const fake = createFakeSocket();
-  new CoreClient(fake.socket, { onActions: () => assert.fail("must not be called") });
+  connect(fake, { onActions: () => assert.fail("must not be called") });
 
   fake.socket.onmessage?.({ data: "this is not JSON" });
   fake.socket.onmessage?.({ data: 42 });
@@ -89,7 +162,7 @@ test("malformed messages are ignored rather than crashing", () => {
 test("the model commands go out, and both model messages reach their handlers", () => {
   const fake = createFakeSocket();
   const seen: unknown[] = [];
-  const client = new CoreClient(fake.socket, {
+  const client = connect(fake, {
     onModelListing: (models) => seen.push(models),
     onModelChanged: (model) => seen.push(model),
   });
@@ -117,7 +190,7 @@ test("the model commands go out, and both model messages reach their handlers", 
 test("a snapshot carries the current model alongside the working directory", () => {
   const fake = createFakeSocket();
   let got: unknown;
-  const client = new CoreClient(fake.socket, {
+  const client = connect(fake, {
     onSnapshot: (state) => {
       got = { cwd: state.cwd, model: state.model, sessionId: state.sessionId };
     },
@@ -142,7 +215,7 @@ test("a snapshot carries the current model alongside the working directory", () 
 test("the session commands go out, and both session messages reach their handlers", () => {
   const fake = createFakeSocket();
   const seen: unknown[] = [];
-  const client = new CoreClient(fake.socket, {
+  const client = connect(fake, {
     onSessionListing: (sessions) => seen.push(sessions),
     onSessionOpened: (id) => seen.push(id),
   });
