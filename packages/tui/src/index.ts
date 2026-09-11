@@ -27,7 +27,6 @@ import {
 } from "@earendil-works/pi-tui";
 import type {
   Component,
-  Focusable,
   TUI,
 } from "@earendil-works/pi-tui";
 import {
@@ -62,6 +61,7 @@ import {
 } from "./theme.ts";
 import { Transcript } from "./transcript.ts";
 import { PromptInput } from "./prompt-input.ts";
+import { ProviderFlow } from "./provider-flow.ts";
 
 /**
  * Which core to talk to. Nothing here starts one: the service has to be running.
@@ -204,65 +204,6 @@ function choose(
   dialog.onAnswer = (value) => {
     showPrompt();
     onAnswer(value);
-  };
-  setBottom(dialog);
-  tui.setFocus(dialog);
-}
-
-/**
- * A one-line input that never shows what was typed.
- *
- * Handles its own keys rather than wrapping Input, because Input's whole job is
- * to render the text back and there is no way to ask it not to. An API key
- * should not appear on a screen someone may be sharing, nor scroll into the
- * terminal's own history.
- */
-class SecretInput implements Component, Focusable {
-  #value = "";
-  #title: string;
-  focused = false;
-  onAnswer?: (secret: string | undefined) => void;
-
-  constructor(title: string) {
-    this.#title = title;
-  }
-
-  handleInput(data: string): void {
-    if (matchesKey(data, "escape")) {
-      this.onAnswer?.(undefined);
-      return;
-    }
-    if (matchesKey(data, "enter") || matchesKey(data, "return")) {
-      this.onAnswer?.(this.#value.trim() === "" ? undefined : this.#value.trim());
-      return;
-    }
-    if (matchesKey(data, "backspace")) {
-      this.#value = this.#value.slice(0, -1);
-      return;
-    }
-    // Printable characters only: control sequences must not end up inside a key.
-    if (data.length > 0 && !data.startsWith("\x1b") && data >= " ") {
-      this.#value += data;
-    }
-  }
-
-  invalidate(): void {}
-
-  render(width: number): string[] {
-    return [
-      ...wrapTextWithAnsi(`${YELLOW}${BOLD}${this.#title}${RESET}`, width),
-      `${DIM}(nothing is echoed; Enter to save, Esc to cancel)${RESET}`,
-      `> ${"*".repeat(Math.min(this.#value.length, Math.max(width - 4, 0)))}`,
-    ];
-  }
-}
-
-/** Collect a secret at the bottom of the screen, then hand it over exactly once. */
-function askSecret(title: string, onAnswer: (secret: string | undefined) => void): void {
-  const dialog = new SecretInput(title);
-  dialog.onAnswer = (secret) => {
-    showPrompt();
-    onAnswer(secret);
   };
   setBottom(dialog);
   tui.setFocus(dialog);
@@ -533,58 +474,7 @@ const coreClient = new CoreClient(SERVER_URL, {
     tui.requestRender();
   },
   onProviderListing: (providers) => {
-    if (providerIntent === "list") {
-      transcript.append("");
-      for (const provider of providers.filter((entry) => entry.configured)) {
-        transcript.append(`${GREEN}configured${RESET}  ${provider.name} ${DIM}(${provider.id})${RESET}`);
-      }
-      transcript.append(
-        `${DIM}${providers.filter((entry) => !entry.configured).length} more available - /login to add one${RESET}`,
-      );
-      tui.requestRender();
-      providerIntent = undefined;
-      return;
-    }
-
-    if (providerIntent === "login") {
-      providerIntent = undefined;
-      choose(
-        "Give which provider an API key?",
-        providers.map((provider) => ({
-          value: provider.id,
-          label: `${provider.configured ? "* " : "  "}${provider.name}`,
-          description: provider.id,
-        })),
-        (id) => {
-          if (!id) return;
-          askSecret(`API key for ${id}`, (secret) => {
-            if (secret) coreClient.setApiKey(id, secret);
-          });
-        },
-      );
-      return;
-    }
-
-    if (providerIntent === "logout") {
-      providerIntent = undefined;
-      const configured = providers.filter((provider) => provider.configured);
-      if (configured.length === 0) {
-        applyAction({ type: "notice", text: "nothing is configured" });
-        return;
-      }
-      choose(
-        "Forget which provider's key?",
-        configured.map((provider) => ({
-          value: provider.id,
-          label: provider.name,
-          description: provider.id,
-        })),
-        (id) => {
-          if (id) coreClient.clearCredential(id);
-        },
-      );
-      return;
-    }
+    providerFlow.onListing(providers);
   },
   onSessionListing: (sessions) => {
     if (!landed) {
@@ -624,6 +514,17 @@ const coreClient = new CoreClient(SERVER_URL, {
   },
 });
 
+const providerFlow = new ProviderFlow(coreClient, {
+  append: (line) => transcript.append(line),
+  showInteraction: (component) => {
+    setBottom(component);
+    tui.setFocus(component);
+  },
+  showPrompt,
+  requestRender: () => tui.requestRender(),
+  showNotice: (text) => applyAction({ type: "notice", text }),
+});
+
 // ---- Landing in the right conversation ----
 
 /**
@@ -633,9 +534,6 @@ const coreClient = new CoreClient(SERVER_URL, {
  * directory's conversations and picks from those — once, on connecting.
  */
 let landed = false;
-
-/** Why the provider list was asked for, since one message serves three commands. */
-let providerIntent: "list" | "login" | "logout" | undefined;
 
 function land(sessions: SessionSummary[]): void {
   if (landed) return;
@@ -677,18 +575,15 @@ function runCommand(command: Command, line: string): void {
       coreClient.createSession(process.cwd());
       return;
     case "providers":
-      providerIntent = "list";
-      coreClient.listProviders();
+      providerFlow.list();
       return;
 
     case "login":
-      providerIntent = "login";
-      coreClient.listProviders();
+      providerFlow.login();
       return;
 
     case "logout":
-      providerIntent = "logout";
-      coreClient.listProviders();
+      providerFlow.logout();
       return;
 
     case "help":
