@@ -82,10 +82,25 @@ test("allows inspection modes of otherwise destructive disk commands", () => {
     command(WINDOWS, "Clear-Disk -Number 1 -WhatIf"),
     command(POSIX, "mkfs.ext4 --help"),
     command(POSIX, "wipefs --version"),
+    command(POSIX, "command -v wipefs"),
+    command(POSIX, "command -V mkfs.ext4"),
   ];
 
   for (const context of cases) {
     assert.notEqual(evaluatePermission(context).effect, "block", JSON.stringify(context.input));
+  }
+});
+
+test("does not allow command wrappers to bypass destructive disk detection", () => {
+  const cases = [
+    command(POSIX, "command wipefs --all /dev/sdb"),
+    command(POSIX, "command -p wipefs --all /dev/sdb"),
+  ];
+
+  for (const context of cases) {
+    const decision = evaluatePermission(context);
+    assert.equal(decision.effect, "block", JSON.stringify(context.input));
+    assert.equal(decision.ruleId, "shell.destroy-disk");
   }
 });
 

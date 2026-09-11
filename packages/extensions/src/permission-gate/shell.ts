@@ -76,6 +76,9 @@ function unwrapCommand(tokens: string[]): { tokens: string[]; wrappers: string[]
     if (candidate !== "sudo" && candidate !== "command") {
       break;
     }
+    if (candidate === "command" && ["-v", "-V"].includes(tokens[index + 1] ?? "")) {
+      break;
+    }
     wrappers.push(candidate);
     index += 1;
     while (tokens[index]?.startsWith("-")) {
