@@ -106,10 +106,12 @@ class StatusBar implements Component {
 class ConfirmDialog implements Component {
   #list: SelectList;
   #title: string;
+  #message: string | undefined;
   onAnswer?: (confirmed: boolean) => void;
 
-  constructor(title: string) {
+  constructor(title: string, message?: string) {
     this.#title = title;
+    this.#message = message;
     this.#list = new SelectList(
       [
         { value: "yes", label: "Allow" },
@@ -134,6 +136,9 @@ class ConfirmDialog implements Component {
   render(width: number): string[] {
     return [
       ...wrapTextWithAnsi(`${YELLOW}${BOLD}${this.#title}${RESET}`, width),
+      ...(this.#message
+        ? this.#message.split("\n").flatMap((line) => wrapTextWithAnsi(`${DIM}${line}${RESET}`, width))
+        : []),
       ...this.#list.render(width),
       `${DIM}↑↓ to choose, Enter to confirm, Esc to deny${RESET}`,
     ];
@@ -327,7 +332,7 @@ function applyAction(action: ViewAction): void {
     }
 
     case "confirm_requested":
-      raiseConfirm(action.requestId);
+      raiseConfirm(action.requestId, action.title, action.message);
       break;
 
     case "model_in_use":
@@ -416,7 +421,7 @@ function drawEntry(entry: Entry): void {
  * holding at pending — the same heuristic the GUI uses, and sound for the same
  * reason: that conversation's Pi is blocked, so at most one is outstanding.
  */
-function raiseConfirm(requestId: string): void {
+function raiseConfirm(requestId: string, title?: string, message?: string): void {
   const waiting = mirror
     .snapshot()
     .entries.filter((entry) => entry.kind === "tool" && entry.status === "pending")
@@ -424,7 +429,7 @@ function raiseConfirm(requestId: string): void {
   const toolName = waiting && waiting.kind === "tool" ? waiting.toolName : "this tool";
 
   confirming = true;
-  const dialog = new ConfirmDialog(`Allow ${toolName}?`);
+  const dialog = new ConfirmDialog(title ?? `Allow ${toolName}?`, message);
   dialog.onAnswer = (confirmed) => {
     confirming = false;
     transcript.append(confirmed ? `${DIM}   -> allowed${RESET}` : `${DIM}   -> denied${RESET}`);

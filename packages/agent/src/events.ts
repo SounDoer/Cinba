@@ -147,5 +147,10 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
 /** Of the UI requests only confirm becomes a view action; the rest (notify and friends) are not rendered in this phase. */
 export function foldUiRequest(request: UiRequest): ViewAction | undefined {
   if (request.method !== "confirm") return undefined;
-  return { type: "confirm_requested", requestId: request.id };
+  return {
+    type: "confirm_requested",
+    requestId: request.id,
+    title: typeof request.title === "string" ? request.title : undefined,
+    message: typeof request.message === "string" ? request.message : undefined,
+  };
 }

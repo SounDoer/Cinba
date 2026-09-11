@@ -118,6 +118,13 @@ button:disabled { color: var(--text-faint); cursor: default; }
 .tool-confirm button { font-size: 13px; }
 .tool-confirm .allow { border-color: #3daa5f; color: #69c786; }
 .tool-confirm .deny  { border-color: #d64545; color: #ef7777; }
+.tool-confirm-reason {
+  margin: 0.6rem 0 0;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
 
 .notice {
   align-self: center;

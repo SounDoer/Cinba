@@ -27,7 +27,17 @@ test("server messages are validated before reaching a client", () => {
   };
   const messages = [
     snapshot,
-    { type: "actions", actions: [{ type: "busy_changed", busy: true }] },
+    {
+      type: "actions",
+      actions: [
+        {
+          type: "confirm_requested",
+          requestId: "u1",
+          title: "Allow bash?",
+          message: "Rule: shell.delete",
+        },
+      ],
+    },
     { type: "dir_listing", path: "C:/", parent: null, dirs: ["work"] },
     { type: "model_listing", models: [{ provider: "test", id: "model" }] },
     { type: "model_changed", model: { provider: "test", id: "model" } },
@@ -56,6 +66,13 @@ test("malformed server messages are dropped", () => {
   assert.equal(parseServerMessage({ type: "actions", actions: "busy" }), undefined);
   assert.equal(
     parseServerMessage({ type: "actions", actions: [{ type: "busy_changed", busy: "yes" }] }),
+    undefined,
+  );
+  assert.equal(
+    parseServerMessage({
+      type: "actions",
+      actions: [{ type: "confirm_requested", requestId: "u1", message: 42 }],
+    }),
     undefined,
   );
   assert.equal(

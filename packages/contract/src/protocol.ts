@@ -228,7 +228,11 @@ function isViewAction(value: unknown): value is ViewAction {
         (value.result === undefined || typeof value.result === "string")
       );
     case "confirm_requested":
-      return typeof value.requestId === "string";
+      return (
+        typeof value.requestId === "string" &&
+        (value.title === undefined || typeof value.title === "string") &&
+        (value.message === undefined || typeof value.message === "string")
+      );
     case "model_in_use":
       return typeof value.provider === "string" && typeof value.modelId === "string";
     case "notice":
@@ -259,7 +263,9 @@ function isEntry(value: unknown): boolean {
         typeof value.toolName === "string" &&
         isToolStatus(value.status) &&
         (value.result === undefined || typeof value.result === "string") &&
-        (value.confirmRequestId === undefined || typeof value.confirmRequestId === "string")
+        (value.confirmRequestId === undefined || typeof value.confirmRequestId === "string") &&
+        (value.confirmTitle === undefined || typeof value.confirmTitle === "string") &&
+        (value.confirmMessage === undefined || typeof value.confirmMessage === "string")
       );
     case "notice":
       return typeof value.text === "string";

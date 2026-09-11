@@ -24,7 +24,12 @@ export type ViewAction =
       status: ToolStatus;
       result?: string;
     }
-  | { type: "confirm_requested"; requestId: string }
+  | {
+      type: "confirm_requested";
+      requestId: string;
+      title?: string;
+      message?: string;
+    }
   /**
    * Marks the point from which a given model was answering.
    *

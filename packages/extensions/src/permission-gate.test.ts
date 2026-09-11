@@ -109,13 +109,24 @@ test("ordinary workspace writes and shell commands do not interrupt the user", a
 
 test("an approval lets an Ask decision through", async () => {
   const handler = captureHandler();
+  let prompt: { title: string; message: string } | undefined;
+  const context = makeCtx(true, true);
+  context.ui.confirm = async (title, message) => {
+    prompt = { title, message };
+    return true;
+  };
 
   const result = await handler(
     { toolName: "bash", input: { command: "git reset --hard" } },
-    makeCtx(true, true),
+    context,
   );
 
   assert.equal(result, undefined);
+  assert.deepEqual(prompt, {
+    title: "Allow bash?",
+    message:
+      'Rule: shell.destructive-git\nReason: Destructive Git operation "reset" requires confirmation',
+  });
 });
 
 test("a refusal blocks an Ask decision and hands the model a reason", async () => {

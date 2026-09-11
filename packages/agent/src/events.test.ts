@@ -176,8 +176,19 @@ test("agent_settled clears busy", () => {
 
 test("a confirm UI request becomes a confirm action; other kinds become nothing", () => {
   assert.deepEqual(
-    foldUiRequest({ type: "extension_ui_request", id: "u1", method: "confirm" }),
-    { type: "confirm_requested", requestId: "u1" },
+    foldUiRequest({
+      type: "extension_ui_request",
+      id: "u1",
+      method: "confirm",
+      title: "Allow bash?",
+      message: "Rule: shell.delete\nReason: File deletion requires confirmation",
+    }),
+    {
+      type: "confirm_requested",
+      requestId: "u1",
+      title: "Allow bash?",
+      message: "Rule: shell.delete\nReason: File deletion requires confirmation",
+    },
   );
 
   assert.equal(

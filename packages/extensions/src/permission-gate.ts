@@ -35,8 +35,8 @@ export default function (pi: ExtensionAPI) {
       return { block: true, reason: "No UI available to confirm, so blocked by default" };
     }
 
-    const detail = JSON.stringify(event.input, null, 2);
-    const allowed = await ctx.ui.confirm(`Allow ${event.toolName}?`, detail);
+    const explanation = `Rule: ${decision.ruleId}\nReason: ${decision.reason}`;
+    const allowed = await ctx.ui.confirm(`Allow ${event.toolName}?`, explanation);
 
     if (!allowed) {
       return { block: true, reason: "The user denied this tool call" };

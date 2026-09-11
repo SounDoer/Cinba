@@ -32,6 +32,8 @@ export type ToolEntry = {
   result?: string;
   /** Set while this card awaits an allow/deny click; the value is the request id to answer with. */
   confirmRequestId?: string;
+  confirmTitle?: string;
+  confirmMessage?: string;
 };
 
 /**
@@ -129,7 +131,11 @@ export function createSession(initial?: Snapshot): Session {
             if (action.args !== undefined) existing.args = action.args;
             if (action.result !== undefined) existing.result = action.result;
             // Leaving pending means the confirmation resolved; clear the marker.
-            if (action.status !== "pending") existing.confirmRequestId = undefined;
+            if (action.status !== "pending") {
+              existing.confirmRequestId = undefined;
+              delete existing.confirmTitle;
+              delete existing.confirmMessage;
+            }
             return;
           }
           entries.push({
@@ -155,6 +161,8 @@ export function createSession(initial?: Snapshot): Session {
             if (entry.kind === "tool" && (entry.status === "running" || entry.status === "pending")) {
               entry.status = "pending";
               entry.confirmRequestId = action.requestId;
+              entry.confirmTitle = action.title;
+              entry.confirmMessage = action.message;
               return;
             }
           }

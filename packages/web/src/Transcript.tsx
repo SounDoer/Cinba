@@ -80,13 +80,18 @@ function ToolCard({
       {entry.result ? <pre className="tool-result">{entry.result}</pre> : null}
 
       {requestId ? (
-        <div className="tool-confirm">
-          <button className="allow" onClick={() => onRespond(requestId, true)}>
-            Allow
-          </button>
-          <button className="deny" onClick={() => onRespond(requestId, false)}>
-            Deny
-          </button>
+        <div className="tool-confirmation">
+          {entry.confirmMessage ? (
+            <pre className="tool-confirm-reason">{entry.confirmMessage}</pre>
+          ) : null}
+          <div className="tool-confirm">
+            <button className="allow" onClick={() => onRespond(requestId, true)}>
+              Allow
+            </button>
+            <button className="deny" onClick={() => onRespond(requestId, false)}>
+              Deny
+            </button>
+          </div>
         </div>
       ) : null}
     </div>
