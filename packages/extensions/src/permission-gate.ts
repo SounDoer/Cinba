@@ -1,18 +1,27 @@
-// The permission gate: every time the model wants a tool, ask the user first.
+// The Pi adapter for Cinba's permission policy.
 //
 // Phase 0 measurements are what make this necessary: Pi's RPC mode allows every
-// tool call the model asks for by default, executing straight after tool_call
-// without waiting for the client. Without this gate, handing it a shell is
-// handing over the shell.
+// tool call the model asks for by default, executing straight after tool_call.
+// The policy decides which calls pass, need a person, or must never execute.
 
+import { homedir } from "node:os";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-
-/** Read-only tools. Asking would only spend the user's attention, so let them through. */
-const AUTO_ALLOW = new Set(["read", "glob", "grep"]);
+import { evaluatePermission } from "./permission-gate/policy.ts";
 
 export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
-    if (AUTO_ALLOW.has(event.toolName)) return;
+    const decision = evaluatePermission({
+      toolName: event.toolName,
+      input: event.input,
+      cwd: ctx.cwd,
+      homeDir: homedir(),
+      platform: process.platform,
+      systemRoot: process.env.SystemRoot,
+    });
+    if (decision.effect === "allow") return;
+    if (decision.effect === "block") {
+      return { block: true, reason: decision.reason };
+    }
 
     // With no UI there is nobody to ask. A safety gate has to block here rather
     // than allow: when the responsible party cannot be reached, the correct

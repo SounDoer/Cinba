@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import gate from "./permission-gate.ts";
 
 type ToolCallEvent = { toolName: string; input: unknown };
-type Ctx = { hasUI: boolean; ui: { confirm: (title: string, message: string) => Promise<boolean> } };
+type Ctx = {
+  cwd: string;
+  hasUI: boolean;
+  ui: { confirm: (title: string, message: string) => Promise<boolean> };
+};
 type Handler = (event: ToolCallEvent, ctx: Ctx) => Promise<unknown>;
 
 /** Install a fake pi so the tool_call handler the gate registers can be called on its own. */
@@ -22,6 +26,7 @@ function captureHandler(): Handler {
 /** Build a context. An undefined answer means the user must not be asked at all. */
 function makeCtx(hasUI: boolean, answer?: boolean): Ctx {
   return {
+    cwd: process.cwd(),
     hasUI,
     ui: {
       confirm: async () => {
@@ -39,11 +44,25 @@ test("blocks when there is no UI, rather than allowing", async () => {
   // failing open would let every tool pass silently — with no error either.
   const handler = captureHandler();
 
-  const result = await handler({ toolName: "bash", input: { command: "rm -rf /" } }, makeCtx(false));
+  const result = await handler({ toolName: "bash", input: { command: "npm test" } }, makeCtx(false));
 
   assert.deepEqual(result, {
     block: true,
     reason: "No UI available to confirm, so blocked by default",
+  });
+});
+
+test("a catastrophic command is blocked without asking", async () => {
+  const handler = captureHandler();
+
+  const result = await handler(
+    { toolName: "powershell", input: { command: "Clear-Disk -Number 0 -RemoveData" } },
+    makeCtx(true),
+  );
+
+  assert.deepEqual(result, {
+    block: true,
+    reason: 'Disk-destructive command "clear-disk" is blocked',
   });
 });
 
