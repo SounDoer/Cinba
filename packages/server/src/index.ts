@@ -24,16 +24,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findSession } from "@cinba/agent";
 import { isLoopback } from "./loopback.ts";
-import { assessIdle, canStopNow, IDLE_TIMEOUT_MS } from "./reclaim.ts";
+import { IDLE_TIMEOUT_MS, assessIdle, canStopNow } from "./reclaim.ts";
 import { createConfigStore } from "./config.ts";
 import { createCredentialService } from "./credential-service.ts";
 import { listDirectories } from "./directory-browser.ts";
 import { createServerRuntime } from "./server-runtime.ts";
-import { createSessionRegistry } from "./session-registry.ts";
-import type { LiveSession } from "./session-registry.ts";
+import { type LiveSession, createSessionRegistry } from "./session-registry.ts";
 import { createStaticFileHandler } from "./static-files.ts";
-import { parseClientMessage } from "@cinba/contract";
-import type { ModelRef, ServerMessage } from "@cinba/contract";
+import { type ModelRef, type ServerMessage, parseClientMessage } from "@cinba/contract";
 
 const HOST = "127.0.0.1";
 
@@ -82,7 +80,9 @@ function sendTo(socket: WebSocket, message: ServerMessage): void {
 function toViewers(sessionId: string, message: ServerMessage): void {
   const text = JSON.stringify(message);
   for (const [socket, id] of viewing) {
-    if (id === sessionId) socket.send(text);
+    if (id === sessionId) {
+      socket.send(text);
+    }
   }
 }
 
@@ -118,17 +118,25 @@ async function resolveDefaultSession(): Promise<LiveSession | undefined> {
   const { cwd, lastSessionId } = config.get();
   if (lastSessionId) {
     const existing = sessions.get(lastSessionId);
-    if (existing) return existing;
+    if (existing) {
+      return existing;
+    }
     const stored = await findSession(lastSessionId);
-    if (stored) return await sessions.open({ sessionPath: stored.path, cwd: stored.cwd || cwd });
+    if (stored) {
+      return await sessions.open({ sessionPath: stored.path, cwd: stored.cwd || cwd });
+    }
   }
 
   const [recent] = await sessions.list(cwd);
   if (recent) {
     const existing = sessions.get(recent.id);
-    if (existing) return existing;
+    if (existing) {
+      return existing;
+    }
     const stored = await findSession(recent.id);
-    if (stored) return await sessions.open({ sessionPath: stored.path, cwd: stored.cwd || cwd });
+    if (stored) {
+      return await sessions.open({ sessionPath: stored.path, cwd: stored.cwd || cwd });
+    }
   }
 
   return await sessions.open({ cwd });
@@ -144,7 +152,9 @@ function show(socket: WebSocket, session: LiveSession): void {
     ![...viewing.values()].includes(previousSessionId)
   ) {
     const previous = sessions.get(previousSessionId);
-    if (previous) sessions.denyPendingConfirmations(previous);
+    if (previous) {
+      sessions.denyPendingConfirmations(previous);
+    }
   }
   config.update({
     lastSessionId: session.id,
@@ -181,7 +191,9 @@ function sweepIdle(): void {
     );
 
     session.idleSince = verdict.idleSince;
-    if (!verdict.reclaim) continue;
+    if (!verdict.reclaim) {
+      continue;
+    }
 
     console.log(`[cinba] ${session.id} idle, stopping its Pi (it reopens from disk)`);
     sessions.stop(session.id);
@@ -202,7 +214,9 @@ function sweepIdle(): void {
  * key is to give it a new process.
  */
 function markCredentialsStale(): void {
-  for (const session of sessions.values()) session.staleCredentials = true;
+  for (const session of sessions.values()) {
+    session.staleCredentials = true;
+  }
   void recycleStale();
 }
 
@@ -221,7 +235,9 @@ function markCredentialsStale(): void {
  * conversation that is no longer open, and their next message would go nowhere.
  */
 async function recycleStale(): Promise<void> {
-  if (!sessions.values().some((session) => session.staleCredentials)) return;
+  if (!sessions.values().some((session) => session.staleCredentials)) {
+    return;
+  }
 
   // Which providers this machine can reach now. A conversation is put back on
   // the model it was using only if that is still one of them: Pi will not start
@@ -235,7 +251,9 @@ async function recycleStale(): Promise<void> {
   );
 
   for (const session of sessions.values()) {
-    if (!session.staleCredentials) continue;
+    if (!session.staleCredentials) {
+      continue;
+    }
     if (
       !canStopNow({
         busy: session.ledger.snapshot().busy,
@@ -256,7 +274,9 @@ async function recycleStale(): Promise<void> {
 
     console.log(`[cinba] ${session.id} has stale credentials, restarting its Pi`);
     sessions.stop(session.id);
-    if (watchers.length === 0) continue;
+    if (watchers.length === 0) {
+      continue;
+    }
 
     const reopened = stored
       ? await sessions.open({
@@ -275,7 +295,9 @@ async function recycleStale(): Promise<void> {
       console.error(`[cinba] could not reopen ${session.id} after a credential change`);
       continue;
     }
-    for (const socket of watchers) show(socket, reopened);
+    for (const socket of watchers) {
+      show(socket, reopened);
+    }
   }
 }
 
@@ -290,28 +312,38 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
   }
 
   const message = parseClientMessage(parsed);
-  if (!message) return; // Anything unrecognized is dropped
+  if (!message) {
+    return;
+  } // Anything unrecognized is dropped
 
   const current = sessions.get(viewing.get(socket) ?? "");
 
   switch (message.type) {
     case "prompt":
-      if (!current) return;
+      if (!current) {
+        return;
+      }
       sessions.prompt(current, message.text);
       return;
 
     case "edit_message":
-      if (!current) return;
+      if (!current) {
+        return;
+      }
       await sessions.editMessage(current, message.entryId, message.text);
       return;
 
     case "abort":
-      if (!current) return;
+      if (!current) {
+        return;
+      }
       sessions.abort(current);
       return;
 
     case "respond_confirm":
-      if (!current) return;
+      if (!current) {
+        return;
+      }
       sessions.respondToConfirmation(current, message.requestId, message.confirmed);
       return;
 
@@ -321,15 +353,21 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
     }
 
     case "list_models": {
-      if (!current) return;
+      if (!current) {
+        return;
+      }
       sendTo(socket, { type: "model_listing", models: await sessions.listModels(current) });
       return;
     }
 
     case "set_model": {
-      if (!current) return;
+      if (!current) {
+        return;
+      }
       const target: ModelRef = { provider: message.provider, id: message.modelId };
-      if (!(await sessions.setModel(current, target))) return;
+      if (!(await sessions.setModel(current, target))) {
+        return;
+      }
       // Remembered as the default for conversations started from now on.
       config.update({ model: target });
       toViewers(current.id, { type: "model_changed", model: target });
@@ -354,7 +392,9 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
         return;
       }
       const result = await credentials.configure(message.providerId, message.apiKey);
-      if (current) sessions.emit(current, [{ type: "notice", text: result.notice }]);
+      if (current) {
+        sessions.emit(current, [{ type: "notice", text: result.notice }]);
+      }
       sendTo(socket, { type: "provider_listing", providers: await credentials.list() });
       return;
     }
@@ -365,7 +405,9 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
         return;
       }
       const result = await credentials.remove(message.providerId);
-      if (current) sessions.emit(current, [{ type: "notice", text: result.notice }]);
+      if (current) {
+        sessions.emit(current, [{ type: "notice", text: result.notice }]);
+      }
       sendTo(socket, { type: "provider_listing", providers: await credentials.list() });
       return;
     }
@@ -381,26 +423,36 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
         return;
       }
       const stored = await findSession(message.sessionId);
-      if (!stored) return; // Deleted from under us; the client's next listing will show that
+      if (!stored) {
+        return;
+      } // Deleted from under us; the client's next listing will show that
       // Its own directory, not whichever one is current: a conversation about
       // one project must not resume with its tools pointed at another.
       const opened = await sessions.open({
         sessionPath: stored.path,
         cwd: stored.cwd || config.get().cwd,
       });
-      if (opened) show(socket, opened);
+      if (opened) {
+        show(socket, opened);
+      }
       return;
     }
 
     case "create_session": {
       const created = await sessions.open({ cwd: message.cwd });
-      if (created) show(socket, created);
+      if (created) {
+        show(socket, created);
+      }
       return;
     }
 
     case "rename_session": {
-      if (!current) return;
-      if (!(await sessions.rename(current, message.name))) return;
+      if (!current) {
+        return;
+      }
+      if (!(await sessions.rename(current, message.name))) {
+        return;
+      }
       // The name lives in the session file, so a fresh listing picks it up.
       sendTo(socket, { type: "session_listing", sessions: await sessions.list() });
       return;
@@ -424,7 +476,9 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
       const orphaned = [...viewing].filter(([, id]) => id === message.sessionId);
       const fallback = orphaned.length > 0 ? await defaultSession() : undefined;
       for (const [orphan] of orphaned) {
-        if (fallback) show(orphan, fallback);
+        if (fallback) {
+          show(orphan, fallback);
+        }
       }
 
       sendTo(socket, { type: "session_listing", sessions: await sessions.list() });
@@ -437,7 +491,9 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
 
 function onConnection(socket: WebSocket, request: IncomingMessage): void {
   clients.add(socket);
-  if (isLoopback(request.socket.remoteAddress)) local.add(socket);
+  if (isLoopback(request.socket.remoteAddress)) {
+    local.add(socket);
+  }
 
   // Before anything else: which machine the client has reached.
   sendTo(socket, { type: "core_identity", name: config.get().coreName });
@@ -446,7 +502,9 @@ function onConnection(socket: WebSocket, request: IncomingMessage): void {
   // A new connection lands on the conversation it was last on. Its Pi starts
   // here if it was not already running, which is why nothing starts at boot.
   void defaultSession().then((session) => {
-    if (session) show(socket, session);
+    if (session) {
+      show(socket, session);
+    }
   });
 
   socket.on("message", (data: unknown) => {
@@ -463,7 +521,9 @@ function onConnection(socket: WebSocket, request: IncomingMessage): void {
     viewing.delete(socket);
     if (previousSessionId && ![...viewing.values()].includes(previousSessionId)) {
       const previous = sessions.get(previousSessionId);
-      if (previous) sessions.denyPendingConfirmations(previous);
+      if (previous) {
+        sessions.denyPendingConfirmations(previous);
+      }
     }
     console.log(`[cinba] client disconnected, ${clients.size} left`);
   });
@@ -487,7 +547,9 @@ const runtime = createServerRuntime({
 
 let shuttingDown = false;
 function shutdown(): void {
-  if (shuttingDown) return;
+  if (shuttingDown) {
+    return;
+  }
   shuttingDown = true;
   console.log(`\n[cinba] shutting down, reclaiming ${sessions.size} Pi child process(es)`);
   sessions.closeAll();
@@ -520,4 +582,6 @@ function startService(): void {
 }
 
 // Importing the module is inert; only executing it as the program opens ports.
-if (import.meta.main) startService();
+if (import.meta.main) {
+  startService();
+}

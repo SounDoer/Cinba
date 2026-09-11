@@ -29,7 +29,9 @@ export class StdioTransport {
     this.#child = child;
 
     const feed = createLineSplitter((line) => {
-      for (const handler of this.#handlers) handler(line);
+      for (const handler of this.#handlers) {
+        handler(line);
+      }
     });
 
     if (!child.stdout) {
@@ -45,7 +47,9 @@ export class StdioTransport {
   }
 
   send(line: string): void {
-    if (!this.#child.stdin) throw new Error("Child process has no stdin");
+    if (!this.#child.stdin) {
+      throw new Error("Child process has no stdin");
+    }
     // JSONL separates records with \n. Omit it and the other side waits forever.
     this.#child.stdin.write(line + "\n");
   }
@@ -81,10 +85,14 @@ export class StdioTransport {
   }
 
   #notifyClose(error?: Error): void {
-    if (this.#closed) return;
+    if (this.#closed) {
+      return;
+    }
     this.#closed = true;
     this.#closeError = error;
-    for (const handler of this.#closeHandlers) handler(error);
+    for (const handler of this.#closeHandlers) {
+      handler(error);
+    }
     this.#closeHandlers = [];
   }
 }

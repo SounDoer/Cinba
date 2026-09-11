@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CoreClient } from "./core-client.ts";
-import type { CoreClientHandlers, Socket } from "./core-client.ts";
+import { CoreClient, type CoreClientHandlers, type Socket } from "./core-client.ts";
 
 /** A fake connection, for testing protocol logic without starting a server. */
 function createFakeSocket(): {
@@ -18,7 +17,7 @@ function createFakeSocket(): {
   const socket: Socket = {
     send: (data) => sent.push(data),
     close: () => {
-      closes++;
+      closes += 1;
     },
     onmessage: null,
     onopen: null,

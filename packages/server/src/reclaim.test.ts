@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assessIdle, canStopNow, IDLE_TIMEOUT_MS } from "./reclaim.ts";
+import { IDLE_TIMEOUT_MS, assessIdle, canStopNow } from "./reclaim.ts";
 
 const IDLE = {
   hasViewers: false,

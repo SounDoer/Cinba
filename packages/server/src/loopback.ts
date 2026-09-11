@@ -16,13 +16,19 @@
  * which is what a socket reports once it has gone away.
  */
 export function isLoopback(address: string | undefined): boolean {
-  if (!address) return false;
+  if (!address) {
+    return false;
+  }
 
   const plain = address.startsWith("::ffff:") ? address.slice(7) : address;
-  if (plain === "::1") return true;
+  if (plain === "::1") {
+    return true;
+  }
 
   // The whole 127.0.0.0/8 block is loopback, not just 127.0.0.1.
   const parts = plain.split(".");
-  if (parts.length !== 4) return false;
+  if (parts.length !== 4) {
+    return false;
+  }
   return parts[0] === "127" && parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) < 256);
 }

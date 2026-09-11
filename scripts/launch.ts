@@ -5,7 +5,7 @@
 //   node scripts/launch.ts dev
 //   node scripts/launch.ts tui [working-directory]
 
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { connect } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,8 +49,11 @@ function waitForExit(child: ChildProcess): Promise<number> {
       return;
     }
     if (child.signalCode !== null) {
-      if (stopping) resolve(0);
-      else reject(new Error(`process stopped by ${child.signalCode}`));
+      if (stopping) {
+        resolve(0);
+      } else {
+        reject(new Error(`process stopped by ${child.signalCode}`));
+      }
       return;
     }
 
@@ -67,7 +70,9 @@ function waitForExit(child: ChildProcess): Promise<number> {
 
 async function runToCompletion(args: string[], cwd = REPOSITORY_ROOT): Promise<void> {
   const code = await waitForExit(run(args, { cwd }));
-  if (code !== 0) throw new Error(`process exited with code ${code}`);
+  if (code !== 0) {
+    throw new Error(`process exited with code ${code}`);
+  }
 }
 
 function isPortOpen(port: number): Promise<boolean> {
@@ -108,7 +113,9 @@ async function waitUntilReachable(url: string, processName: string): Promise<voi
 }
 
 function openBrowser(url: string): void {
-  if (process.env.CINBA_NO_BROWSER === "1") return;
+  if (process.env.CINBA_NO_BROWSER === "1") {
+    return;
+  }
 
   const opener = spawn("rundll32.exe", ["url.dll,FileProtocolHandler", url], {
     detached: true,
@@ -119,7 +126,9 @@ function openBrowser(url: string): void {
 }
 
 async function stopChildren(): Promise<void> {
-  if (stopping) return;
+  if (stopping) {
+    return;
+  }
   stopping = true;
 
   const exits = [...children].map(
@@ -159,7 +168,9 @@ async function startRegular(): Promise<void> {
   console.log("[launcher] Press Ctrl+C to stop it.");
 
   const code = await waitForExit(core);
-  if (code !== 0) throw new Error(`Cinba core service exited with code ${code}`);
+  if (code !== 0) {
+    throw new Error(`Cinba core service exited with code ${code}`);
+  }
 }
 
 async function startDevelopment(): Promise<void> {
@@ -195,11 +206,15 @@ async function startTui(workingDirectory: string | undefined): Promise<void> {
   const cwd = workingDirectory ? join(workingDirectory) : process.cwd();
   console.log(`[launcher] Cinba terminal, working in: ${cwd}`);
   const code = await waitForExit(run([TUI_ENTRY], { cwd, managed: false }));
-  if (code !== 0) throw new Error(`Cinba terminal exited with code ${code}`);
+  if (code !== 0) {
+    throw new Error(`Cinba terminal exited with code ${code}`);
+  }
 }
 
 function readMode(value: string | undefined): Mode {
-  if (value === "start" || value === "dev" || value === "tui") return value;
+  if (value === "start" || value === "dev" || value === "tui") {
+    return value;
+  }
   throw new Error("usage: node scripts/launch.ts <start|dev|tui> [working-directory]");
 }
 
@@ -207,9 +222,15 @@ async function main(): Promise<void> {
   const mode = readMode(process.argv[2]);
   installSignalHandlers();
 
-  if (mode === "start") await startRegular();
-  if (mode === "dev") await startDevelopment();
-  if (mode === "tui") await startTui(process.argv[3]);
+  if (mode === "start") {
+    await startRegular();
+  }
+  if (mode === "dev") {
+    await startDevelopment();
+  }
+  if (mode === "tui") {
+    await startTui(process.argv[3]);
+  }
 }
 
 main().catch(async (error: unknown) => {

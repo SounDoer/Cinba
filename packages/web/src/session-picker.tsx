@@ -5,9 +5,8 @@
 // holding a real conversation, and nothing puts it back.
 
 import { useState } from "react";
-import { sessionSubtitle, sessionTitle } from "@cinba/contract";
-import type { SessionSummary } from "@cinba/contract";
-import { PickerShell } from "./PickerShell.tsx";
+import { type SessionSummary, sessionSubtitle, sessionTitle } from "@cinba/contract";
+import { PickerShell } from "./picker-shell.tsx";
 
 function when(iso: string): string {
   const date = new Date(iso);
@@ -58,15 +57,21 @@ export function SessionPicker({
                   onChange={(event) => setRenaming(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && renaming.trim() !== "") {
-                      if (onRename(renaming.trim())) setRenaming(undefined);
+                      if (onRename(renaming.trim())) {
+                        setRenaming(undefined);
+                      }
                     }
-                    if (event.key === "Escape") setRenaming(undefined);
+                    if (event.key === "Escape") {
+                      setRenaming(undefined);
+                    }
                   }}
                 />
                 <button
                   disabled={renaming.trim() === ""}
                   onClick={() => {
-                    if (onRename(renaming.trim())) setRenaming(undefined);
+                    if (onRename(renaming.trim())) {
+                      setRenaming(undefined);
+                    }
                   }}
                 >
                   Save
@@ -82,7 +87,9 @@ export function SessionPicker({
                 Delete this conversation for good?{" "}
                 <button
                   onClick={() => {
-                    if (onDelete(session.id)) setConfirming(undefined);
+                    if (onDelete(session.id)) {
+                      setConfirming(undefined);
+                    }
                   }}
                 >
                   Delete
@@ -97,7 +104,9 @@ export function SessionPicker({
               <button
                 className="session-open"
                 onClick={() => {
-                  if (active || onOpen(session.id)) onClose();
+                  if (active || onOpen(session.id)) {
+                    onClose();
+                  }
                 }}
               >
                 <span className="session-title">

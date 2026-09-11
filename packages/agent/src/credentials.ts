@@ -99,7 +99,9 @@ function errorText(error: unknown): string {
  * given must not be the thing that decides whether a key reaches a screen.
  */
 export function redactSecret(text: string, secret: string): string {
-  if (secret === "" || !text.includes(secret)) return text;
+  if (secret === "" || !text.includes(secret)) {
+    return text;
+  }
   return text.split(secret).join("[redacted]");
 }
 

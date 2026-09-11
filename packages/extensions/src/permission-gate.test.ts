@@ -15,11 +15,15 @@ function captureHandler(): Handler {
   let handler: Handler | undefined;
   const pi = {
     on(name: string, fn: Handler) {
-      if (name === "tool_call") handler = fn;
+      if (name === "tool_call") {
+        handler = fn;
+      }
     },
   };
   (gate as (api: unknown) => void)(pi);
-  if (!handler) throw new Error("the permission gate registered no tool_call handler");
+  if (!handler) {
+    throw new Error("the permission gate registered no tool_call handler");
+  }
   return handler;
 }
 
@@ -30,7 +34,9 @@ function makeCtx(hasUI: boolean, answer?: boolean): Ctx {
     hasUI,
     ui: {
       confirm: async () => {
-        if (answer === undefined) throw new Error("the user must not be asked");
+        if (answer === undefined) {
+          throw new Error("the user must not be asked");
+        }
         return answer;
       },
     },

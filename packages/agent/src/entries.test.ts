@@ -76,7 +76,9 @@ const STORED = [
 
 test("a stored conversation folds back into a transcript", () => {
   const session = createSession();
-  for (const action of foldSessionEntries(STORED as readonly unknown[])) session.apply(action);
+  for (const action of foldSessionEntries(STORED as readonly unknown[])) {
+    session.apply(action);
+  }
   const snapshot = session.snapshot();
 
   assert.deepEqual(
@@ -98,7 +100,9 @@ test("a stored conversation folds back into a transcript", () => {
 
 test("usage accumulates across the stored messages", () => {
   const session = createSession();
-  for (const action of foldSessionEntries(STORED as readonly unknown[])) session.apply(action);
+  for (const action of foldSessionEntries(STORED as readonly unknown[])) {
+    session.apply(action);
+  }
   const snapshot = session.snapshot();
 
   assert.equal(snapshot.totalTokens, 2092 + 2131);

@@ -3,18 +3,25 @@
 
 import { existsSync } from "node:fs";
 import {
+  type CoreEvent,
+  PiClient,
+  StdioTransport,
   activeBranchEntries,
   createEventFolder,
   foldSessionEntries,
   foldUiRequest,
-  listSessions as storedSessions,
-  PiClient,
   startPi,
-  StdioTransport,
+  listSessions as storedSessions,
 } from "@cinba/agent";
-import type { CoreEvent } from "@cinba/agent";
-import { createSession, sameTranscript } from "@cinba/contract";
-import type { ModelRef, ServerMessage, Session, SessionSummary, ViewAction } from "@cinba/contract";
+import {
+  type ModelRef,
+  type ServerMessage,
+  type Session,
+  type SessionSummary,
+  type ViewAction,
+  createSession,
+  sameTranscript,
+} from "@cinba/contract";
 
 export type LiveSession = {
   readonly id: string;
@@ -104,16 +111,24 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
   const flushIntervalMs = options.flushIntervalMs ?? 30;
 
   function emitManaged(session: ManagedSession, actions: ViewAction[]): void {
-    if (actions.length === 0) return;
-    for (const action of actions) session.ledger.apply(action);
+    if (actions.length === 0) {
+      return;
+    }
+    for (const action of actions) {
+      session.ledger.apply(action);
+    }
     session.outbox.push(...actions);
 
-    if (session.flushTimer) return;
+    if (session.flushTimer) {
+      return;
+    }
     session.flushTimer = setTimeout(() => {
       session.flushTimer = undefined;
       const batch = session.outbox;
       session.outbox = [];
-      if (batch.length > 0) options.onActions(session.id, batch);
+      if (batch.length > 0) {
+        options.onActions(session.id, batch);
+      }
     }, flushIntervalMs);
   }
 
@@ -143,13 +158,17 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     const response = await session.pi.getEntries(session.reconciledUpTo);
     const data = response.data as { entries?: unknown; leafId?: unknown } | undefined;
     const entries = data?.entries;
-    if (!Array.isArray(entries)) return;
+    if (!Array.isArray(entries)) {
+      return;
+    }
 
     session.storedEntries.push(...entries);
     const last = entries.at(-1) as { id?: unknown } | undefined;
     if (typeof last?.id === "string") {
       session.reconciledUpTo = last.id;
-      if (data?.leafId === undefined) session.leafId = last.id;
+      if (data?.leafId === undefined) {
+        session.leafId = last.id;
+      }
     }
     if (data?.leafId === null || typeof data?.leafId === "string") {
       session.leafId = data.leafId;
@@ -160,14 +179,18 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     await absorb(session);
     const truth = createSession();
     const branch = activeBranchEntries(session.storedEntries, session.leafId);
-    for (const action of foldSessionEntries(branch)) truth.apply(action);
+    for (const action of foldSessionEntries(branch)) {
+      truth.apply(action);
+    }
 
     const currentEntries = session.ledger.snapshot().entries;
     const hasUnstableMessageId = currentEntries.some(
       (entry) => entry.kind === "message" && !entry.stableId,
     );
     const transcriptMatches = sameTranscript(currentEntries, truth.snapshot().entries);
-    if (transcriptMatches && !hasUnstableMessageId) return;
+    if (transcriptMatches && !hasUnstableMessageId) {
+      return;
+    }
     if (!transcriptMatches) {
       console.warn(`[cinba] transcript drifted in ${session.id}; taking Pi's copy`);
     }
@@ -243,8 +266,12 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     });
     launch.pi.onUiRequest(async (request) => {
       const action = foldUiRequest(request);
-      if (!action) return { cancelled: true };
-      if (options.hasViewers && !options.hasViewers(session.id)) return { confirmed: false };
+      if (!action) {
+        return { cancelled: true };
+      }
+      if (options.hasViewers && !options.hasViewers(session.id)) {
+        return { confirmed: false };
+      }
       emitManaged(session, [action]);
       const confirmed = await new Promise<boolean>((resolve) => {
         session.pendingConfirms.set(request.id, resolve);
@@ -254,16 +281,24 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
 
     await absorb(session);
     const branch = activeBranchEntries(session.storedEntries, session.leafId);
-    for (const action of foldSessionEntries(branch)) session.ledger.apply(action);
+    for (const action of foldSessionEntries(branch)) {
+      session.ledger.apply(action);
+    }
     live.set(session.id, session);
     return session;
   }
 
   function stop(id: string): void {
     const session = live.get(id);
-    if (!session) return;
-    if (session.flushTimer) clearTimeout(session.flushTimer);
-    for (const resolve of session.pendingConfirms.values()) resolve(false);
+    if (!session) {
+      return;
+    }
+    if (session.flushTimer) {
+      clearTimeout(session.flushTimer);
+    }
+    for (const resolve of session.pendingConfirms.values()) {
+      resolve(false);
+    }
     session.pendingConfirms.clear();
     void session.pi.close().catch((error: unknown) => {
       console.error(
@@ -280,15 +315,21 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
 
   function emit(session: LiveSession, actions: ViewAction[]): void {
     const managed = findManaged(session);
-    if (managed) emitManaged(managed, actions);
+    if (managed) {
+      emitManaged(managed, actions);
+    }
   }
 
   function prompt(session: LiveSession, message: string): void {
     const managed = findManaged(session);
-    if (!managed) return;
+    if (!managed) {
+      return;
+    }
     emitManaged(managed, [{ type: "busy_changed", busy: true }]);
     void managed.pi.prompt(message).catch((error: unknown) => {
-      if (findManaged(managed) !== managed) return;
+      if (findManaged(managed) !== managed) {
+        return;
+      }
       emitManaged(managed, [
         {
           type: "notice",
@@ -301,7 +342,9 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
 
   function abort(session: LiveSession): void {
     const managed = findManaged(session);
-    if (!managed) return;
+    if (!managed) {
+      return;
+    }
     void managed.pi.abort().catch(() => {});
     emitManaged(managed, [{ type: "notice", text: "aborted" }]);
   }
@@ -312,14 +355,20 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     text: string,
   ): Promise<boolean> {
     const managed = findManaged(session);
-    if (!managed) return false;
+    if (!managed) {
+      return false;
+    }
 
     const wasBusy = managed.ledger.snapshot().busy;
     emitManaged(managed, [{ type: "busy_changed", busy: true }]);
     try {
-      for (const resolve of managed.pendingConfirms.values()) resolve(false);
+      for (const resolve of managed.pendingConfirms.values()) {
+        resolve(false);
+      }
       managed.pendingConfirms.clear();
-      if (wasBusy) await managed.pi.abort();
+      if (wasBusy) {
+        await managed.pi.abort();
+      }
 
       await reconcile(managed);
       const target = activeBranchEntries(managed.storedEntries, managed.leafId).find((raw) => {
@@ -330,11 +379,15 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
         };
         return entry.id === entryId && entry.type === "message" && entry.message?.role === "user";
       }) as { parentId?: unknown } | undefined;
-      if (!target) throw new Error("the user message is no longer on the active branch");
+      if (!target) {
+        throw new Error("the user message is no longer on the active branch");
+      }
       const expectedLeaf = typeof target.parentId === "string" ? target.parentId : null;
 
       const navigate = await managed.pi.prompt(`/cinba-edit-message ${entryId}`);
-      if (!navigate.success) throw new Error(String(navigate.error ?? "tree navigation failed"));
+      if (!navigate.success) {
+        throw new Error(String(navigate.error ?? "tree navigation failed"));
+      }
 
       await reconcile(managed);
       if (managed.leafId !== expectedLeaf) {
@@ -361,7 +414,9 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
   ): void {
     const managed = findManaged(session);
     const resolve = managed?.pendingConfirms.get(requestId);
-    if (!managed || !resolve) return;
+    if (!managed || !resolve) {
+      return;
+    }
     managed.pendingConfirms.delete(requestId);
 
     if (confirmed) {
@@ -385,14 +440,20 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
 
   function denyPendingConfirmations(session: LiveSession): void {
     const managed = findManaged(session);
-    if (!managed) return;
-    for (const resolve of managed.pendingConfirms.values()) resolve(false);
+    if (!managed) {
+      return;
+    }
+    for (const resolve of managed.pendingConfirms.values()) {
+      resolve(false);
+    }
     managed.pendingConfirms.clear();
   }
 
   async function listModels(session: LiveSession): Promise<ModelRef[]> {
     const managed = findManaged(session);
-    if (!managed) return [];
+    if (!managed) {
+      return [];
+    }
     const response = await managed.pi.getAvailableModels();
     const raw = (response.data as { models?: unknown } | undefined)?.models;
     return (Array.isArray(raw) ? raw : []).flatMap((item) => {
@@ -405,7 +466,9 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
 
   async function setModel(session: LiveSession, model: ModelRef): Promise<boolean> {
     const managed = findManaged(session);
-    if (!managed) return false;
+    if (!managed) {
+      return false;
+    }
     const response = await managed.pi.setModel(model.provider, model.id);
     if (!response.success) {
       emitManaged(managed, [
@@ -421,7 +484,9 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
 
   async function rename(session: LiveSession, name: string): Promise<boolean> {
     const managed = findManaged(session);
-    if (!managed) return false;
+    if (!managed) {
+      return false;
+    }
     const response = await managed.pi.setSessionName(name);
     if (!response.success) {
       emitManaged(managed, [{ type: "notice", text: `not renamed: ${String(response.error)}` }]);
@@ -441,7 +506,9 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     open,
     stop,
     closeAll: () => {
-      for (const id of live.keys()) stop(id);
+      for (const id of live.keys()) {
+        stop(id);
+      }
     },
     emit,
     snapshot,

@@ -3,13 +3,17 @@ import { hasRiskyOutputRedirection, parseShellInvocations } from "./shell.ts";
 import type { PermissionContext, PermissionRule } from "./types.ts";
 
 function shellCommand(context: PermissionContext): string | undefined {
-  if (context.toolName !== "bash" && context.toolName !== "powershell") return undefined;
+  if (context.toolName !== "bash" && context.toolName !== "powershell") {
+    return undefined;
+  }
   const input = context.input as { command?: unknown } | undefined;
   return typeof input?.command === "string" ? input.command : undefined;
 }
 
 function hasRecursiveFlag(name: string, args: readonly string[]): boolean {
-  if (name === "rm") return args.some((arg) => /^-[^-]*r/i.test(arg) || arg === "--recursive");
+  if (name === "rm") {
+    return args.some((arg) => /^-[^-]*r/i.test(arg) || arg === "--recursive");
+  }
   if (["remove-item", "ri", "del", "erase", "rd", "rmdir"].includes(name)) {
     if (args.some((arg) => ["-r", "-rec", "-recurse"].includes(arg.toLowerCase()))) {
       return true;
@@ -29,16 +33,22 @@ function deletionTargets(name: string, args: readonly string[]): string[] {
   if (["rm", "remove-item", "ri"].includes(name)) {
     return args.filter((arg) => !arg.startsWith("-") && arg !== "--");
   }
-  if (["rd", "rmdir", "del", "erase"].includes(name)) return literalTargets(args);
+  if (["rd", "rmdir", "del", "erase"].includes(name)) {
+    return literalTargets(args);
+  }
   return [];
 }
 
 const blockProtectedRootDeletion: PermissionRule = (context) => {
   const command = shellCommand(context);
-  if (!command) return undefined;
+  if (!command) {
+    return undefined;
+  }
 
   for (const invocation of parseShellInvocations(command)) {
-    if (!hasRecursiveFlag(invocation.name, invocation.args)) continue;
+    if (!hasRecursiveFlag(invocation.name, invocation.args)) {
+      continue;
+    }
     const target = deletionTargets(invocation.name, invocation.args).find((candidate) =>
       isProtectedRoot(candidate, context),
     );
@@ -54,14 +64,18 @@ const blockProtectedRootDeletion: PermissionRule = (context) => {
 
 const blockDiskDestruction: PermissionRule = (context) => {
   const command = shellCommand(context);
-  if (!command) return undefined;
+  if (!command) {
+    return undefined;
+  }
 
   const destructive = new Set(["format-volume", "clear-disk", "initialize-disk", "wipefs"]);
   for (const invocation of parseShellInvocations(command)) {
     const informationOnly = invocation.args.some((arg) =>
       ["--help", "-h", "/?", "--version", "-whatif"].includes(arg.toLowerCase()),
     );
-    if (informationOnly) continue;
+    if (informationOnly) {
+      continue;
+    }
     if (
       destructive.has(invocation.name) ||
       (context.platform === "win32" && invocation.name === "format") ||
@@ -79,7 +93,9 @@ const blockDiskDestruction: PermissionRule = (context) => {
 
 const blockProtectedRootPermissionChange: PermissionRule = (context) => {
   const command = shellCommand(context);
-  if (!command) return undefined;
+  if (!command) {
+    return undefined;
+  }
 
   for (const invocation of parseShellInvocations(command)) {
     const recursive = invocation.args.some((arg) =>
@@ -137,8 +153,12 @@ const askMalformedBuiltInInput: PermissionRule = (context) => {
 
 const askSensitivePath: PermissionRule = (context) => {
   const input = context.input as { path?: unknown } | undefined;
-  if (!["read", "edit", "write", "grep"].includes(context.toolName)) return undefined;
-  if (typeof input?.path !== "string" || !isSensitivePath(input.path, context)) return undefined;
+  if (!["read", "edit", "write", "grep"].includes(context.toolName)) {
+    return undefined;
+  }
+  if (typeof input?.path !== "string" || !isSensitivePath(input.path, context)) {
+    return undefined;
+  }
   return {
     ruleId: "path.sensitive",
     reason: `Access to sensitive path "${input.path}" requires confirmation`,
@@ -146,9 +166,13 @@ const askSensitivePath: PermissionRule = (context) => {
 };
 
 const askOutsideWorkspaceWrite: PermissionRule = (context) => {
-  if (context.toolName !== "edit" && context.toolName !== "write") return undefined;
+  if (context.toolName !== "edit" && context.toolName !== "write") {
+    return undefined;
+  }
   const path = (context.input as { path?: unknown } | undefined)?.path;
-  if (typeof path !== "string" || isInsideWorkspace(path, context)) return undefined;
+  if (typeof path !== "string" || isInsideWorkspace(path, context)) {
+    return undefined;
+  }
   return {
     ruleId: "path.write-outside-workspace",
     reason: `Writing outside the workspace to "${path}" requires confirmation`,
@@ -163,7 +187,9 @@ function isInformationOnly(args: readonly string[]): boolean {
 
 const askShellRisk: PermissionRule = (context) => {
   const command = shellCommand(context);
-  if (!command) return undefined;
+  if (!command) {
+    return undefined;
+  }
 
   if (hasRiskyOutputRedirection(command)) {
     return {
@@ -201,7 +227,9 @@ const askShellRisk: PermissionRule = (context) => {
   ]);
 
   for (const invocation of parseShellInvocations(command)) {
-    if (isInformationOnly(invocation.args)) continue;
+    if (isInformationOnly(invocation.args)) {
+      continue;
+    }
     if (invocation.wrappers.includes("sudo")) {
       return { ruleId: "shell.elevation", reason: "Privilege elevation requires confirmation" };
     }
@@ -256,7 +284,9 @@ const askShellRisk: PermissionRule = (context) => {
 };
 
 const askUnknownTool: PermissionRule = (context) => {
-  if (BUILT_IN_TOOLS.has(context.toolName)) return undefined;
+  if (BUILT_IN_TOOLS.has(context.toolName)) {
+    return undefined;
+  }
   return {
     ruleId: "tool.unknown",
     reason: `Unknown tool "${context.toolName}" requires confirmation`,

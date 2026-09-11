@@ -18,7 +18,9 @@ export default function (pi: ExtensionAPI) {
       platform: process.platform,
       systemRoot: process.env.SystemRoot,
     });
-    if (decision.effect === "allow") return;
+    if (decision.effect === "allow") {
+      return;
+    }
     if (decision.effect === "block") {
       return { block: true, reason: decision.reason };
     }

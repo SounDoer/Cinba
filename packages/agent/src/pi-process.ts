@@ -1,7 +1,6 @@
 // Builds and starts the Pi RPC child process used by one live conversation.
 
-import { spawn } from "node:child_process";
-import type { ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export type CoreOptions = {
@@ -28,8 +27,12 @@ export function buildSpawnPlan(
 ): SpawnPlan {
   const args: string[] = [entry, "--provider", options.provider ?? DEFAULT_PROVIDER];
 
-  if (options.model) args.push("--model", options.model);
-  if (options.sessionPath) args.push("--session", options.sessionPath);
+  if (options.model) {
+    args.push("--model", options.model);
+  }
+  if (options.sessionPath) {
+    args.push("--session", options.sessionPath);
+  }
 
   // The permission gate is intrinsic, not an option callers can forget.
   for (const extension of [gate, ...(options.extensions ?? [])]) {

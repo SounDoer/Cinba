@@ -32,11 +32,15 @@ export function createConfigStore(path: string, defaults: ConfigDefaults): Confi
 
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-    if (typeof parsed.cwd === "string" && existsSync(parsed.cwd)) state.cwd = parsed.cwd;
+    if (typeof parsed.cwd === "string" && existsSync(parsed.cwd)) {
+      state.cwd = parsed.cwd;
+    }
     if (typeof parsed.provider === "string" && typeof parsed.modelId === "string") {
       state.model = { provider: parsed.provider, id: parsed.modelId };
     }
-    if (typeof parsed.lastSessionId === "string") state.lastSessionId = parsed.lastSessionId;
+    if (typeof parsed.lastSessionId === "string") {
+      state.lastSessionId = parsed.lastSessionId;
+    }
     if (typeof parsed.coreName === "string" && parsed.coreName.trim() !== "") {
       state.coreName = parsed.coreName.trim();
     }
@@ -49,14 +53,18 @@ export function createConfigStore(path: string, defaults: ConfigDefaults): Confi
   }
 
   function update(changes: Partial<CinbaConfig>): void {
-    if (changes.cwd !== undefined) state.cwd = changes.cwd;
+    if (changes.cwd !== undefined) {
+      state.cwd = changes.cwd;
+    }
     if (Object.hasOwn(changes, "model")) {
       state.model = changes.model ? { ...changes.model } : undefined;
     }
     if (Object.hasOwn(changes, "lastSessionId")) {
       state.lastSessionId = changes.lastSessionId;
     }
-    if (changes.coreName !== undefined) state.coreName = changes.coreName;
+    if (changes.coreName !== undefined) {
+      state.coreName = changes.coreName;
+    }
 
     try {
       mkdirSync(dirname(path), { recursive: true });

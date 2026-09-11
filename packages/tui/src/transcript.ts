@@ -1,7 +1,6 @@
 // The terminal transcript and its width-aware rendering.
 
-import { Markdown, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { Component } from "@earendil-works/pi-tui";
+import { type Component, Markdown, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { MARKDOWN_THEME } from "./theme.ts";
 
 type Block = { kind: "lines"; lines: string[] } | { kind: "markdown"; source: Markdown };
@@ -25,7 +24,9 @@ export class Transcript implements Component {
 
   #tail(): string[] {
     const last = this.#blocks.at(-1);
-    if (last?.kind === "lines") return last.lines;
+    if (last?.kind === "lines") {
+      return last.lines;
+    }
     const lines: string[] = [];
     this.#blocks.push({ kind: "lines", lines });
     this.#trim();
@@ -33,7 +34,9 @@ export class Transcript implements Component {
   }
 
   #trim(): void {
-    if (this.#blocks.length > this.#max) this.#blocks = this.#blocks.slice(-this.#max);
+    if (this.#blocks.length > this.#max) {
+      this.#blocks = this.#blocks.slice(-this.#max);
+    }
   }
 
   append(line: string): void {
@@ -43,7 +46,9 @@ export class Transcript implements Component {
   /** Append to the end of the last line. This is how streaming text grows character by character. */
   appendInline(text: string): void {
     const lines = this.#tail();
-    if (lines.length === 0) lines.push("");
+    if (lines.length === 0) {
+      lines.push("");
+    }
     lines[lines.length - 1] += text;
   }
 

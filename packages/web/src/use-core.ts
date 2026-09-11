@@ -4,10 +4,15 @@
 // ledger and translates between those two shapes so the page does not have to.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CoreClient } from "@cinba/core-client";
-import type { CoreConnectionState } from "@cinba/core-client";
-import { createSession } from "@cinba/contract";
-import type { ModelRef, ProviderStatus, Session, SessionSummary, Snapshot } from "@cinba/contract";
+import { CoreClient, type CoreConnectionState } from "@cinba/core-client";
+import {
+  type ModelRef,
+  type ProviderStatus,
+  type Session,
+  type SessionSummary,
+  type Snapshot,
+  createSession,
+} from "@cinba/contract";
 
 export type DirectoryListing = {
   path: string;
@@ -37,7 +42,9 @@ export function useCore(serverUrl: string) {
 
     const client = new CoreClient(serverUrl, {
       onConnectionChanged: (state) => {
-        if (active) setConnectionState(state);
+        if (active) {
+          setConnectionState(state);
+        }
       },
       onSnapshot: (state) => {
         mirrorRef.current = createSession(state.snapshot);
@@ -47,7 +54,9 @@ export function useCore(serverUrl: string) {
         setSessionId(state.sessionId);
       },
       onActions: (actions) => {
-        for (const action of actions) mirrorRef.current.apply(action);
+        for (const action of actions) {
+          mirrorRef.current.apply(action);
+        }
         setSnapshot(mirrorRef.current.snapshot());
       },
       onDirListing: setListing,

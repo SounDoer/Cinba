@@ -62,7 +62,9 @@ export class PiClient {
     this.#eventListeners.push(listener);
     return () => {
       const index = this.#eventListeners.indexOf(listener);
-      if (index >= 0) this.#eventListeners.splice(index, 1);
+      if (index >= 0) {
+        this.#eventListeners.splice(index, 1);
+      }
     };
   }
 
@@ -138,8 +140,11 @@ export class PiClient {
   }
 
   #send(command: Record<string, unknown>): Promise<CoreResponse> {
-    if (this.#closedError) return Promise.reject(this.#closedError);
-    const id = String(++this.#nextId);
+    if (this.#closedError) {
+      return Promise.reject(this.#closedError);
+    }
+    this.#nextId += 1;
+    const id = String(this.#nextId);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.#pending.delete(id);
@@ -164,9 +169,13 @@ export class PiClient {
     } catch {
       return; // Not a JSON line, ignore it
     }
-    if (typeof raw !== "object" || raw === null) return;
+    if (typeof raw !== "object" || raw === null) {
+      return;
+    }
     const data = raw as Record<string, unknown>;
-    if (typeof data.type !== "string") return;
+    if (typeof data.type !== "string") {
+      return;
+    }
 
     // Command reply: find the waiting promise by id
     if (data.type === "response") {
@@ -189,13 +198,17 @@ export class PiClient {
 
     // An extension UI request
     if (data.type === "extension_ui_request") {
-      if (typeof data.id !== "string" || typeof data.method !== "string") return;
+      if (typeof data.id !== "string" || typeof data.method !== "string") {
+        return;
+      }
       void this.#handleUiRequest(data as UiRequest);
       return;
     }
 
     // Everything else is an event
-    for (const listener of this.#eventListeners) listener(data as CoreEvent);
+    for (const listener of this.#eventListeners) {
+      listener(data as CoreEvent);
+    }
   }
 
   async #handleUiRequest(request: UiRequest): Promise<void> {
@@ -226,7 +239,9 @@ export class PiClient {
     } catch {
       reply = { cancelled: true };
     }
-    if (!needsReply) return;
+    if (!needsReply) {
+      return;
+    }
 
     try {
       this.#transport.send(
@@ -242,7 +257,9 @@ export class PiClient {
   }
 
   #failPending(error: Error): void {
-    if (this.#closedError) return;
+    if (this.#closedError) {
+      return;
+    }
     this.#closedError = error;
     for (const pending of this.#pending.values()) {
       clearTimeout(pending.timer);

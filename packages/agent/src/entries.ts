@@ -54,13 +54,19 @@ type StoredEntry = {
  * incorrectly draw every abandoned answer after an in-place edit.
  */
 export function activeBranchEntries(entries: readonly unknown[], leafId: string | null): unknown[] {
-  if (leafId === null) return [];
+  if (leafId === null) {
+    return [];
+  }
 
   const byId = new Map<string, StoredEntry>();
   for (const raw of entries) {
-    if (typeof raw !== "object" || raw === null) continue;
+    if (typeof raw !== "object" || raw === null) {
+      continue;
+    }
     const entry = raw as StoredEntry;
-    if (typeof entry.id === "string") byId.set(entry.id, entry);
+    if (typeof entry.id === "string") {
+      byId.set(entry.id, entry);
+    }
   }
 
   const branch: StoredEntry[] = [];
@@ -69,7 +75,9 @@ export function activeBranchEntries(entries: readonly unknown[], leafId: string 
   while (current !== null && !seen.has(current)) {
     seen.add(current);
     const entry = byId.get(current);
-    if (!entry) break;
+    if (!entry) {
+      break;
+    }
     branch.push(entry);
     current = typeof entry.parentId === "string" ? entry.parentId : null;
   }
@@ -92,7 +100,9 @@ export function foldSessionEntries(entries: readonly unknown[]): ViewAction[] {
   let totalCost = 0;
 
   for (const raw of entries) {
-    if (typeof raw !== "object" || raw === null) continue;
+    if (typeof raw !== "object" || raw === null) {
+      continue;
+    }
     const entry = raw as StoredEntry;
 
     if (entry.type === "model_change") {
@@ -109,15 +119,21 @@ export function foldSessionEntries(entries: readonly unknown[]): ViewAction[] {
     // thinking_level_change, custom, label and the rest have nothing to draw in
     // this phase. Skipping the unknown rather than failing on it keeps old
     // sessions and future Pi versions readable.
-    if (entry.type !== "message") continue;
+    if (entry.type !== "message") {
+      continue;
+    }
 
     const message = entry.message;
-    if (!message) continue;
+    if (!message) {
+      continue;
+    }
 
     // A tool result belongs on its tool card, not in the transcript. It also
     // carries the outcome: a permission refusal arrives here as isError.
     if (message.role === "toolResult") {
-      if (typeof message.toolCallId !== "string") continue;
+      if (typeof message.toolCallId !== "string") {
+        continue;
+      }
       actions.push({
         type: "tool_changed",
         toolCallId: message.toolCallId,
@@ -128,8 +144,12 @@ export function foldSessionEntries(entries: readonly unknown[]): ViewAction[] {
       continue;
     }
 
-    if (message.role !== "user" && message.role !== "assistant") continue;
-    if (typeof entry.id !== "string" || entry.id === "") continue;
+    if (message.role !== "user" && message.role !== "assistant") {
+      continue;
+    }
+    if (typeof entry.id !== "string" || entry.id === "") {
+      continue;
+    }
 
     // Pi's own entry id, rather than a counter of our own: it is stable across
     // rebuilds, which is what the reconciliation pass in the server needs.
@@ -181,8 +201,12 @@ export function foldSessionEntries(entries: readonly unknown[]): ViewAction[] {
 
     const usage = message.usage;
     if (usage) {
-      if (typeof usage.totalTokens === "number") totalTokens += usage.totalTokens;
-      if (typeof usage.cost?.total === "number") totalCost += usage.cost.total;
+      if (typeof usage.totalTokens === "number") {
+        totalTokens += usage.totalTokens;
+      }
+      if (typeof usage.cost?.total === "number") {
+        totalCost += usage.cost.total;
+      }
       actions.push({ type: "usage_changed", totalTokens, totalCost });
     }
   }

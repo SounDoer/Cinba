@@ -58,7 +58,9 @@ test("server messages are validated before reaching a client", () => {
     { type: "core_identity", name: "home" },
   ];
 
-  for (const message of messages) assert.equal(parseServerMessage(message), message);
+  for (const message of messages) {
+    assert.equal(parseServerMessage(message), message);
+  }
 });
 
 test("malformed server messages are dropped", () => {

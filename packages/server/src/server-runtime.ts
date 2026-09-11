@@ -1,10 +1,8 @@
 // Owns the network and timer resources of one running Cinba service.
 // Creating it is inert; start() acquires resources and stop() releases them.
 
-import { createServer } from "node:http";
-import type { IncomingMessage, ServerResponse } from "node:http";
-import { WebSocketServer } from "ws";
-import type { WebSocket } from "ws";
+import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
+import { type WebSocket, WebSocketServer } from "ws";
 
 export type ServerAddress = {
   host: string;
@@ -42,8 +40,12 @@ export function createServerRuntime(options: ServerRuntimeOptions): ServerRuntim
   let maintenanceTimer: NodeJS.Timeout | undefined;
 
   async function start(): Promise<ServerAddress> {
-    if (state === "running") return address!;
-    if (state === "stopped") throw new Error("A stopped server runtime cannot be restarted");
+    if (state === "running") {
+      return address!;
+    }
+    if (state === "stopped") {
+      throw new Error("A stopped server runtime cannot be restarted");
+    }
 
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error) => reject(error);
@@ -84,7 +86,9 @@ export function createServerRuntime(options: ServerRuntimeOptions): ServerRuntim
 
     // A server cannot finish closing while clients remain connected. Terminate
     // them here because the runtime owns the listener they are connected to.
-    for (const client of webSocketServer.clients) client.terminate();
+    for (const client of webSocketServer.clients) {
+      client.terminate();
+    }
 
     await new Promise<void>((resolve, reject) => {
       webSocketServer.close((error) => (error ? reject(error) : resolve()));

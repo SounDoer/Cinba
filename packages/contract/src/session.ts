@@ -85,7 +85,9 @@ export function createSession(initial?: Snapshot): Session {
   function findMessage(messageId: string): MessageEntry | undefined {
     for (let i = entries.length - 1; i >= 0; i--) {
       const entry = entries[i]!;
-      if (entry.kind === "message" && entry.messageId === messageId) return entry;
+      if (entry.kind === "message" && entry.messageId === messageId) {
+        return entry;
+      }
     }
     return undefined;
   }
@@ -93,7 +95,9 @@ export function createSession(initial?: Snapshot): Session {
   function findTool(toolCallId: string): ToolEntry | undefined {
     for (let i = entries.length - 1; i >= 0; i--) {
       const entry = entries[i]!;
-      if (entry.kind === "tool" && entry.toolCallId === toolCallId) return entry;
+      if (entry.kind === "tool" && entry.toolCallId === toolCallId) {
+        return entry;
+      }
     }
     return undefined;
   }
@@ -114,13 +118,17 @@ export function createSession(initial?: Snapshot): Session {
 
         case "text_appended": {
           const message = findMessage(action.messageId);
-          if (message) message.text += action.text;
+          if (message) {
+            message.text += action.text;
+          }
           return;
         }
 
         case "thinking_appended": {
           const message = findMessage(action.messageId);
-          if (message) message.thinking += action.text;
+          if (message) {
+            message.thinking += action.text;
+          }
           return;
         }
 
@@ -128,8 +136,12 @@ export function createSession(initial?: Snapshot): Session {
           const existing = findTool(action.toolCallId);
           if (existing) {
             existing.status = action.status;
-            if (action.args !== undefined) existing.args = action.args;
-            if (action.result !== undefined) existing.result = action.result;
+            if (action.args !== undefined) {
+              existing.args = action.args;
+            }
+            if (action.result !== undefined) {
+              existing.result = action.result;
+            }
             // Leaving pending means the confirmation resolved; clear the marker.
             if (action.status !== "pending") {
               existing.confirmRequestId = undefined;
@@ -230,7 +242,9 @@ export function sameTranscript(a: readonly Entry[], b: readonly Entry[]): boolea
 }
 
 function sameMeaningfulEntry(left: Entry, right: Entry): boolean {
-  if (left.kind !== right.kind) return false;
+  if (left.kind !== right.kind) {
+    return false;
+  }
   switch (left.kind) {
     case "message":
       return (

@@ -21,7 +21,9 @@ test("configuring stores the key and announces that credentials changed", async 
 test("a failed configuration reports the reason without announcing a change", async () => {
   let changes = 0;
   const service = createCredentialService({
-    onChanged: () => changes++,
+    onChanged: () => {
+      changes += 1;
+    },
     setApiKey: async () => {
       throw new Error("login failed");
     },

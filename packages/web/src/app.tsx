@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { nameColourIndex } from "@cinba/contract";
-import { Transcript } from "./Transcript.tsx";
-import { PromptComposer } from "./PromptComposer.tsx";
-import { ProjectPicker } from "./ProjectPicker.tsx";
-import { ModelPicker } from "./ModelPicker.tsx";
-import { SessionPicker } from "./SessionPicker.tsx";
-import { ProviderSettings } from "./ProviderSettings.tsx";
+import { Transcript } from "./transcript.tsx";
+import { PromptComposer } from "./prompt-composer.tsx";
+import { ProjectPicker } from "./project-picker.tsx";
+import { ModelPicker } from "./model-picker.tsx";
+import { SessionPicker } from "./session-picker.tsx";
+import { ProviderSettings } from "./provider-settings.tsx";
 import { useCore } from "./use-core.ts";
 
 /** One web colour for each stable slot supplied by the shared naming rules. */
@@ -19,7 +19,7 @@ type EditTarget = { sessionId: string; userMessageIndex: number; text: string };
 export function App({ serverUrl }: { serverUrl: string }) {
   const core = useCore(serverUrl);
   const [activeOverlay, setActiveOverlay] = useState<ActiveOverlay>(null);
-  const [storedEditTarget, setEditTarget] = useState<EditTarget | undefined>(undefined);
+  const [storedEditTarget, setStoredEditTarget] = useState<EditTarget | undefined>(undefined);
   const bottomRef = useRef<HTMLDivElement>(null);
   const editTarget = storedEditTarget?.sessionId === core.sessionId ? storedEditTarget : undefined;
   const editingMessage = editTarget
@@ -31,6 +31,12 @@ export function App({ serverUrl }: { serverUrl: string }) {
     editingMessage?.kind === "message" && editingMessage.stableId
       ? editingMessage.messageId
       : undefined;
+  let connectionLabel = "Disconnected";
+  if (core.connected) {
+    connectionLabel = core.coreName || "...";
+  } else if (core.connectionState === "connecting") {
+    connectionLabel = "Connecting...";
+  }
 
   // The snapshot is an intentional trigger: streaming output should keep the newest text visible.
   useEffect(() => {
@@ -45,15 +51,13 @@ export function App({ serverUrl }: { serverUrl: string }) {
             className="core-dot"
             style={{ background: CORE_COLOURS[nameColourIndex(core.coreName)] }}
           />
-          {core.connected
-            ? core.coreName || "..."
-            : core.connectionState === "connecting"
-              ? "Connecting..."
-              : "Disconnected"}
+          {connectionLabel}
         </span>
         <button
           onClick={() => {
-            if (core.listSessions()) setActiveOverlay("session");
+            if (core.listSessions()) {
+              setActiveOverlay("session");
+            }
           }}
           disabled={!core.connected}
         >
@@ -61,7 +65,9 @@ export function App({ serverUrl }: { serverUrl: string }) {
         </button>
         <button
           onClick={() => {
-            if (core.listModels()) setActiveOverlay("model");
+            if (core.listModels()) {
+              setActiveOverlay("model");
+            }
           }}
           disabled={!core.connected || core.snapshot.busy}
         >
@@ -69,7 +75,9 @@ export function App({ serverUrl }: { serverUrl: string }) {
         </button>
         <button
           onClick={() => {
-            if (core.listProviders()) setActiveOverlay("provider");
+            if (core.listProviders()) {
+              setActiveOverlay("provider");
+            }
           }}
           disabled={!core.connected}
         >
@@ -85,8 +93,10 @@ export function App({ serverUrl }: { serverUrl: string }) {
           entries={core.snapshot.entries}
           onRespond={core.respondConfirm}
           onEdit={(userMessageIndex, text) => {
-            setEditTarget({ sessionId: core.sessionId, userMessageIndex, text });
-            if (core.snapshot.busy) core.abort();
+            setStoredEditTarget({ sessionId: core.sessionId, userMessageIndex, text });
+            if (core.snapshot.busy) {
+              core.abort();
+            }
           }}
         />
         <div ref={bottomRef} />
@@ -104,13 +114,15 @@ export function App({ serverUrl }: { serverUrl: string }) {
           const sent = editTarget
             ? editingEntryId !== undefined && core.editMessage(editingEntryId, text)
             : core.prompt(text);
-          if (sent) setEditTarget(undefined);
+          if (sent) {
+            setStoredEditTarget(undefined);
+          }
           return sent;
         }}
         onAbort={core.abort}
         editDraft={editTarget}
         editReady={editTarget === undefined || editingEntryId !== undefined}
-        onCancelEdit={() => setEditTarget(undefined)}
+        onCancelEdit={() => setStoredEditTarget(undefined)}
       />
 
       {activeOverlay === "provider" ? (

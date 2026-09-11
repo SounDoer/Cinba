@@ -1,5 +1,10 @@
-import { matchesKey, SelectList, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { Component, Focusable } from "@earendil-works/pi-tui";
+import {
+  type Component,
+  type Focusable,
+  SelectList,
+  matchesKey,
+  wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 import type { ProviderStatus } from "@cinba/contract";
 import { BOLD, DIM, GREEN, MAGENTA, RESET, SELECT_THEME, YELLOW } from "./theme.ts";
 
@@ -19,6 +24,14 @@ export type ProviderFlowHost = {
   showNotice(text: string): void;
 };
 
+function providerLabel(provider: ProviderStatus, markConfigured: boolean): string {
+  if (!markConfigured) {
+    return provider.name;
+  }
+  const marker = provider.configured ? "* " : "  ";
+  return `${marker}${provider.name}`;
+}
+
 /** A provider chooser, including the filtering used for a long provider catalogue. */
 class ProviderPicker implements Component {
   #list: SelectList;
@@ -31,7 +44,7 @@ class ProviderPicker implements Component {
     this.#list = new SelectList(
       providers.map((provider) => ({
         value: provider.id,
-        label: `${markConfigured ? (provider.configured ? "* " : "  ") : ""}${provider.name}`,
+        label: providerLabel(provider, markConfigured),
         description: provider.id,
       })),
       10,
@@ -135,7 +148,9 @@ export class ProviderFlow {
   onListing(providers: ProviderStatus[]): void {
     const intent = this.#intent;
     this.#intent = undefined;
-    if (!intent) return;
+    if (!intent) {
+      return;
+    }
 
     if (intent === "list") {
       this.#host.append("");
@@ -165,7 +180,9 @@ export class ProviderFlow {
     );
     picker.onAnswer = (providerId) => {
       this.#host.showPrompt();
-      if (!providerId) return;
+      if (!providerId) {
+        return;
+      }
       if (intent === "logout") {
         this.#client.clearCredential(providerId);
         return;
@@ -177,14 +194,18 @@ export class ProviderFlow {
 
   #request(intent: ProviderIntent): void {
     this.#intent = intent;
-    if (!this.#client.listProviders()) this.#intent = undefined;
+    if (!this.#client.listProviders()) {
+      this.#intent = undefined;
+    }
   }
 
   #askForApiKey(providerId: string): void {
     const input = new ApiKeyInput(providerId);
     input.onAnswer = (apiKey) => {
       this.#host.showPrompt();
-      if (apiKey) this.#client.setApiKey(providerId, apiKey);
+      if (apiKey) {
+        this.#client.setApiKey(providerId, apiKey);
+      }
     };
     this.#host.showInteraction(input);
   }

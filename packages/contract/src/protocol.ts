@@ -92,12 +92,16 @@ export type ServerMessage =
  * time 3b opens a real door outward, this check is already in place.
  */
 export function parseClientMessage(raw: unknown): ClientMessage | undefined {
-  if (typeof raw !== "object" || raw === null) return undefined;
+  if (typeof raw !== "object" || raw === null) {
+    return undefined;
+  }
   const message = raw as Record<string, unknown>;
 
   switch (message.type) {
     case "prompt":
-      if (typeof message.text !== "string" || message.text.trim() === "") return undefined;
+      if (typeof message.text !== "string" || message.text.trim() === "") {
+        return undefined;
+      }
       return { type: "prompt", text: message.text };
 
     case "edit_message":
@@ -129,7 +133,9 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
       };
 
     case "list_dir":
-      if (typeof message.path !== "string" || message.path === "") return undefined;
+      if (typeof message.path !== "string" || message.path === "") {
+        return undefined;
+      }
       return { type: "list_dir", path: message.path };
 
     case "list_models":
@@ -147,20 +153,30 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
       return { type: "set_model", provider: message.provider, modelId: message.modelId };
 
     case "list_sessions":
-      if (message.cwd === undefined) return { type: "list_sessions" };
-      if (typeof message.cwd !== "string" || message.cwd === "") return undefined;
+      if (message.cwd === undefined) {
+        return { type: "list_sessions" };
+      }
+      if (typeof message.cwd !== "string" || message.cwd === "") {
+        return undefined;
+      }
       return { type: "list_sessions", cwd: message.cwd };
 
     case "open_session":
-      if (typeof message.sessionId !== "string" || message.sessionId === "") return undefined;
+      if (typeof message.sessionId !== "string" || message.sessionId === "") {
+        return undefined;
+      }
       return { type: "open_session", sessionId: message.sessionId };
 
     case "create_session":
-      if (typeof message.cwd !== "string" || message.cwd === "") return undefined;
+      if (typeof message.cwd !== "string" || message.cwd === "") {
+        return undefined;
+      }
       return { type: "create_session", cwd: message.cwd };
 
     case "delete_session":
-      if (typeof message.sessionId !== "string" || message.sessionId === "") return undefined;
+      if (typeof message.sessionId !== "string" || message.sessionId === "") {
+        return undefined;
+      }
       return { type: "delete_session", sessionId: message.sessionId };
 
     case "list_providers":
@@ -182,11 +198,15 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
       };
 
     case "clear_credential":
-      if (typeof message.providerId !== "string" || message.providerId === "") return undefined;
+      if (typeof message.providerId !== "string" || message.providerId === "") {
+        return undefined;
+      }
       return { type: "clear_credential", providerId: message.providerId };
 
     case "rename_session":
-      if (typeof message.name !== "string" || message.name.trim() === "") return undefined;
+      if (typeof message.name !== "string" || message.name.trim() === "") {
+        return undefined;
+      }
       return { type: "rename_session", name: message.name.trim() };
 
     default:
@@ -207,7 +227,9 @@ function isToolStatus(value: unknown): boolean {
 }
 
 function isViewAction(value: unknown): value is ViewAction {
-  if (!isRecord(value)) return false;
+  if (!isRecord(value)) {
+    return false;
+  }
   switch (value.type) {
     case "message_added":
       return (
@@ -245,7 +267,9 @@ function isViewAction(value: unknown): value is ViewAction {
 }
 
 function isEntry(value: unknown): boolean {
-  if (!isRecord(value)) return false;
+  if (!isRecord(value)) {
+    return false;
+  }
   switch (value.kind) {
     case "message":
       return (
@@ -308,7 +332,9 @@ function isProviderStatus(value: unknown): value is ProviderStatus {
 
 /** Validate a message received by a client before dispatching it to UI code. */
 export function parseServerMessage(raw: unknown): ServerMessage | undefined {
-  if (!isRecord(raw)) return undefined;
+  if (!isRecord(raw)) {
+    return undefined;
+  }
 
   switch (raw.type) {
     case "snapshot":

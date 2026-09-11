@@ -21,7 +21,9 @@ export function createLineSplitter(onLine: (line: string) => void): (chunk: stri
     while ((index = buffer.indexOf("\n")) >= 0) {
       const line = buffer.slice(0, index);
       buffer = buffer.slice(index + 1);
-      if (line.trim() !== "") onLine(line);
+      if (line.trim() !== "") {
+        onLine(line);
+      }
     }
   };
 }

@@ -6,11 +6,15 @@ export function evaluatePermission(context: PermissionContext): PermissionDecisi
   try {
     for (const rule of BLOCK_RULES) {
       const match = rule(context);
-      if (match) return { effect: "block", ...match };
+      if (match) {
+        return { effect: "block", ...match };
+      }
     }
     for (const rule of ASK_RULES) {
       const match = rule(context);
-      if (match) return { effect: "ask", ...match };
+      if (match) {
+        return { effect: "ask", ...match };
+      }
     }
   } catch {
     return {

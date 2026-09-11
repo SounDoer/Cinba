@@ -3,8 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PiClient } from "@cinba/agent";
-import type { Transport } from "@cinba/agent";
+import { PiClient, type Transport } from "@cinba/agent";
 import { createSessionRegistry } from "./session-registry.ts";
 
 class FakeTransport implements Transport {
@@ -32,14 +31,14 @@ class FakeTransport implements Transport {
       ? this.entries.findIndex((entry) => entry.id === command.since)
       : -1;
     const entries = sinceIndex >= 0 ? this.entries.slice(sinceIndex + 1) : this.entries;
-    const data =
-      command.type === "get_state"
-        ? { sessionId: "session-1", model: { provider: "test", id: "model-1" } }
-        : command.type === "get_entries"
-          ? { entries, leafId: this.leafId }
-          : command.type === "get_available_models"
-            ? { models: [{ provider: "test", id: "model-2" }] }
-            : undefined;
+    let data: unknown;
+    if (command.type === "get_state") {
+      data = { sessionId: "session-1", model: { provider: "test", id: "model-1" } };
+    } else if (command.type === "get_entries") {
+      data = { entries, leafId: this.leafId };
+    } else if (command.type === "get_available_models") {
+      data = { models: [{ provider: "test", id: "model-2" }] };
+    }
     queueMicrotask(() => {
       this.#onLine(
         JSON.stringify({

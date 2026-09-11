@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import type { DirectoryListing } from "./use-core.ts";
-import { PickerShell } from "./PickerShell.tsx";
+import { PickerShell } from "./picker-shell.tsx";
 
 /** Build a subdirectory path, following whichever separator the server returned so the two slashes never mix. */
 function childPath(current: string, name: string): string {
@@ -68,7 +68,9 @@ export function ProjectPicker({
         <button onClick={onClose}>Cancel</button>
         <button
           onClick={() => {
-            if (onCreateConversation(current)) onClose();
+            if (onCreateConversation(current)) {
+              onClose();
+            }
           }}
         >
           Start a conversation here

@@ -5,7 +5,7 @@
 // server over the same WebSocket, so nothing here needs a preload script, IPC,
 // or any knowledge of the protocol.
 
-import { app, BrowserWindow } from "electron";
+import { BrowserWindow, app } from "electron";
 
 const UI_URL = "http://127.0.0.1:4517/";
 

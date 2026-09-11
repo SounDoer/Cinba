@@ -70,7 +70,9 @@ export function isCommand(input: string): boolean {
  * right thing for the one case where the user has expressed no intent yet.
  */
 export function matchCommands(input: string): Command[] {
-  if (!isCommand(input)) return [];
+  if (!isCommand(input)) {
+    return [];
+  }
   // Only the first word names the command; the rest is its argument, so
   // "/name parser work" keeps matching "name" as it is typed.
   const typed = commandWord(input);

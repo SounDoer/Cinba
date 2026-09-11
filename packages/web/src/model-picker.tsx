@@ -5,7 +5,7 @@
 // would both go stale and offer entries that fail the moment they are picked.
 
 import type { ModelRef } from "@cinba/contract";
-import { PickerShell } from "./PickerShell.tsx";
+import { PickerShell } from "./picker-shell.tsx";
 
 export function ModelPicker({
   models,
@@ -34,7 +34,9 @@ export function ModelPicker({
               className="picker-item"
               key={`${model.provider}/${model.id}`}
               onClick={() => {
-                if (active || onSelect(model)) onClose();
+                if (active || onSelect(model)) {
+                  onClose();
+                }
               }}
             >
               {active ? "● " : "  "}

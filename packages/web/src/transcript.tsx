@@ -120,7 +120,9 @@ export function Transcript({
           // An assistant turn that goes straight to a tool has no text at all;
           // drawing an empty bubble in front of the tool card says nothing. The
           // same holds for the instant before the first token arrives.
-          if (entry.text === "" && entry.thinking === "") return null;
+          if (entry.text === "" && entry.thinking === "") {
+            return null;
+          }
           return (
             <Message
               key={entry.messageId}

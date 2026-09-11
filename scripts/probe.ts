@@ -30,7 +30,9 @@ pi.stdout.on("data", (chunk: Buffer) => {
   while ((index = buffer.indexOf("\n")) >= 0) {
     const line = buffer.slice(0, index);
     buffer = buffer.slice(index + 1);
-    if (line.trim() !== "") printEvent(line);
+    if (line.trim() !== "") {
+      printEvent(line);
+    }
   }
 });
 

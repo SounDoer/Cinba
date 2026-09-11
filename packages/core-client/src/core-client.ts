@@ -4,15 +4,15 @@
 // JSONL protocol, while this speaks the protocol between this project's server
 // and its clients.
 
-import type {
-  ClientMessage,
-  ModelRef,
-  ProviderStatus,
-  SessionSummary,
-  Snapshot,
-  ViewAction,
+import {
+  type ClientMessage,
+  type ModelRef,
+  type ProviderStatus,
+  type SessionSummary,
+  type Snapshot,
+  type ViewAction,
+  parseServerMessage,
 } from "@cinba/contract";
-import { parseServerMessage } from "@cinba/contract";
 
 /**
  * The lifecycle and text-message capabilities CoreClient needs from a connection.
@@ -69,7 +69,9 @@ type WebSocketConstructor = new (url: string) => Socket;
 
 function createDefaultSocket(url: string): Socket {
   const constructor = (globalThis as unknown as { WebSocket?: WebSocketConstructor }).WebSocket;
-  if (!constructor) throw new Error("This platform does not provide WebSocket");
+  if (!constructor) {
+    throw new Error("This platform does not provide WebSocket");
+  }
   return new constructor(url);
 }
 
@@ -160,14 +162,18 @@ export class CoreClient {
   }
 
   close(): void {
-    if (this.#connectionState === "disconnected") return;
+    if (this.#connectionState === "disconnected") {
+      return;
+    }
     this.#transition("disconnected");
     this.#detach();
     this.#socket.close();
   }
 
   #send(message: ClientMessage): boolean {
-    if (this.#connectionState !== "connected") return false;
+    if (this.#connectionState !== "connected") {
+      return false;
+    }
     try {
       this.#socket.send(JSON.stringify(message));
       return true;
@@ -178,8 +184,12 @@ export class CoreClient {
   }
 
   #receive(data: unknown): void {
-    if (this.#connectionState !== "connected") return;
-    if (typeof data !== "string") return;
+    if (this.#connectionState !== "connected") {
+      return;
+    }
+    if (typeof data !== "string") {
+      return;
+    }
 
     let parsed: unknown;
     try {
@@ -188,7 +198,9 @@ export class CoreClient {
       return; // Not JSON, ignore it
     }
     const message = parseServerMessage(parsed);
-    if (!message) return;
+    if (!message) {
+      return;
+    }
 
     switch (message.type) {
       case "snapshot":
@@ -233,7 +245,9 @@ export class CoreClient {
   }
 
   #transition(state: CoreConnectionState): void {
-    if (this.#connectionState === state) return;
+    if (this.#connectionState === state) {
+      return;
+    }
     this.#connectionState = state;
     this.#handlers.onConnectionChanged?.(state);
   }

@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Component } from "@earendil-works/pi-tui";
-import { ProviderFlow } from "./provider-flow.ts";
-import type { ProviderClient, ProviderFlowHost } from "./provider-flow.ts";
+import { type ProviderClient, ProviderFlow, type ProviderFlowHost } from "./provider-flow.ts";
 
 function setup(listResult = true) {
   const calls = {
@@ -90,7 +89,9 @@ test("login owns provider selection and secret collection", () => {
   assert.equal(state.promptCount, 1);
   assert.match(state.interaction?.render(80).join("\n") ?? "", /API key for anthropic/);
 
-  for (const character of "  secret-key  ") send(state.interaction, character);
+  for (const character of "  secret-key  ") {
+    send(state.interaction, character);
+  }
   assert.doesNotMatch(state.interaction?.render(80).join("\n") ?? "", /secret-key/);
   send(state.interaction, "\r");
 

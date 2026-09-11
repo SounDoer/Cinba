@@ -4,8 +4,7 @@
 // Usage: node scripts/repl.ts "your question"
 
 import { createInterface } from "node:readline/promises";
-import { startPi } from "@cinba/agent";
-import { PiClient, StdioTransport } from "@cinba/agent";
+import { PiClient, StdioTransport, startPi } from "@cinba/agent";
 
 const child = startPi();
 

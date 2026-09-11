@@ -19,7 +19,9 @@ import type { CoreEvent, UiRequest } from "./pi-client.ts";
  */
 export function extractText(carrier: unknown): string {
   const content = (carrier as { content?: unknown })?.content;
-  if (!Array.isArray(content)) return "";
+  if (!Array.isArray(content)) {
+    return "";
+  }
   return content
     .filter((part): part is { type: string; text: string } => {
       const candidate = part as { type?: unknown; text?: unknown };
@@ -47,9 +49,12 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
         const message = event.message as { role?: string; content?: unknown } | undefined;
         const role = message?.role;
         // toolResult stays out of the transcript: its content is already on the tool card.
-        if (role !== "user" && role !== "assistant") return [];
+        if (role !== "user" && role !== "assistant") {
+          return [];
+        }
 
-        currentMessageId = `m${++messageCount}`;
+        messageCount += 1;
+        currentMessageId = `m${messageCount}`;
         const actions: ViewAction[] = [
           { type: "message_added", messageId: currentMessageId, role, stableId: false },
         ];
@@ -67,7 +72,9 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
 
       case "message_update": {
         const inner = event.assistantMessageEvent as { type?: string; delta?: unknown } | undefined;
-        if (currentMessageId === "" || typeof inner?.delta !== "string") return [];
+        if (currentMessageId === "" || typeof inner?.delta !== "string") {
+          return [];
+        }
         if (inner.type === "text_delta") {
           return [{ type: "text_appended", messageId: currentMessageId, text: inner.delta }];
         }
@@ -82,7 +89,9 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
           event.message as
             { usage?: { totalTokens?: unknown; cost?: { total?: unknown } } } | undefined
         )?.usage;
-        if (!usage) return [];
+        if (!usage) {
+          return [];
+        }
         let changed = false;
         if (typeof usage.totalTokens === "number") {
           totalTokens += usage.totalTokens;
@@ -92,12 +101,16 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
           totalCost += usage.cost.total;
           changed = true;
         }
-        if (!changed) return [];
+        if (!changed) {
+          return [];
+        }
         return [{ type: "usage_changed", totalTokens, totalCost }];
       }
 
       case "tool_execution_start": {
-        if (typeof event.toolCallId !== "string" || typeof event.toolName !== "string") return [];
+        if (typeof event.toolCallId !== "string" || typeof event.toolName !== "string") {
+          return [];
+        }
         // Most tools now pass the permission policy without a prompt. A later
         // confirm_requested action moves an exceptional tool back to pending.
         return [
@@ -112,7 +125,9 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
       }
 
       case "tool_execution_end": {
-        if (typeof event.toolCallId !== "string" || typeof event.toolName !== "string") return [];
+        if (typeof event.toolCallId !== "string" || typeof event.toolName !== "string") {
+          return [];
+        }
         return [
           {
             type: "tool_changed",
@@ -143,7 +158,9 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
 
 /** Of the UI requests only confirm becomes a view action; the rest (notify and friends) are not rendered in this phase. */
 export function foldUiRequest(request: UiRequest): ViewAction | undefined {
-  if (request.method !== "confirm") return undefined;
+  if (request.method !== "confirm") {
+    return undefined;
+  }
   return {
     type: "confirm_requested",
     requestId: request.id,

@@ -1,7 +1,7 @@
 // Start the React application in the current browser or Electron page.
 
 import { createRoot } from "react-dom/client";
-import { App } from "./App.tsx";
+import { App } from "./app.tsx";
 import "./style.css";
 
 const webSocketProtocol = location.protocol === "https:" ? "wss" : "ws";

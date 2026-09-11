@@ -16,7 +16,7 @@
 
 import { useState } from "react";
 import type { ProviderStatus } from "@cinba/contract";
-import { PickerShell } from "./PickerShell.tsx";
+import { PickerShell } from "./picker-shell.tsx";
 
 export function ProviderSettings({
   providers,
@@ -38,8 +38,12 @@ export function ProviderSettings({
   const shown = showAll ? [...configured, ...rest] : configured;
 
   function save(providerId: string) {
-    if (draft.trim() === "") return;
-    if (!onSetApiKey(providerId, draft.trim())) return;
+    if (draft.trim() === "") {
+      return;
+    }
+    if (!onSetApiKey(providerId, draft.trim())) {
+      return;
+    }
     // Cleared immediately: a key has no business sitting in component state
     // after it has been sent.
     setDraft("");
@@ -68,7 +72,9 @@ export function ProviderSettings({
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter") save(provider.id);
+                    if (event.key === "Enter") {
+                      save(provider.id);
+                    }
                     if (event.key === "Escape") {
                       setDraft("");
                       setAdding(undefined);

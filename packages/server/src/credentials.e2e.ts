@@ -15,10 +15,10 @@
 // Slow (it starts processes), so it is not part of `npm test`. Run it with
 // `npm run test:e2e`.
 
-import { test, before, after } from "node:test";
+import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { type ChildProcess, spawn } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import WebSocket from "ws";
@@ -51,8 +51,12 @@ async function nextOfType(type: string, timeoutMs = 30_000): Promise<Message> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const index = inbox.findIndex((message) => message.type === type);
-    if (index >= 0) return inbox.splice(index, 1)[0]!;
-    if (Date.now() >= deadline) throw new Error(`the core never sent a ${type}`);
+    if (index >= 0) {
+      return inbox.splice(index, 1)[0]!;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`the core never sent a ${type}`);
+    }
     await new Promise<void>((resolve) => {
       arrived = resolve;
       setTimeout(resolve, 50);
@@ -107,8 +111,12 @@ before(async () => {
       });
       break;
     } catch (error) {
-      if (exited) throw new Error(exited, { cause: error });
-      if (Date.now() >= givingUpAt) throw error;
+      if (exited) {
+        throw new Error(exited, { cause: error });
+      }
+      if (Date.now() >= givingUpAt) {
+        throw error;
+      }
       await sleep(250);
     }
   }

@@ -1,9 +1,13 @@
 // The terminal prompt and its discoverable slash-command menu.
 
-import { Input, matchesKey, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { Component, Focusable } from "@earendil-works/pi-tui";
-import { matchCommands } from "@cinba/contract";
-import type { Command } from "@cinba/contract";
+import {
+  type Component,
+  type Focusable,
+  Input,
+  matchesKey,
+  wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
+import { type Command, matchCommands } from "@cinba/contract";
 import { BOLD, DIM, GREEN, MAGENTA, RESET } from "./theme.ts";
 
 /**

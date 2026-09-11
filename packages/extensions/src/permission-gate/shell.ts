@@ -5,7 +5,9 @@ export type ShellInvocation = {
 };
 
 function finishToken(tokens: string[], token: string): string {
-  if (token !== "") tokens.push(token);
+  if (token !== "") {
+    tokens.push(token);
+  }
   return "";
 }
 
@@ -25,8 +27,9 @@ export function parseShellInvocations(command: string): ShellInvocation[] {
     if (tokens.length > 0) {
       const unwrapped = unwrapCommand(tokens);
       const [name, ...args] = unwrapped.tokens;
-      if (name)
+      if (name) {
         invocations.push({ name: executableName(name), args, wrappers: unwrapped.wrappers });
+      }
     }
     tokens = [];
   };
@@ -35,8 +38,11 @@ export function parseShellInvocations(command: string): ShellInvocation[] {
     const character = command[index]!;
 
     if (quote) {
-      if (character === quote) quote = undefined;
-      else token += character;
+      if (character === quote) {
+        quote = undefined;
+      } else {
+        token += character;
+      }
       continue;
     }
 
@@ -46,7 +52,9 @@ export function parseShellInvocations(command: string): ShellInvocation[] {
     }
     if (/\s/.test(character)) {
       token = finishToken(tokens, token);
-      if (character === "\n" || character === "\r") finishInvocation();
+      if (character === "\n" || character === "\r") {
+        finishInvocation();
+      }
       continue;
     }
     if (character === ";" || character === "|" || character === "&") {
@@ -65,10 +73,14 @@ function unwrapCommand(tokens: string[]): { tokens: string[]; wrappers: string[]
   const wrappers: string[] = [];
   while (index < tokens.length) {
     const candidate = executableName(tokens[index]!);
-    if (candidate !== "sudo" && candidate !== "command") break;
+    if (candidate !== "sudo" && candidate !== "command") {
+      break;
+    }
     wrappers.push(candidate);
     index += 1;
-    while (tokens[index]?.startsWith("-")) index += 1;
+    while (tokens[index]?.startsWith("-")) {
+      index += 1;
+    }
   }
   return { tokens: tokens.slice(index), wrappers };
 }
@@ -81,22 +93,32 @@ export function hasRiskyOutputRedirection(command: string): boolean {
   for (let index = 0; index < command.length; index += 1) {
     const character = command[index]!;
     if (quote) {
-      if (character === quote) quote = undefined;
+      if (character === quote) {
+        quote = undefined;
+      }
       continue;
     }
     if (character === "'" || character === '"') {
       quote = character;
       continue;
     }
-    if (character !== ">") continue;
+    if (character !== ">") {
+      continue;
+    }
 
     let cursor = index + 1;
-    if (command[cursor] === ">") cursor += 1;
-    while (/\s/.test(command[cursor] ?? "")) cursor += 1;
+    if (command[cursor] === ">") {
+      cursor += 1;
+    }
+    while (/\s/.test(command[cursor] ?? "")) {
+      cursor += 1;
+    }
 
     // File-descriptor duplication such as 2>&1 does not write a file.
     if (command[cursor] === "&") {
-      while (cursor < command.length && !/[\s;|]/.test(command[cursor]!)) cursor += 1;
+      while (cursor < command.length && !/[\s;|]/.test(command[cursor]!)) {
+        cursor += 1;
+      }
       index = cursor - 1;
       continue;
     }
@@ -109,7 +131,9 @@ export function hasRiskyOutputRedirection(command: string): boolean {
         target += command[cursor]!;
         cursor += 1;
       }
-      if (command[cursor] === targetQuote) cursor += 1;
+      if (command[cursor] === targetQuote) {
+        cursor += 1;
+      }
     } else {
       while (cursor < command.length && !/[\s;|&]/.test(command[cursor]!)) {
         target += command[cursor]!;
@@ -117,7 +141,9 @@ export function hasRiskyOutputRedirection(command: string): boolean {
       }
     }
 
-    if (!OUTPUT_SINKS.has(target.toLowerCase())) return true;
+    if (!OUTPUT_SINKS.has(target.toLowerCase())) {
+      return true;
+    }
     index = cursor - 1;
   }
   return false;

@@ -23,7 +23,9 @@ export function PromptComposer({
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    if (editDraft === undefined) return;
+    if (editDraft === undefined) {
+      return;
+    }
     requestAnimationFrame(() => {
       inputRef.current?.focus();
       inputRef.current?.setSelectionRange(editDraft.text.length, editDraft.text.length);
@@ -44,8 +46,17 @@ export function PromptComposer({
 
   function send() {
     const text = draft.trim();
-    if (busy || !editReady || text === "") return;
-    if (onSend(text)) setDraft("");
+    if (busy || !editReady || text === "") {
+      return;
+    }
+    if (onSend(text)) {
+      setDraft("");
+    }
+  }
+
+  let sendLabel = "Send";
+  if (editDraft !== undefined) {
+    sendLabel = editReady ? "Send edit" : "Preparing edit...";
   }
 
   return (
@@ -66,7 +77,7 @@ export function PromptComposer({
         }}
       />
       <button onClick={send} disabled={!connected || busy || !editReady}>
-        {editDraft === undefined ? "Send" : editReady ? "Send edit" : "Preparing edit..."}
+        {sendLabel}
       </button>
       {editDraft !== undefined ? <button onClick={onCancelEdit}>Cancel edit</button> : null}
       {busy ? (

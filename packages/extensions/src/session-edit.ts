@@ -11,7 +11,9 @@ export default function (pi: ExtensionAPI) {
     description: "Move the current session branch to before a user message",
     handler: async (args, ctx) => {
       const entryId = args.trim();
-      if (entryId === "") throw new Error("The user message entry id is missing");
+      if (entryId === "") {
+        throw new Error("The user message entry id is missing");
+      }
 
       const target = ctx.sessionManager
         .getBranch()
@@ -19,10 +21,14 @@ export default function (pi: ExtensionAPI) {
           (entry) =>
             entry.id === entryId && entry.type === "message" && messageRole(entry) === "user",
         );
-      if (!target) throw new Error("The user message is no longer on the active branch");
+      if (!target) {
+        throw new Error("The user message is no longer on the active branch");
+      }
 
       const result = await ctx.navigateTree(target.id, { summarize: false });
-      if (result.cancelled) throw new Error("Editing the user message was cancelled");
+      if (result.cancelled) {
+        throw new Error("Editing the user message was cancelled");
+      }
     },
   });
 }

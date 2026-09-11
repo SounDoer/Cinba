@@ -10,7 +10,9 @@ function expandKnownLocation(value: string, context: PermissionContext): string 
   const normalized = value.trim();
   const homePrefixes = ["~", "$HOME", "${HOME}", "$env:USERPROFILE", "%USERPROFILE%"];
   for (const prefix of homePrefixes) {
-    if (normalized.toLowerCase() === prefix.toLowerCase()) return context.homeDir;
+    if (normalized.toLowerCase() === prefix.toLowerCase()) {
+      return context.homeDir;
+    }
     const remainder = normalized.slice(prefix.length);
     if (
       normalized.slice(0, prefix.length).toLowerCase() === prefix.toLowerCase() &&
@@ -33,7 +35,9 @@ export function samePath(left: string, right: string, context: PermissionContext
   const normalize = (value: string) => {
     let result = api.normalize(value);
     const root = api.parse(result).root;
-    while (result.length > root.length && /[\\/]$/.test(result)) result = result.slice(0, -1);
+    while (result.length > root.length && /[\\/]$/.test(result)) {
+      result = result.slice(0, -1);
+    }
     return context.platform === "win32" ? result.toLowerCase() : result;
   };
   return normalize(left) === normalize(right);
@@ -42,13 +46,17 @@ export function samePath(left: string, right: string, context: PermissionContext
 function canonicalPath(value: string, context: PermissionContext): string {
   const api = pathApi(context);
   const resolved = resolveLiteralPath(value, context);
-  if (context.platform !== process.platform) return resolved;
+  if (context.platform !== process.platform) {
+    return resolved;
+  }
 
   const missing: string[] = [];
   let existing = resolved;
   while (!existsSync(existing)) {
     const parent = api.dirname(existing);
-    if (parent === existing) return resolved;
+    if (parent === existing) {
+      return resolved;
+    }
     missing.unshift(api.basename(existing));
     existing = parent;
   }
@@ -108,7 +116,9 @@ export function isSensitivePath(value: string, context: PermissionContext): bool
     const basename = comparable.at(-1) ?? "";
 
     const sensitiveDirectories = new Set([".ssh", ".aws", ".azure", ".gnupg", ".kube"]);
-    if (comparable.some((part) => sensitiveDirectories.has(part.toLowerCase()))) return true;
+    if (comparable.some((part) => sensitiveDirectories.has(part.toLowerCase()))) {
+      return true;
+    }
 
     const sensitiveNames = new Set([
       ".npmrc",
@@ -122,8 +132,12 @@ export function isSensitivePath(value: string, context: PermissionContext): bool
       "service_account.json",
     ]);
     const name = basename.toLowerCase();
-    if (name === ".env" || name.startsWith(".env.")) return true;
-    if (sensitiveNames.has(name)) return true;
+    if (name === ".env" || name.startsWith(".env.")) {
+      return true;
+    }
+    if (sensitiveNames.has(name)) {
+      return true;
+    }
     if ([".pem", ".key", ".p12", ".pfx"].includes(api.extname(name).toLowerCase())) {
       return true;
     }

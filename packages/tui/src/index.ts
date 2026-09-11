@@ -17,33 +17,32 @@
 // npm --workspace, which would set the directory to the package's own.
 
 import {
+  type Component,
   Container,
-  matchesKey,
   ProcessTerminal,
   SelectList,
-  truncateToWidth,
+  type TUI,
   TuiMainScreen,
+  matchesKey,
+  truncateToWidth,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import type { Component, TUI } from "@earendil-works/pi-tui";
 import {
   COMMANDS,
+  type Command,
+  type Entry,
+  type Session,
+  type SessionSummary,
+  type Snapshot,
+  type ViewAction,
   commandArgument,
   createSession,
-  nameColourIndex,
   isCommand,
+  nameColourIndex,
   sessionSubtitle,
   sessionTitle,
 } from "@cinba/contract";
 import { CoreClient } from "@cinba/core-client";
-import type {
-  Command,
-  Entry,
-  Session,
-  SessionSummary,
-  Snapshot,
-  ViewAction,
-} from "@cinba/contract";
 import {
   BLUE,
   BOLD,
@@ -261,7 +260,9 @@ let exiting = false;
  */
 let redrawQueued = false;
 function queueRedraw(): void {
-  if (redrawQueued) return;
+  if (redrawQueued) {
+    return;
+  }
   redrawQueued = true;
   setTimeout(() => {
     redrawQueued = false;
@@ -288,7 +289,9 @@ function applyAction(action: ViewAction): void {
       // A delta may contain newlines, so split it: the first part joins the current line, the rest start their own.
       const parts = action.text.split("\n");
       transcript.appendInline(parts[0] ?? "");
-      for (const part of parts.slice(1)) transcript.append(part);
+      for (const part of parts.slice(1)) {
+        transcript.append(part);
+      }
       break;
     }
 
@@ -341,7 +344,9 @@ function applyAction(action: ViewAction): void {
       // A finished turn is the moment the text stops growing, so this is when
       // it can be laid out as Markdown. Redrawing from the mirror also brings
       // the terminal back in step after the server corrects anything.
-      if (!action.busy) queueRedraw();
+      if (!action.busy) {
+        queueRedraw();
+      }
       break;
 
     // thinking stays hidden in the terminal: it is long and rarely what you came for.
@@ -356,7 +361,9 @@ function drawSnapshot(snapshot: Snapshot): void {
   transcript.clear();
   transcript.append(`${BOLD}Cinba${RESET} ${DIM}${process.cwd()}${RESET}`);
   transcript.append(`${DIM}Type and press Enter to send. Ctrl+C to exit.${RESET}`);
-  for (const entry of snapshot.entries) drawEntry(entry);
+  for (const entry of snapshot.entries) {
+    drawEntry(entry);
+  }
 
   statusBar.totalTokens = snapshot.totalTokens;
   statusBar.totalCost = snapshot.totalCost;
@@ -378,15 +385,17 @@ function drawEntry(entry: Entry): void {
 
     case "tool": {
       transcript.append("");
-      const outcome =
-        entry.status === "done"
-          ? `${GREEN}done${RESET}`
-          : entry.status === "error"
-            ? `${RED}denied or failed${RESET}`
-            : `${DIM}${entry.status}${RESET}`;
+      let outcome = `${DIM}${entry.status}${RESET}`;
+      if (entry.status === "done") {
+        outcome = `${GREEN}done${RESET}`;
+      } else if (entry.status === "error") {
+        outcome = `${RED}denied or failed${RESET}`;
+      }
       transcript.append(`${YELLOW}[tool] ${entry.toolName}${RESET} ${outcome}`);
       for (const line of (entry.result ?? "").split("\n").slice(0, 20)) {
-        if (line !== "") transcript.append(`${DIM}   ${line}${RESET}`);
+        if (line !== "") {
+          transcript.append(`${DIM}   ${line}${RESET}`);
+        }
       }
       break;
     }
@@ -433,7 +442,9 @@ const coreClient = new CoreClient(SERVER_URL, {
       coreClient.listSessions(process.cwd());
       return;
     }
-    if (state !== "disconnected" || exiting) return;
+    if (state !== "disconnected" || exiting) {
+      return;
+    }
 
     // Exit rather than wait and reconnect. Reliable reconnect needs command
     // deduplication before it can safely retry anything sent near a disconnect.
@@ -482,7 +493,9 @@ const coreClient = new CoreClient(SERVER_URL, {
         description: sessionSubtitle(session),
       })),
       (id) => {
-        if (id) coreClient.openSession(id);
+        if (id) {
+          coreClient.openSession(id);
+        }
       },
     );
   },
@@ -494,7 +507,9 @@ const coreClient = new CoreClient(SERVER_URL, {
         label: `${model.provider} / ${model.id}`,
       })),
       (picked) => {
-        if (!picked) return;
+        if (!picked) {
+          return;
+        }
         const [provider, ...rest] = picked.split("/");
         coreClient.setModel(provider ?? "", rest.join("/"));
       },
@@ -528,7 +543,9 @@ const providerFlow = new ProviderFlow(coreClient, {
 let landed = false;
 
 function land(sessions: SessionSummary[]): void {
-  if (landed) return;
+  if (landed) {
+    return;
+  }
   landed = true;
 
   const here = sessions.filter((session) => session.cwd === process.cwd());
@@ -538,7 +555,9 @@ function land(sessions: SessionSummary[]): void {
     coreClient.createSession(process.cwd());
     return;
   }
-  if (recent.id !== sessionId) coreClient.openSession(recent.id);
+  if (recent.id !== sessionId) {
+    coreClient.openSession(recent.id);
+  }
 }
 
 // ---- Interaction ----
@@ -592,9 +611,13 @@ promptInput.input.onSubmit = (value: string) => {
   // No new input while answering, and the box is deliberately NOT cleared:
   // whatever the user typed during streaming has to survive, or half the point
   // of typing while watching output is gone.
-  if (busy || confirming) return;
+  if (busy || confirming) {
+    return;
+  }
   const text = value.trim();
-  if (text === "") return;
+  if (text === "") {
+    return;
+  }
 
   if (isCommand(text)) {
     // What the menu is pointing at, which is not the first match once the
@@ -611,7 +634,9 @@ promptInput.input.onSubmit = (value: string) => {
     return;
   }
 
-  if (!coreClient.prompt(text)) return;
+  if (!coreClient.prompt(text)) {
+    return;
+  }
   promptInput.input.setValue("");
 
   // Go busy immediately rather than waiting for the signal to come back over
@@ -622,7 +647,9 @@ promptInput.input.onSubmit = (value: string) => {
 // Esc stops an answer in progress. Pressing it while idle does nothing: exiting
 // is Ctrl+C, so a slip of the hand cannot close the conversation.
 promptInput.input.onEscape = () => {
-  if (!busy) return;
+  if (!busy) {
+    return;
+  }
   coreClient.abort();
 };
 
@@ -634,7 +661,9 @@ function exit(): void {
 }
 
 tui.addInputListener((data: string) => {
-  if (matchesKey(data, "ctrl+c")) exit();
+  if (matchesKey(data, "ctrl+c")) {
+    exit();
+  }
 
   // Accelerators for two of the commands. The slash menu is the discoverable
   // way in; these stay for the hands that already know them. Not available
