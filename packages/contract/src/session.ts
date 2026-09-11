@@ -16,6 +16,8 @@ import type { ToolStatus, ViewAction } from "./actions.ts";
 export type MessageEntry = {
   kind: "message";
   messageId: string;
+  /** True when messageId is Pi's persisted session entry id. */
+  stableId: boolean;
   role: "user" | "assistant";
   text: string;
   thinking: string;
@@ -101,6 +103,7 @@ export function createSession(initial?: Snapshot): Session {
           entries.push({
             kind: "message",
             messageId: action.messageId,
+            stableId: action.stableId,
             role: action.role,
             text: "",
             thinking: "",

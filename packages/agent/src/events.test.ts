@@ -6,10 +6,10 @@ test("user and assistant messages each get a fresh id", () => {
   const fold = createEventFolder();
 
   assert.deepEqual(fold({ type: "message_start", message: { role: "user" } }), [
-    { type: "message_added", messageId: "m1", role: "user" },
+    { type: "message_added", messageId: "m1", role: "user", stableId: false },
   ]);
   assert.deepEqual(fold({ type: "message_start", message: { role: "assistant" } }), [
-    { type: "message_added", messageId: "m2", role: "assistant" },
+    { type: "message_added", messageId: "m2", role: "assistant", stableId: false },
   ]);
 });
 
@@ -25,7 +25,7 @@ test("a user message arrives complete in message_start, so take the text there",
   });
 
   assert.deepEqual(actions, [
-    { type: "message_added", messageId: "m1", role: "user" },
+    { type: "message_added", messageId: "m1", role: "user", stableId: false },
     { type: "text_appended", messageId: "m1", text: "hello" },
   ]);
 });
@@ -34,7 +34,7 @@ test("an assistant message starts empty and produces no stray append action", ()
   const fold = createEventFolder();
 
   assert.deepEqual(fold({ type: "message_start", message: { role: "assistant", content: [] } }), [
-    { type: "message_added", messageId: "m1", role: "assistant" },
+    { type: "message_added", messageId: "m1", role: "assistant", stableId: false },
   ]);
 });
 

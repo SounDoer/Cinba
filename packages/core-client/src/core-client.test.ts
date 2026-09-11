@@ -95,6 +95,7 @@ test("the conversation commands go out in protocol form", () => {
   const client = connect(fake, {});
 
   client.prompt("hello");
+  client.editMessage("entry-1", "fixed hello");
   client.abort();
   client.respondConfirm("u1", false);
 
@@ -102,6 +103,7 @@ test("the conversation commands go out in protocol form", () => {
     fake.sent.map((line) => JSON.parse(line)),
     [
       { type: "prompt", text: "hello" },
+      { type: "edit_message", entryId: "entry-1", text: "fixed hello" },
       { type: "abort" },
       { type: "respond_confirm", requestId: "u1", confirmed: false },
     ],

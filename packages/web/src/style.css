@@ -62,6 +62,9 @@ header span { color: var(--text-muted); font-size: 12px; }
 .entry.assistant { background: var(--surface); border: 1px solid var(--border-subtle); }
 
 .role { font-size: 11px; color: var(--text-muted); margin-bottom: 0.25rem; }
+.message-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.edit-message { visibility: hidden; padding: 0.1rem 0.45rem; border: none; background: transparent; color: var(--text-muted); font-size: 11px; }
+.entry.user:hover .edit-message, .edit-message:focus-visible { visibility: visible; }
 
 footer {
   display: flex;

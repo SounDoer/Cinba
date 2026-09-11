@@ -51,7 +51,13 @@ export function startPi(options: CoreOptions = {}): ChildProcess {
   const gate = fileURLToPath(
     import.meta.resolve("@cinba/extensions/src/permission-gate.ts"),
   );
-  const plan = buildSpawnPlan(entry, gate, options);
+  const sessionEdit = fileURLToPath(
+    import.meta.resolve("@cinba/extensions/src/session-edit.ts"),
+  );
+  const plan = buildSpawnPlan(entry, gate, {
+    ...options,
+    extensions: [sessionEdit, ...(options.extensions ?? [])],
+  });
 
   return spawn(process.execPath, plan.args, {
     cwd: options.cwd ?? process.cwd(),

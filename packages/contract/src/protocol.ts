@@ -36,6 +36,7 @@ export type SessionSummary = {
 /** Client to server. */
 export type ClientMessage =
   | { type: "prompt"; text: string }
+  | { type: "edit_message"; entryId: string; text: string }
   | { type: "abort" }
   | { type: "respond_confirm"; requestId: string; confirmed: boolean }
   | { type: "list_dir"; path: string }
@@ -98,6 +99,21 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
     case "prompt":
       if (typeof message.text !== "string" || message.text.trim() === "") return undefined;
       return { type: "prompt", text: message.text };
+
+    case "edit_message":
+      if (
+        typeof message.entryId !== "string" ||
+        message.entryId.trim() === "" ||
+        typeof message.text !== "string" ||
+        message.text.trim() === ""
+      ) {
+        return undefined;
+      }
+      return {
+        type: "edit_message",
+        entryId: message.entryId,
+        text: message.text,
+      };
 
     case "abort":
       return { type: "abort" };
@@ -198,6 +214,7 @@ function isViewAction(value: unknown): value is ViewAction {
     case "message_added":
       return (
         typeof value.messageId === "string" &&
+        typeof value.stableId === "boolean" &&
         (value.role === "user" || value.role === "assistant")
       );
     case "text_appended":
@@ -231,6 +248,7 @@ function isEntry(value: unknown): boolean {
     case "message":
       return (
         typeof value.messageId === "string" &&
+        typeof value.stableId === "boolean" &&
         (value.role === "user" || value.role === "assistant") &&
         typeof value.text === "string" &&
         typeof value.thinking === "string"

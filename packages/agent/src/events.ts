@@ -51,7 +51,7 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
 
         currentMessageId = `m${++messageCount}`;
         const actions: ViewAction[] = [
-          { type: "message_added", messageId: currentMessageId, role },
+          { type: "message_added", messageId: currentMessageId, role, stableId: false },
         ];
 
         // A user message is already complete here, unlike an assistant message

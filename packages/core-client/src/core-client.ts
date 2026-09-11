@@ -100,6 +100,10 @@ export class CoreClient {
     return this.#send({ type: "prompt", text });
   }
 
+  editMessage(entryId: string, text: string): boolean {
+    return this.#send({ type: "edit_message", entryId, text });
+  }
+
   abort(): boolean {
     return this.#send({ type: "abort" });
   }

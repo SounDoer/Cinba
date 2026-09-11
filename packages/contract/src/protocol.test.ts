@@ -9,6 +9,10 @@ test("the basic client messages are recognized", () => {
   });
   assert.deepEqual(parseClientMessage({ type: "abort" }), { type: "abort" });
   assert.deepEqual(
+    parseClientMessage({ type: "edit_message", entryId: "entry-1", text: "fixed" }),
+    { type: "edit_message", entryId: "entry-1", text: "fixed" },
+  );
+  assert.deepEqual(
     parseClientMessage({ type: "respond_confirm", requestId: "u1", confirmed: true }),
     { type: "respond_confirm", requestId: "u1", confirmed: true },
   );
@@ -93,6 +97,21 @@ test("anything with a wrong field type is dropped", () => {
 
 test("a blank prompt does not count", () => {
   assert.equal(parseClientMessage({ type: "prompt", text: "   " }), undefined);
+});
+
+test("edit_message requires a non-blank entry id and text", () => {
+  assert.equal(
+    parseClientMessage({ type: "edit_message", entryId: "", text: "fixed" }),
+    undefined,
+  );
+  assert.equal(
+    parseClientMessage({ type: "edit_message", entryId: 1, text: "fixed" }),
+    undefined,
+  );
+  assert.equal(
+    parseClientMessage({ type: "edit_message", entryId: "entry-1", text: "  " }),
+    undefined,
+  );
 });
 
 test("unknown input is dropped rather than crashing", () => {

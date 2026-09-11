@@ -1,6 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { foldSessionEntries } from "./entries.ts";
+import { activeBranchEntries, foldSessionEntries } from "./entries.ts";
+
+test("activeBranchEntries follows the selected leaf and leaves abandoned branches out", () => {
+  const entries = [
+    { id: "u1", parentId: null, type: "message" },
+    { id: "a1", parentId: "u1", type: "message" },
+    { id: "u2-old", parentId: "a1", type: "message" },
+    { id: "a2-old", parentId: "u2-old", type: "message" },
+    { id: "u2-new", parentId: "a1", type: "message" },
+    { id: "a2-new", parentId: "u2-new", type: "message" },
+  ];
+
+  assert.deepEqual(
+    activeBranchEntries(entries, "a2-new").map((entry) => (entry as { id: string }).id),
+    ["u1", "a1", "u2-new", "a2-new"],
+  );
+});
 import { createSession } from "@cinba/contract";
 
 /**
@@ -137,7 +153,7 @@ test("message ids come from Pi, so a rebuild lands on the same ids", () => {
   ]);
 
   assert.deepEqual(actions, [
-    { type: "message_added", messageId: "d1", role: "user" },
+    { type: "message_added", messageId: "d1", role: "user", stableId: true },
     { type: "text_appended", messageId: "d1", text: "hi" },
   ]);
 });

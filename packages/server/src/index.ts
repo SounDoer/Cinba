@@ -292,6 +292,11 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
       sessions.prompt(current, message.text);
       return;
 
+    case "edit_message":
+      if (!current) return;
+      await sessions.editMessage(current, message.entryId, message.text);
+      return;
+
     case "abort":
       if (!current) return;
       sessions.abort(current);

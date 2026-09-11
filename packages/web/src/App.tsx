@@ -14,15 +14,28 @@ import { useCore } from "./use-core.ts";
 const CORE_COLOURS = ["#3b6fd4", "#2e9166", "#b4642a", "#8b4bc4", "#b03a52", "#2b7f96"];
 
 type ActiveOverlay = "project" | "model" | "session" | "provider" | null;
+type EditTarget = { userMessageIndex: number; text: string };
 
 export function App({ serverUrl }: { serverUrl: string }) {
   const core = useCore(serverUrl);
   const [activeOverlay, setActiveOverlay] = useState<ActiveOverlay>(null);
+  const [editTarget, setEditTarget] = useState<EditTarget | undefined>(undefined);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const editingMessage = editTarget
+    ? core.snapshot.entries.filter(
+        (entry) => entry.kind === "message" && entry.role === "user",
+      )[editTarget.userMessageIndex]
+    : undefined;
+  const editingEntryId =
+    editingMessage?.kind === "message" && editingMessage.stableId
+      ? editingMessage.messageId
+      : undefined;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [core.snapshot]);
+
+  useEffect(() => setEditTarget(undefined), [core.sessionId]);
 
   return (
     <>
@@ -71,6 +84,10 @@ export function App({ serverUrl }: { serverUrl: string }) {
         <Transcript
           entries={core.snapshot.entries}
           onRespond={core.respondConfirm}
+          onEdit={(userMessageIndex, text) => {
+            setEditTarget({ userMessageIndex, text });
+            if (core.snapshot.busy) core.abort();
+          }}
         />
         <div ref={bottomRef} />
       </main>
@@ -78,8 +95,17 @@ export function App({ serverUrl }: { serverUrl: string }) {
       <PromptComposer
         connected={core.connected}
         busy={core.snapshot.busy}
-        onSend={core.prompt}
+        onSend={(text) => {
+          const sent = editTarget
+            ? editingEntryId !== undefined && core.editMessage(editingEntryId, text)
+            : core.prompt(text);
+          if (sent) setEditTarget(undefined);
+          return sent;
+        }}
         onAbort={core.abort}
+        editDraft={editTarget}
+        editReady={editTarget === undefined || editingEntryId !== undefined}
+        onCancelEdit={() => setEditTarget(undefined)}
       />
 
       {activeOverlay === "provider" ? (

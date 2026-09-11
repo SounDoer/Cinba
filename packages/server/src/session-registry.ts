@@ -3,6 +3,7 @@
 
 import { existsSync } from "node:fs";
 import {
+  activeBranchEntries,
   createEventFolder,
   foldSessionEntries,
   foldUiRequest,
@@ -30,7 +31,8 @@ type ManagedSession = LiveSession & {
   fold: (event: CoreEvent) => ViewAction[];
   outbox: ViewAction[];
   flushTimer: NodeJS.Timeout | undefined;
-  storedActions: ViewAction[];
+  storedEntries: unknown[];
+  leafId: string | null;
   reconciledUpTo: string | undefined;
 };
 
@@ -57,6 +59,7 @@ export type SessionRegistry = {
   snapshot(session: LiveSession): ServerMessage;
   prompt(session: LiveSession, text: string): void;
   abort(session: LiveSession): void;
+  editMessage(session: LiveSession, entryId: string, text: string): Promise<boolean>;
   respondToConfirmation(
     session: LiveSession,
     requestId: string,
@@ -140,21 +143,36 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
 
   async function absorb(session: ManagedSession): Promise<void> {
     const response = await session.pi.getEntries(session.reconciledUpTo);
-    const entries = (response.data as { entries?: unknown } | undefined)?.entries;
-    if (!Array.isArray(entries) || entries.length === 0) return;
+    const data = response.data as { entries?: unknown; leafId?: unknown } | undefined;
+    const entries = data?.entries;
+    if (!Array.isArray(entries)) return;
 
-    session.storedActions.push(...foldSessionEntries(entries));
+    session.storedEntries.push(...entries);
     const last = entries.at(-1) as { id?: unknown } | undefined;
-    if (typeof last?.id === "string") session.reconciledUpTo = last.id;
+    if (typeof last?.id === "string") {
+      session.reconciledUpTo = last.id;
+      if (data?.leafId === undefined) session.leafId = last.id;
+    }
+    if (data?.leafId === null || typeof data?.leafId === "string") {
+      session.leafId = data.leafId;
+    }
   }
 
   async function reconcile(session: ManagedSession): Promise<void> {
     await absorb(session);
     const truth = createSession();
-    for (const action of session.storedActions) truth.apply(action);
+    const branch = activeBranchEntries(session.storedEntries, session.leafId);
+    for (const action of foldSessionEntries(branch)) truth.apply(action);
 
-    if (sameTranscript(session.ledger.snapshot().entries, truth.snapshot().entries)) return;
-    console.warn(`[cinba] transcript drifted in ${session.id}; taking Pi's copy`);
+    const currentEntries = session.ledger.snapshot().entries;
+    const hasUnstableMessageId = currentEntries.some(
+      (entry) => entry.kind === "message" && !entry.stableId,
+    );
+    const transcriptMatches = sameTranscript(currentEntries, truth.snapshot().entries);
+    if (transcriptMatches && !hasUnstableMessageId) return;
+    if (!transcriptMatches) {
+      console.warn(`[cinba] transcript drifted in ${session.id}; taking Pi's copy`);
+    }
     session.ledger = truth;
     options.onSnapshot(session.id, snapshot(session));
   }
@@ -208,7 +226,8 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
       pendingConfirms: new Map(),
       outbox: [],
       flushTimer: undefined,
-      storedActions: [],
+      storedEntries: [],
+      leafId: null,
       reconciledUpTo: undefined,
       idleSince: undefined,
       staleCredentials: false,
@@ -236,7 +255,8 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     });
 
     await absorb(session);
-    for (const action of session.storedActions) session.ledger.apply(action);
+    const branch = activeBranchEntries(session.storedEntries, session.leafId);
+    for (const action of foldSessionEntries(branch)) session.ledger.apply(action);
     live.set(session.id, session);
     return session;
   }
@@ -286,6 +306,58 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     if (!managed) return;
     void managed.pi.abort().catch(() => {});
     emitManaged(managed, [{ type: "notice", text: "aborted" }]);
+  }
+
+  async function editMessage(
+    session: LiveSession,
+    entryId: string,
+    text: string,
+  ): Promise<boolean> {
+    const managed = findManaged(session);
+    if (!managed) return false;
+
+    const wasBusy = managed.ledger.snapshot().busy;
+    emitManaged(managed, [{ type: "busy_changed", busy: true }]);
+    try {
+      for (const resolve of managed.pendingConfirms.values()) resolve(false);
+      managed.pendingConfirms.clear();
+      if (wasBusy) await managed.pi.abort();
+
+      await reconcile(managed);
+      const target = activeBranchEntries(managed.storedEntries, managed.leafId).find((raw) => {
+        const entry = raw as {
+          id?: unknown;
+          type?: unknown;
+          message?: { role?: unknown };
+        };
+        return (
+          entry.id === entryId &&
+          entry.type === "message" &&
+          entry.message?.role === "user"
+        );
+      }) as { parentId?: unknown } | undefined;
+      if (!target) throw new Error("the user message is no longer on the active branch");
+      const expectedLeaf = typeof target.parentId === "string" ? target.parentId : null;
+
+      const navigate = await managed.pi.prompt(`/cinba-edit-message ${entryId}`);
+      if (!navigate.success) throw new Error(String(navigate.error ?? "tree navigation failed"));
+
+      await reconcile(managed);
+      if (managed.leafId !== expectedLeaf) {
+        throw new Error("the active conversation branch did not move");
+      }
+      prompt(managed, text);
+      return true;
+    } catch (error) {
+      emitManaged(managed, [
+        {
+          type: "notice",
+          text: `message not edited: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        { type: "busy_changed", busy: false },
+      ]);
+      return false;
+    }
   }
 
   function respondToConfirmation(
@@ -378,6 +450,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     snapshot,
     prompt,
     abort,
+    editMessage,
     respondToConfirmation,
     listModels,
     setModel,

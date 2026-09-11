@@ -16,19 +16,26 @@ test("a fresh session is empty and not busy", () => {
 test("messages enter the ledger in arrival order and text appends piece by piece", () => {
   const session = createSession();
 
-  session.apply({ type: "message_added", messageId: "m1", role: "assistant" });
+  session.apply({ type: "message_added", messageId: "m1", role: "assistant", stableId: false });
   session.apply({ type: "text_appended", messageId: "m1", text: "he" });
   session.apply({ type: "text_appended", messageId: "m1", text: "llo" });
 
   assert.deepEqual(session.snapshot().entries, [
-    { kind: "message", messageId: "m1", role: "assistant", text: "hello", thinking: "" },
+    {
+      kind: "message",
+      messageId: "m1",
+      stableId: false,
+      role: "assistant",
+      text: "hello",
+      thinking: "",
+    },
   ]);
 });
 
 test("thinking is stored separately from the body text", () => {
   const session = createSession();
 
-  session.apply({ type: "message_added", messageId: "m1", role: "assistant" });
+  session.apply({ type: "message_added", messageId: "m1", role: "assistant", stableId: false });
   session.apply({ type: "thinking_appended", messageId: "m1", text: "thinking it over" });
   session.apply({ type: "text_appended", messageId: "m1", text: "the answer" });
 
@@ -119,7 +126,7 @@ test("a system notice enters the ledger as its own entry", () => {
   // nothing ever happened.
   const session = createSession();
 
-  session.apply({ type: "message_added", messageId: "m1", role: "assistant" });
+  session.apply({ type: "message_added", messageId: "m1", role: "assistant", stableId: false });
   session.apply({ type: "notice", text: "aborted" });
 
   assert.deepEqual(session.snapshot().entries[1], { kind: "notice", text: "aborted" });
@@ -139,7 +146,7 @@ test("cost and busy state are carried on the snapshot", () => {
 
 test("a snapshot is a copy; editing it does not affect the ledger", () => {
   const session = createSession();
-  session.apply({ type: "message_added", messageId: "m1", role: "user" });
+  session.apply({ type: "message_added", messageId: "m1", role: "user", stableId: false });
 
   const snapshot = session.snapshot();
   snapshot.entries.length = 0;
@@ -150,7 +157,7 @@ test("a snapshot is a copy; editing it does not affect the ledger", () => {
 test("a ledger can be rebuilt from a snapshot", () => {
   // The client side holds a mirror: start from the server's snapshot, then follow the actions.
   const origin = createSession();
-  origin.apply({ type: "message_added", messageId: "m1", role: "user" });
+  origin.apply({ type: "message_added", messageId: "m1", role: "user", stableId: false });
   origin.apply({ type: "text_appended", messageId: "m1", text: "hello" });
   origin.apply({ type: "usage_changed", totalTokens: 120, totalCost: 0.004 });
 
@@ -161,7 +168,7 @@ test("a ledger can be rebuilt from a snapshot", () => {
 
 test("a rebuilt ledger goes on accepting actions", () => {
   const origin = createSession();
-  origin.apply({ type: "message_added", messageId: "m1", role: "assistant" });
+  origin.apply({ type: "message_added", messageId: "m1", role: "assistant", stableId: false });
 
   const mirror = createSession(origin.snapshot());
   mirror.apply({ type: "text_appended", messageId: "m1", text: "more" });
@@ -174,18 +181,18 @@ test("a rebuilt ledger goes on accepting actions", () => {
 test("two tellings of the same conversation match despite different ids", () => {
   // What the live path produces: ids this project made up while streaming.
   const live = createSession();
-  live.apply({ type: "message_added", messageId: "m1", role: "user" });
+  live.apply({ type: "message_added", messageId: "m1", role: "user", stableId: false });
   live.apply({ type: "text_appended", messageId: "m1", text: "hi" });
-  live.apply({ type: "message_added", messageId: "m2", role: "assistant" });
+  live.apply({ type: "message_added", messageId: "m2", role: "assistant", stableId: false });
   live.apply({ type: "text_appended", messageId: "m2", text: "hello" });
   live.apply({ type: "notice", text: "aborted" });
 
   // What a rebuild from Pi's file produces: Pi's own ids. Written out rather
   // than folded, because the contract must not depend on the agent to be tested.
   const rebuilt = createSession();
-  rebuilt.apply({ type: "message_added", messageId: "x9", role: "user" });
+  rebuilt.apply({ type: "message_added", messageId: "x9", role: "user", stableId: true });
   rebuilt.apply({ type: "text_appended", messageId: "x9", text: "hi" });
-  rebuilt.apply({ type: "message_added", messageId: "y8", role: "assistant" });
+  rebuilt.apply({ type: "message_added", messageId: "y8", role: "assistant", stableId: true });
   rebuilt.apply({ type: "text_appended", messageId: "y8", text: "hello" });
 
   assert.equal(sameTranscript(live.snapshot().entries, rebuilt.snapshot().entries), true);
@@ -193,11 +200,11 @@ test("two tellings of the same conversation match despite different ids", () => 
 
 test("a difference in what was actually said is caught", () => {
   const one = createSession();
-  one.apply({ type: "message_added", messageId: "m1", role: "assistant" });
+  one.apply({ type: "message_added", messageId: "m1", role: "assistant", stableId: false });
   one.apply({ type: "text_appended", messageId: "m1", text: "the answer is 42" });
 
   const other = createSession();
-  other.apply({ type: "message_added", messageId: "z1", role: "assistant" });
+  other.apply({ type: "message_added", messageId: "z1", role: "assistant", stableId: true });
   other.apply({ type: "text_appended", messageId: "z1", text: "the answer is 43" });
 
   assert.equal(sameTranscript(one.snapshot().entries, other.snapshot().entries), false);
@@ -212,12 +219,12 @@ test("a missing tool card counts as a difference", () => {
 
 test("separator characters in content cannot hide a transcript difference", () => {
   const left = createSession();
-  left.apply({ type: "message_added", messageId: "left", role: "assistant" });
+  left.apply({ type: "message_added", messageId: "left", role: "assistant", stableId: false });
   left.apply({ type: "text_appended", messageId: "left", text: "a|b" });
   left.apply({ type: "thinking_appended", messageId: "left", text: "c" });
 
   const right = createSession();
-  right.apply({ type: "message_added", messageId: "right", role: "assistant" });
+  right.apply({ type: "message_added", messageId: "right", role: "assistant", stableId: true });
   right.apply({ type: "text_appended", messageId: "right", text: "a" });
   right.apply({ type: "thinking_appended", messageId: "right", text: "b|c" });
 

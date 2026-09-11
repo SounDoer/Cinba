@@ -14,10 +14,30 @@ const STATUS_LABEL: Record<string, string> = {
   error: "denied or failed",
 };
 
-function Message({ entry }: { entry: MessageEntry }) {
+function Message({
+  entry,
+  userMessageIndex,
+  onEdit,
+}: {
+  entry: MessageEntry;
+  userMessageIndex?: number;
+  onEdit?: (userMessageIndex: number, text: string) => void;
+}) {
   return (
     <div className={`entry ${entry.role}`}>
-      <div className="role">{entry.role === "user" ? "You" : "Assistant"}</div>
+      <div className="message-head">
+        <div className="role">{entry.role === "user" ? "You" : "Assistant"}</div>
+        {userMessageIndex !== undefined && onEdit ? (
+          <button
+            className="edit-message"
+            aria-label="Edit message"
+            title="Edit message"
+            onClick={() => onEdit(userMessageIndex, entry.text)}
+          >
+            Edit
+          </button>
+        ) : null}
+      </div>
 
       {entry.thinking ? (
         <details className="thinking">
@@ -76,19 +96,30 @@ function ToolCard({
 export function Transcript({
   entries,
   onRespond,
+  onEdit,
 }: {
   entries: Entry[];
   onRespond: (requestId: string, confirmed: boolean) => void;
+  onEdit?: (userMessageIndex: number, text: string) => void;
 }) {
+  let userMessageIndex = -1;
   return (
     <>
       {entries.map((entry, index) => {
         if (entry.kind === "message") {
+          if (entry.role === "user") userMessageIndex += 1;
           // An assistant turn that goes straight to a tool has no text at all;
           // drawing an empty bubble in front of the tool card says nothing. The
           // same holds for the instant before the first token arrives.
           if (entry.text === "" && entry.thinking === "") return null;
-          return <Message key={entry.messageId} entry={entry} />;
+          return (
+            <Message
+              key={entry.messageId}
+              entry={entry}
+              userMessageIndex={entry.role === "user" ? userMessageIndex : undefined}
+              onEdit={onEdit}
+            />
+          );
         }
         if (entry.kind === "tool") {
           return <ToolCard key={entry.toolCallId} entry={entry} onRespond={onRespond} />;

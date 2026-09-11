@@ -12,15 +12,26 @@ class FakeTransport implements Transport {
   #onClose: (error?: Error) => void = () => {};
   closed = false;
   commands: Array<Record<string, unknown>> = [];
+  entries: Array<Record<string, unknown>> = [];
+  leafId: string | null = null;
 
   send(line: string): void {
-    const command = JSON.parse(line) as { id: string; type: string };
+    const command = JSON.parse(line) as { id: string; type: string; since?: string; message?: string };
     this.commands.push(command);
+    if (command.type === "prompt" && command.message?.startsWith("/cinba-edit-message ")) {
+      const targetId = command.message.slice("/cinba-edit-message ".length);
+      const target = this.entries.find((entry) => entry.id === targetId);
+      this.leafId = typeof target?.parentId === "string" ? target.parentId : null;
+    }
+    const sinceIndex = command.since
+      ? this.entries.findIndex((entry) => entry.id === command.since)
+      : -1;
+    const entries = sinceIndex >= 0 ? this.entries.slice(sinceIndex + 1) : this.entries;
     const data =
       command.type === "get_state"
         ? { sessionId: "session-1", model: { provider: "test", id: "model-1" } }
         : command.type === "get_entries"
-          ? { entries: [] }
+          ? { entries, leafId: this.leafId }
           : command.type === "get_available_models"
             ? { models: [{ provider: "test", id: "model-2" }] }
           : undefined;
@@ -121,6 +132,54 @@ test("Pi events update the ledger and arrive as one batched notification", async
   }
 });
 
+test("settling replaces streaming message ids with Pi entry ids", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  const transport = new FakeTransport();
+  const snapshots: unknown[] = [];
+  const registry = createSessionRegistry({
+    defaultModel: () => undefined,
+    onActions: () => {},
+    onSnapshot: (_sessionId, snapshot) => snapshots.push(snapshot),
+    launchPi: () => ({
+      pi: new PiClient(transport),
+      failed: new Promise<undefined>(() => {}),
+    }),
+  });
+
+  try {
+    const opened = await registry.open({ cwd });
+    assert(opened);
+    transport.emit({
+      type: "message_start",
+      message: { role: "user", content: [{ type: "text", text: "hello" }] },
+    });
+    const streaming = opened.ledger.snapshot().entries[0];
+    assert(streaming?.kind === "message");
+    assert.equal(streaming.stableId, false);
+
+    transport.entries = [
+      {
+        type: "message",
+        id: "pi-user-1",
+        parentId: null,
+        message: { role: "user", content: [{ type: "text", text: "hello" }] },
+      },
+    ];
+    transport.leafId = "pi-user-1";
+    transport.emit({ type: "agent_settled" });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const persisted = opened.ledger.snapshot().entries[0];
+    assert(persisted?.kind === "message");
+    assert.equal(persisted.messageId, "pi-user-1");
+    assert.equal(persisted.stableId, true);
+    assert.equal(snapshots.length, 1);
+  } finally {
+    registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("public session commands hide the Pi transport from callers", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
   const transport = new FakeTransport();
@@ -150,6 +209,56 @@ test("public session commands hide the Pi transport from callers", async () => {
       ["prompt", "abort", "get_available_models", "set_model", "set_session_name"],
     );
     assert.equal(opened.model?.id, "model-2");
+  } finally {
+    registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("editing navigates in place before sending the replacement prompt", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  const transport = new FakeTransport();
+  transport.entries = [
+    {
+      type: "message",
+      id: "user-1",
+      parentId: null,
+      message: { role: "user", content: [{ type: "text", text: "hello" }] },
+    },
+    {
+      type: "message",
+      id: "user-2",
+      parentId: "user-1",
+      message: { role: "user", content: [{ type: "text", text: "again" }] },
+    },
+  ];
+  transport.leafId = "user-2";
+  const registry = createSessionRegistry({
+    defaultModel: () => undefined,
+    onActions: () => {},
+    onSnapshot: () => {},
+    launchPi: () => ({
+      pi: new PiClient(transport),
+      failed: new Promise<undefined>(() => {}),
+    }),
+  });
+
+  try {
+    const opened = await registry.open({ cwd });
+    assert(opened);
+    transport.commands = [];
+
+    assert.equal(await registry.editMessage(opened, "user-2", "fixed hello"), true);
+    assert.deepEqual(
+      transport.commands.map((command) => [command.type, command.message]),
+      [
+        ["get_entries", undefined],
+        ["prompt", "/cinba-edit-message user-2"],
+        ["get_entries", undefined],
+        ["prompt", "fixed hello"],
+      ],
+    );
+    assert.equal(registry.get("session-1"), opened, "the conversation id stays unchanged");
   } finally {
     registry.closeAll();
     rmSync(cwd, { recursive: true, force: true });

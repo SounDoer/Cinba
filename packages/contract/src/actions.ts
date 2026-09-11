@@ -8,7 +8,12 @@
 export type ToolStatus = "pending" | "running" | "done" | "error";
 
 export type ViewAction =
-  | { type: "message_added"; messageId: string; role: "user" | "assistant" }
+  | {
+      type: "message_added";
+      messageId: string;
+      role: "user" | "assistant";
+      stableId: boolean;
+    }
   | { type: "text_appended"; messageId: string; text: string }
   | { type: "thinking_appended"; messageId: string; text: string }
   | {

@@ -39,10 +39,44 @@ type StoredMessage = {
 type StoredEntry = {
   type?: unknown;
   id?: unknown;
+  parentId?: unknown;
   message?: StoredMessage;
   provider?: unknown;
   modelId?: unknown;
 };
+
+/**
+ * Select the path from the session root to its current leaf.
+ *
+ * Pi stores a session as an append-only tree. Entries from branches that are
+ * no longer active remain in the file, so folding append order directly would
+ * incorrectly draw every abandoned answer after an in-place edit.
+ */
+export function activeBranchEntries(
+  entries: readonly unknown[],
+  leafId: string | null,
+): unknown[] {
+  if (leafId === null) return [];
+
+  const byId = new Map<string, StoredEntry>();
+  for (const raw of entries) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const entry = raw as StoredEntry;
+    if (typeof entry.id === "string") byId.set(entry.id, entry);
+  }
+
+  const branch: StoredEntry[] = [];
+  const seen = new Set<string>();
+  let current: string | null = leafId;
+  while (current !== null && !seen.has(current)) {
+    seen.add(current);
+    const entry = byId.get(current);
+    if (!entry) break;
+    branch.push(entry);
+    current = typeof entry.parentId === "string" ? entry.parentId : null;
+  }
+  return branch.reverse();
+}
 
 function parts(message: StoredMessage): Part[] {
   return Array.isArray(message.content) ? (message.content as Part[]) : [];
@@ -102,7 +136,7 @@ export function foldSessionEntries(entries: readonly unknown[]): ViewAction[] {
     // Pi's own entry id, rather than a counter of our own: it is stable across
     // rebuilds, which is what the reconciliation pass in the server needs.
     const messageId = entry.id;
-    actions.push({ type: "message_added", messageId, role: message.role });
+    actions.push({ type: "message_added", messageId, role: message.role, stableId: true });
 
     // Walk the parts in their stored order so a tool call raised midway through
     // an answer lands between the text before it and the text after it.

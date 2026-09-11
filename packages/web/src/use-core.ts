@@ -83,6 +83,11 @@ export function useCore(serverUrl: string) {
     (text: string) => withClient((client) => client.prompt(text)),
     [withClient],
   );
+  const editMessage = useCallback(
+    (entryId: string, text: string) =>
+      withClient((client) => client.editMessage(entryId, text)),
+    [withClient],
+  );
   const abort = useCallback(() => withClient((client) => client.abort()), [withClient]);
   const respondConfirm = useCallback(
     (requestId: string, confirmed: boolean) =>
@@ -148,6 +153,7 @@ export function useCore(serverUrl: string) {
     sessions,
     providers,
     prompt,
+    editMessage,
     abort,
     respondConfirm,
     listDirectory,
