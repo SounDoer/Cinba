@@ -107,12 +107,16 @@ export function Transcript({
   onRespond: (requestId: string, confirmed: boolean) => void;
   onEdit?: (userMessageIndex: number, text: string) => void;
 }) {
-  let userMessageIndex = -1;
+  const userMessageIndices = new Map(
+    entries
+      .filter((entry): entry is MessageEntry => entry.kind === "message" && entry.role === "user")
+      .map((entry, index) => [entry, index]),
+  );
+
   return (
     <>
       {entries.map((entry, index) => {
         if (entry.kind === "message") {
-          if (entry.role === "user") userMessageIndex += 1;
           // An assistant turn that goes straight to a tool has no text at all;
           // drawing an empty bubble in front of the tool card says nothing. The
           // same holds for the instant before the first token arrives.
@@ -121,7 +125,7 @@ export function Transcript({
             <Message
               key={entry.messageId}
               entry={entry}
-              userMessageIndex={entry.role === "user" ? userMessageIndex : undefined}
+              userMessageIndex={userMessageIndices.get(entry)}
               onEdit={onEdit}
             />
           );

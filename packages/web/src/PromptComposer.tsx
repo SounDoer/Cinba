@@ -19,12 +19,11 @@ export function PromptComposer({
   editReady: boolean;
   onCancelEdit: () => void;
 }) {
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(editDraft?.text ?? "");
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (editDraft === undefined) return;
-    setDraft(editDraft.text);
     requestAnimationFrame(() => {
       inputRef.current?.focus();
       inputRef.current?.setSelectionRange(editDraft.text.length, editDraft.text.length);

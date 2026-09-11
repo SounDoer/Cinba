@@ -107,7 +107,7 @@ before(async () => {
       });
       break;
     } catch (error) {
-      if (exited) throw new Error(exited);
+      if (exited) throw new Error(exited, { cause: error });
       if (Date.now() >= givingUpAt) throw error;
       await sleep(250);
     }

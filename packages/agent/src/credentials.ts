@@ -38,7 +38,7 @@ export async function listProviders(): Promise<ProviderStatus[]> {
         configured: runtime.hasConfiguredAuth(id),
       };
     })
-    .sort((a, b) => {
+    .toSorted((a, b) => {
       // Configured first: with forty providers, the few that work are what you
       // came to look at.
       const byConfigured = Number(b.configured) - Number(a.configured);
@@ -79,6 +79,9 @@ export async function setApiKey(providerId: string, apiKey: string): Promise<voi
       notify: () => {},
     } as never);
   } catch (error) {
+    // The provider's original error may contain the key. Attaching it as `cause`
+    // would bypass the redacted public message and keep the secret reachable.
+    // oxlint-disable-next-line preserve-caught-error
     throw new Error(redactSecret(errorText(error), apiKey));
   }
 }

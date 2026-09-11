@@ -9,6 +9,7 @@
 
 import { useEffect, useState } from "react";
 import type { DirectoryListing } from "./use-core.ts";
+import { PickerShell } from "./PickerShell.tsx";
 
 /** Build a subdirectory path, following whichever separator the server returned so the two slashes never mix. */
 function childPath(current: string, name: string): string {
@@ -44,37 +45,35 @@ export function ProjectPicker({
   const shown = listing?.path === current ? listing : undefined;
 
   return (
-    <div className="picker" onClick={onClose}>
-      <div className="picker-box" onClick={(event) => event.stopPropagation()}>
-        <div className="picker-path">{current}</div>
+    <PickerShell label="project picker" onClose={onClose}>
+      <div className="picker-path">{current}</div>
 
-        <div className="picker-list">
-          {shown?.parent ? (
-            <button className="picker-item" onClick={() => go(shown.parent!)}>
-              .. up
-            </button>
-          ) : null}
-          {shown?.dirs.map((name) => (
-            <button className="picker-item" key={name} onClick={() => go(childPath(current, name))}>
-              {name}
-            </button>
-          ))}
-          {shown && shown.dirs.length === 0 ? (
-            <div className="picker-item">(no subdirectories)</div>
-          ) : null}
-        </div>
-
-        <div className="picker-actions">
-          <button onClick={onClose}>Cancel</button>
-          <button
-            onClick={() => {
-              if (onCreateConversation(current)) onClose();
-            }}
-          >
-            Start a conversation here
+      <div className="picker-list">
+        {shown?.parent ? (
+          <button className="picker-item" onClick={() => go(shown.parent!)}>
+            .. up
           </button>
-        </div>
+        ) : null}
+        {shown?.dirs.map((name) => (
+          <button className="picker-item" key={name} onClick={() => go(childPath(current, name))}>
+            {name}
+          </button>
+        ))}
+        {shown && shown.dirs.length === 0 ? (
+          <div className="picker-item">(no subdirectories)</div>
+        ) : null}
       </div>
-    </div>
+
+      <div className="picker-actions">
+        <button onClick={onClose}>Cancel</button>
+        <button
+          onClick={() => {
+            if (onCreateConversation(current)) onClose();
+          }}
+        >
+          Start a conversation here
+        </button>
+      </div>
+    </PickerShell>
   );
 }

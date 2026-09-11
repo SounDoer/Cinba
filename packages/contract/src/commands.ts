@@ -75,7 +75,7 @@ export function matchCommands(input: string): Command[] {
   // "/name parser work" keeps matching "name" as it is typed.
   const typed = commandWord(input);
 
-  return COMMANDS.filter((command) => command.name.startsWith(typed)).sort((a, b) => {
+  return COMMANDS.filter((command) => command.name.startsWith(typed)).toSorted((a, b) => {
     const exact = Number(b.name === typed) - Number(a.name === typed);
     return exact !== 0 ? exact : a.name.localeCompare(b.name);
   });

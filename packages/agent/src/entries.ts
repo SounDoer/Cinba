@@ -72,7 +72,7 @@ export function activeBranchEntries(entries: readonly unknown[], leafId: string 
     branch.push(entry);
     current = typeof entry.parentId === "string" ? entry.parentId : null;
   }
-  return branch.reverse();
+  return branch.toReversed();
 }
 
 function parts(message: StoredMessage): Part[] {

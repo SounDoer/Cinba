@@ -5,6 +5,7 @@
 // would both go stale and offer entries that fail the moment they are picked.
 
 import type { ModelRef } from "@cinba/contract";
+import { PickerShell } from "./PickerShell.tsx";
 
 export function ModelPicker({
   models,
@@ -18,41 +19,39 @@ export function ModelPicker({
   onClose: () => void;
 }) {
   return (
-    <div className="picker" onClick={onClose}>
-      <div className="picker-box" onClick={(event) => event.stopPropagation()}>
-        <div className="picker-path">
-          Switching keeps the conversation: the next reply comes from the new model with the same
-          context.
-        </div>
-
-        <div className="picker-list">
-          {models === undefined ? <div className="picker-item">Loading...</div> : null}
-          {models?.map((model) => {
-            const active = model.provider === current?.provider && model.id === current?.id;
-            return (
-              <button
-                className="picker-item"
-                key={`${model.provider}/${model.id}`}
-                onClick={() => {
-                  if (active || onSelect(model)) onClose();
-                }}
-              >
-                {active ? "● " : "  "}
-                {model.provider} / {model.id}
-              </button>
-            );
-          })}
-          {models?.length === 0 ? (
-            <div className="picker-item">
-              (no models available — check the credentials in ~/.pi/agent/auth.json)
-            </div>
-          ) : null}
-        </div>
-
-        <div className="picker-actions">
-          <button onClick={onClose}>Cancel</button>
-        </div>
+    <PickerShell label="model picker" onClose={onClose}>
+      <div className="picker-path">
+        Switching keeps the conversation: the next reply comes from the new model with the same
+        context.
       </div>
-    </div>
+
+      <div className="picker-list">
+        {models === undefined ? <div className="picker-item">Loading...</div> : null}
+        {models?.map((model) => {
+          const active = model.provider === current?.provider && model.id === current?.id;
+          return (
+            <button
+              className="picker-item"
+              key={`${model.provider}/${model.id}`}
+              onClick={() => {
+                if (active || onSelect(model)) onClose();
+              }}
+            >
+              {active ? "● " : "  "}
+              {model.provider} / {model.id}
+            </button>
+          );
+        })}
+        {models?.length === 0 ? (
+          <div className="picker-item">
+            (no models available — check the credentials in ~/.pi/agent/auth.json)
+          </div>
+        ) : null}
+      </div>
+
+      <div className="picker-actions">
+        <button onClick={onClose}>Cancel</button>
+      </div>
+    </PickerShell>
   );
 }

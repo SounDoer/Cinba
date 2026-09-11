@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "deny",
+    "suspicious": "deny"
+  },
+  "plugins": ["import", "jsx-a11y", "node", "oxc", "promise", "react", "typescript", "unicorn"],
+  "rules": {
+    "import/no-named-as-default": "off",
+    "import/no-unassigned-import": "off",
+    "jsx-a11y/no-autofocus": "off",
+    "no-underscore-dangle": "off",
+    "promise/always-return": "off",
+    "react/react-in-jsx-scope": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/prefer-add-event-listener": "off"
+  }
+}

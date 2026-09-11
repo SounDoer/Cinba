@@ -14,13 +14,14 @@ import { useCore } from "./use-core.ts";
 const CORE_COLOURS = ["#3b6fd4", "#2e9166", "#b4642a", "#8b4bc4", "#b03a52", "#2b7f96"];
 
 type ActiveOverlay = "project" | "model" | "session" | "provider" | null;
-type EditTarget = { userMessageIndex: number; text: string };
+type EditTarget = { sessionId: string; userMessageIndex: number; text: string };
 
 export function App({ serverUrl }: { serverUrl: string }) {
   const core = useCore(serverUrl);
   const [activeOverlay, setActiveOverlay] = useState<ActiveOverlay>(null);
-  const [editTarget, setEditTarget] = useState<EditTarget | undefined>(undefined);
+  const [storedEditTarget, setEditTarget] = useState<EditTarget | undefined>(undefined);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const editTarget = storedEditTarget?.sessionId === core.sessionId ? storedEditTarget : undefined;
   const editingMessage = editTarget
     ? core.snapshot.entries.filter((entry) => entry.kind === "message" && entry.role === "user")[
         editTarget.userMessageIndex
@@ -31,11 +32,10 @@ export function App({ serverUrl }: { serverUrl: string }) {
       ? editingMessage.messageId
       : undefined;
 
+  // The snapshot is an intentional trigger: streaming output should keep the newest text visible.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [core.snapshot]);
-
-  useEffect(() => setEditTarget(undefined), [core.sessionId]);
+  }, [core.snapshot]); // oxlint-disable-line react/exhaustive-effect-dependencies
 
   return (
     <>
@@ -85,7 +85,7 @@ export function App({ serverUrl }: { serverUrl: string }) {
           entries={core.snapshot.entries}
           onRespond={core.respondConfirm}
           onEdit={(userMessageIndex, text) => {
-            setEditTarget({ userMessageIndex, text });
+            setEditTarget({ sessionId: core.sessionId, userMessageIndex, text });
             if (core.snapshot.busy) core.abort();
           }}
         />
@@ -93,6 +93,11 @@ export function App({ serverUrl }: { serverUrl: string }) {
       </main>
 
       <PromptComposer
+        key={
+          editTarget
+            ? `edit-${editTarget.sessionId}-${editTarget.userMessageIndex}-${editingEntryId ?? "preparing"}`
+            : "compose"
+        }
         connected={core.connected}
         busy={core.snapshot.busy}
         onSend={(text) => {

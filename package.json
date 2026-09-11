@@ -15,7 +15,7 @@
     "tui": "node scripts/launch.ts tui",
     "format": "prettier --write \"packages/**/*.{ts,tsx,css,json}\" \"scripts/**/*.ts\" \"*.json\"",
     "format:check": "prettier --check \"packages/**/*.{ts,tsx,css,json}\" \"scripts/**/*.ts\" \"*.json\"",
-    "lint": "oxlint --deny-warnings packages scripts",
+    "lint": "oxlint packages scripts",
     "lint:fix": "oxlint --fix packages scripts",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.scripts.json",
     "test": "node --test --experimental-strip-types \"packages/*/src/**/*.test.ts\"",

@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { sessionSubtitle, sessionTitle } from "@cinba/contract";
 import type { SessionSummary } from "@cinba/contract";
+import { PickerShell } from "./PickerShell.tsx";
 
 function when(iso: string): string {
   const date = new Date(iso);
@@ -35,101 +36,99 @@ export function SessionPicker({
   const [renaming, setRenaming] = useState<string | undefined>(undefined);
 
   return (
-    <div className="picker" onClick={onClose}>
-      <div className="picker-box" onClick={(event) => event.stopPropagation()}>
-        <div className="picker-path">
-          Conversations are kept until you delete them. A new one appears here once it has been
-          spoken to.
-        </div>
+    <PickerShell label="conversation picker" onClose={onClose}>
+      <div className="picker-path">
+        Conversations are kept until you delete them. A new one appears here once it has been spoken
+        to.
+      </div>
 
-        <div className="picker-list">
-          {sessions === undefined ? <div className="picker-item">Loading...</div> : null}
+      <div className="picker-list">
+        {sessions === undefined ? <div className="picker-item">Loading...</div> : null}
 
-          {sessions?.map((session) => {
-            const active = session.id === currentId;
+        {sessions?.map((session) => {
+          const active = session.id === currentId;
 
-            if (active && renaming !== undefined) {
-              return (
-                <div className="picker-item session-row" key={session.id}>
-                  <input
-                    className="session-rename"
-                    autoFocus
-                    value={renaming}
-                    onChange={(event) => setRenaming(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && renaming.trim() !== "") {
-                        if (onRename(renaming.trim())) setRenaming(undefined);
-                      }
-                      if (event.key === "Escape") setRenaming(undefined);
-                    }}
-                  />
-                  <button
-                    disabled={renaming.trim() === ""}
-                    onClick={() => {
-                      if (onRename(renaming.trim())) setRenaming(undefined);
-                    }}
-                  >
-                    Save
-                  </button>
-                  <button onClick={() => setRenaming(undefined)}>Cancel</button>
-                </div>
-              );
-            }
-
-            if (confirming === session.id) {
-              return (
-                <div className="picker-item" key={session.id}>
-                  Delete this conversation for good?{" "}
-                  <button
-                    onClick={() => {
-                      if (onDelete(session.id)) setConfirming(undefined);
-                    }}
-                  >
-                    Delete
-                  </button>{" "}
-                  <button onClick={() => setConfirming(undefined)}>Keep</button>
-                </div>
-              );
-            }
-
+          if (active && renaming !== undefined) {
             return (
               <div className="picker-item session-row" key={session.id}>
+                <input
+                  className="session-rename"
+                  autoFocus
+                  value={renaming}
+                  onChange={(event) => setRenaming(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && renaming.trim() !== "") {
+                      if (onRename(renaming.trim())) setRenaming(undefined);
+                    }
+                    if (event.key === "Escape") setRenaming(undefined);
+                  }}
+                />
                 <button
-                  className="session-open"
+                  disabled={renaming.trim() === ""}
                   onClick={() => {
-                    if (active || onOpen(session.id)) onClose();
+                    if (onRename(renaming.trim())) setRenaming(undefined);
                   }}
                 >
-                  <span className="session-title">
-                    {active ? "● " : ""}
-                    {sessionTitle(session)}
-                  </span>
-                  <span className="session-meta">
-                    {sessionSubtitle(session)} · {when(session.modified)}
-                  </span>
+                  Save
                 </button>
-                {/* Only the conversation you are in: renaming goes through its
-                    own Pi, and the others do not have one running. */}
-                {active ? (
-                  <button onClick={() => setRenaming(sessionTitle(session))}>Rename</button>
-                ) : null}
-                <button className="session-delete" onClick={() => setConfirming(session.id)}>
-                  Delete
-                </button>
+                <button onClick={() => setRenaming(undefined)}>Cancel</button>
               </div>
             );
-          })}
+          }
 
-          {sessions?.length === 0 ? (
-            <div className="picker-item">(no conversations stored yet)</div>
-          ) : null}
-        </div>
+          if (confirming === session.id) {
+            return (
+              <div className="picker-item" key={session.id}>
+                Delete this conversation for good?{" "}
+                <button
+                  onClick={() => {
+                    if (onDelete(session.id)) setConfirming(undefined);
+                  }}
+                >
+                  Delete
+                </button>{" "}
+                <button onClick={() => setConfirming(undefined)}>Keep</button>
+              </div>
+            );
+          }
 
-        <div className="picker-actions">
-          <button onClick={onClose}>Cancel</button>
-          <button onClick={onNewHere}>New conversation...</button>
-        </div>
+          return (
+            <div className="picker-item session-row" key={session.id}>
+              <button
+                className="session-open"
+                onClick={() => {
+                  if (active || onOpen(session.id)) onClose();
+                }}
+              >
+                <span className="session-title">
+                  {active ? "● " : ""}
+                  {sessionTitle(session)}
+                </span>
+                <span className="session-meta">
+                  {sessionSubtitle(session)} · {when(session.modified)}
+                </span>
+              </button>
+              {/* Only the conversation you are in: renaming goes through its
+                    own Pi, and the others do not have one running. */}
+              {active ? (
+                <button onClick={() => setRenaming(sessionTitle(session))}>Rename</button>
+              ) : null}
+              <button className="session-delete" onClick={() => setConfirming(session.id)}>
+                Delete
+              </button>
+            </div>
+          );
+        })}
+
+        {sessions?.length === 0 ? (
+          <div className="picker-item">(no conversations stored yet)</div>
+        ) : null}
       </div>
-    </div>
+
+      <div className="picker-actions">
+        <button onClick={onClose}>Cancel</button>
+        <button onClick={onNewHere}>New conversation...</button>
+      </div>
+    </PickerShell>
   );
 }

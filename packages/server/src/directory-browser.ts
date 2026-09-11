@@ -12,7 +12,7 @@ export function listDirectories(path: string): DirectoryListing {
     dirs = readdirSync(path, { withFileTypes: true })
       .filter((item) => item.isDirectory() && !item.name.startsWith("."))
       .map((item) => item.name)
-      .sort();
+      .toSorted();
   } catch {
     // Missing, unreadable, and non-directory paths all appear as an empty listing.
   }
