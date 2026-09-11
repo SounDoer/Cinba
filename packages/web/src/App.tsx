@@ -22,9 +22,9 @@ export function App({ serverUrl }: { serverUrl: string }) {
   const [editTarget, setEditTarget] = useState<EditTarget | undefined>(undefined);
   const bottomRef = useRef<HTMLDivElement>(null);
   const editingMessage = editTarget
-    ? core.snapshot.entries.filter(
-        (entry) => entry.kind === "message" && entry.role === "user",
-      )[editTarget.userMessageIndex]
+    ? core.snapshot.entries.filter((entry) => entry.kind === "message" && entry.role === "user")[
+        editTarget.userMessageIndex
+      ]
     : undefined;
   const editingEntryId =
     editingMessage?.kind === "message" && editingMessage.stableId

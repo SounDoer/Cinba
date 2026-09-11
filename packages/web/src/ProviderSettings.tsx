@@ -103,10 +103,7 @@ export function ProviderSettings({
                   {provider.configured ? "Replace key" : "Add key"}
                 </button>
                 {provider.configured ? (
-                  <button
-                    className="session-delete"
-                    onClick={() => onClearCredential(provider.id)}
-                  >
+                  <button className="session-delete" onClick={() => onClearCredential(provider.id)}>
                     Forget
                   </button>
                 ) : null}

@@ -11,9 +11,7 @@
  * Make a line splitter. Call the returned function with each chunk of text;
  * once a complete line (ending in \n) has accumulated it goes out via onLine.
  */
-export function createLineSplitter(
-  onLine: (line: string) => void,
-): (chunk: string) => void {
+export function createLineSplitter(onLine: (line: string) => void): (chunk: string) => void {
   let buffer = "";
 
   return (chunk: string): void => {

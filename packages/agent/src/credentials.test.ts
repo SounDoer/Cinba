@@ -64,7 +64,10 @@ test("a secret is stripped from any text on its way out", async () => {
   );
   assert.equal(redactSecret(`${FAKE_KEY} and ${FAKE_KEY}`, FAKE_KEY), "[redacted] and [redacted]");
   assert.equal(redactSecret("nothing to hide", FAKE_KEY), "nothing to hide");
-  assert.equal(redactSecret("an empty secret matches nothing", ""), "an empty secret matches nothing");
+  assert.equal(
+    redactSecret("an empty secret matches nothing", ""),
+    "an empty secret matches nothing",
+  );
 });
 
 test("a provider needing a sign-in this cannot do says so, without quoting the key", async () => {

@@ -77,19 +77,15 @@ before(async () => {
   // No credentials at all, which is where a fresh machine starts.
   writeFileSync(join(home, ".pi", "agent", "auth.json"), "{}", "utf8");
 
-  server = spawn(
-    process.execPath,
-    ["--experimental-strip-types", "packages/server/src/index.ts"],
-    {
-      // The whole home directory rather than PI_CODING_AGENT_DIR, which is what
-      // the credential tests redirect: a core writes ~/.cinba/config.json as
-      // well, and a test run must not decide which conversation the developer's
-      // own core opens next. USERPROFILE is what homedir() reads on Windows,
-      // HOME everywhere else.
-      env: { ...process.env, USERPROFILE: home, HOME: home, CINBA_PORT: PORT },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
+  server = spawn(process.execPath, ["--experimental-strip-types", "packages/server/src/index.ts"], {
+    // The whole home directory rather than PI_CODING_AGENT_DIR, which is what
+    // the credential tests redirect: a core writes ~/.cinba/config.json as
+    // well, and a test run must not decide which conversation the developer's
+    // own core opens next. USERPROFILE is what homedir() reads on Windows,
+    // HOME everywhere else.
+    env: { ...process.env, USERPROFILE: home, HOME: home, CINBA_PORT: PORT },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   server.stderr?.setEncoding("utf8");
   server.stderr?.on("data", (chunk: string) => process.stderr.write(`[core] ${chunk}`));
 

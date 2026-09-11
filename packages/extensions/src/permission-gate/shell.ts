@@ -25,7 +25,8 @@ export function parseShellInvocations(command: string): ShellInvocation[] {
     if (tokens.length > 0) {
       const unwrapped = unwrapCommand(tokens);
       const [name, ...args] = unwrapped.tokens;
-      if (name) invocations.push({ name: executableName(name), args, wrappers: unwrapped.wrappers });
+      if (name)
+        invocations.push({ name: executableName(name), args, wrappers: unwrapped.wrappers });
     }
     tokens = [];
   };

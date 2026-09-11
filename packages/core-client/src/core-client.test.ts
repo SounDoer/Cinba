@@ -38,7 +38,10 @@ function createFakeSocket(): {
 
 const TEST_URL = "ws://core.test/ws";
 
-function connect(fake: ReturnType<typeof createFakeSocket>, handlers: CoreClientHandlers): CoreClient {
+function connect(
+  fake: ReturnType<typeof createFakeSocket>,
+  handlers: CoreClientHandlers,
+): CoreClient {
   const client = new CoreClient(TEST_URL, handlers, {
     socketFactory: (url) => {
       assert.equal(url, TEST_URL);
@@ -53,10 +56,14 @@ test("owns the socket lifecycle and rejects sends outside an open connection", (
   const fake = createFakeSocket();
   const states: string[] = [];
   const errors: unknown[] = [];
-  const client = new CoreClient(TEST_URL, {
-    onConnectionChanged: (state) => states.push(state),
-    onError: (error) => errors.push(error),
-  }, { socketFactory: () => fake.socket });
+  const client = new CoreClient(
+    TEST_URL,
+    {
+      onConnectionChanged: (state) => states.push(state),
+      onError: (error) => errors.push(error),
+    },
+    { socketFactory: () => fake.socket },
+  );
 
   assert.equal(client.connectionState, "connecting");
   assert.equal(client.prompt("too soon"), false);
@@ -183,10 +190,7 @@ test("the model commands go out, and both model messages reach their handlers", 
   fake.receive({ type: "model_listing", models: [{ provider: "deepseek", id: "a" }] });
   fake.receive({ type: "model_changed", model: { provider: "deepseek", id: "a" } });
 
-  assert.deepEqual(seen, [
-    [{ provider: "deepseek", id: "a" }],
-    { provider: "deepseek", id: "a" },
-  ]);
+  assert.deepEqual(seen, [[{ provider: "deepseek", id: "a" }], { provider: "deepseek", id: "a" }]);
 });
 
 test("a snapshot carries the current model alongside the working directory", () => {

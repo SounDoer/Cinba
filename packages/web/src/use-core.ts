@@ -7,13 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CoreClient } from "@cinba/core-client";
 import type { CoreConnectionState } from "@cinba/core-client";
 import { createSession } from "@cinba/contract";
-import type {
-  ModelRef,
-  ProviderStatus,
-  Session,
-  SessionSummary,
-  Snapshot,
-} from "@cinba/contract";
+import type { ModelRef, ProviderStatus, Session, SessionSummary, Snapshot } from "@cinba/contract";
 
 export type DirectoryListing = {
   path: string;
@@ -33,8 +27,7 @@ export function useCore(serverUrl: string) {
   const [sessions, setSessions] = useState<SessionSummary[] | undefined>(undefined);
   const [providers, setProviders] = useState<ProviderStatus[] | undefined>(undefined);
   const [coreName, setCoreName] = useState("");
-  const [connectionState, setConnectionState] =
-    useState<CoreConnectionState>("connecting");
+  const [connectionState, setConnectionState] = useState<CoreConnectionState>("connecting");
 
   const clientRef = useRef<CoreClient | undefined>(undefined);
   const mirrorRef = useRef<Session>(createSession());
@@ -84,8 +77,7 @@ export function useCore(serverUrl: string) {
     [withClient],
   );
   const editMessage = useCallback(
-    (entryId: string, text: string) =>
-      withClient((client) => client.editMessage(entryId, text)),
+    (entryId: string, text: string) => withClient((client) => client.editMessage(entryId, text)),
     [withClient],
   );
   const abort = useCallback(() => withClient((client) => client.abort()), [withClient]);
@@ -98,10 +90,7 @@ export function useCore(serverUrl: string) {
     (path: string) => withClient((client) => client.listDir(path)),
     [withClient],
   );
-  const listModels = useCallback(
-    () => withClient((client) => client.listModels()),
-    [withClient],
-  );
+  const listModels = useCallback(() => withClient((client) => client.listModels()), [withClient]);
   const selectModel = useCallback(
     (next: ModelRef) => withClient((client) => client.setModel(next.provider, next.id)),
     [withClient],

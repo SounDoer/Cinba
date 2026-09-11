@@ -69,9 +69,7 @@ export function PromptComposer({
       <button onClick={send} disabled={!connected || busy || !editReady}>
         {editDraft === undefined ? "Send" : editReady ? "Send edit" : "Preparing edit..."}
       </button>
-      {editDraft !== undefined ? (
-        <button onClick={onCancelEdit}>Cancel edit</button>
-      ) : null}
+      {editDraft !== undefined ? <button onClick={onCancelEdit}>Cancel edit</button> : null}
       {busy ? (
         <button onClick={onAbort} disabled={!connected}>
           Stop

@@ -72,8 +72,6 @@ const clients = new Set<WebSocket>();
  */
 const local = new WeakSet<WebSocket>();
 
-
-
 // ---- Sending ----
 
 function sendTo(socket: WebSocket, message: ServerMessage): void {

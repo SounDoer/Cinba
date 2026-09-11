@@ -16,7 +16,12 @@ class FakeTransport implements Transport {
   leafId: string | null = null;
 
   send(line: string): void {
-    const command = JSON.parse(line) as { id: string; type: string; since?: string; message?: string };
+    const command = JSON.parse(line) as {
+      id: string;
+      type: string;
+      since?: string;
+      message?: string;
+    };
     this.commands.push(command);
     if (command.type === "prompt" && command.message?.startsWith("/cinba-edit-message ")) {
       const targetId = command.message.slice("/cinba-edit-message ".length);
@@ -34,7 +39,7 @@ class FakeTransport implements Transport {
           ? { entries, leafId: this.leafId }
           : command.type === "get_available_models"
             ? { models: [{ provider: "test", id: "model-2" }] }
-          : undefined;
+            : undefined;
     queueMicrotask(() => {
       this.#onLine(
         JSON.stringify({

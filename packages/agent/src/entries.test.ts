@@ -26,7 +26,13 @@ import { createSession } from "@cinba/contract";
  * denial through the permission gate actually looks like on disk.
  */
 const STORED = [
-  { type: "model_change", id: "a1", parentId: null, provider: "deepseek", modelId: "deepseek-v4-pro" },
+  {
+    type: "model_change",
+    id: "a1",
+    parentId: null,
+    provider: "deepseek",
+    modelId: "deepseek-v4-pro",
+  },
   { type: "thinking_level_change", id: "a2", parentId: "a1", thinkingLevel: "high" },
   {
     type: "message",
@@ -149,7 +155,11 @@ test("a stored message without an id is skipped", () => {
 
 test("message ids come from Pi, so a rebuild lands on the same ids", () => {
   const actions = foldSessionEntries([
-    { type: "message", id: "d1", message: { role: "user", content: [{ type: "text", text: "hi" }] } },
+    {
+      type: "message",
+      id: "d1",
+      message: { role: "user", content: [{ type: "text", text: "hi" }] },
+    },
   ]);
 
   assert.deepEqual(actions, [

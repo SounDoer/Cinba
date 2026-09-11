@@ -21,10 +21,7 @@ export type UiRequest = {
 };
 
 /** One of three reply shapes; see Pi's RpcExtensionUIResponse. */
-export type UiReply =
-  | { value: string }
-  | { confirmed: boolean }
-  | { cancelled: true };
+export type UiReply = { value: string } | { confirmed: boolean } | { cancelled: true };
 
 export type UiRequestHandler = (request: UiRequest) => Promise<UiReply>;
 
@@ -116,7 +113,9 @@ export class PiClient {
    *              a long conversation back every time.
    */
   getEntries(since?: string): Promise<CoreResponse> {
-    return this.#send(since === undefined ? { type: "get_entries" } : { type: "get_entries", since });
+    return this.#send(
+      since === undefined ? { type: "get_entries" } : { type: "get_entries", since },
+    );
   }
 
   /** Start a fresh conversation in this process, leaving the previous one on disk. */

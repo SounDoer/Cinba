@@ -27,10 +27,7 @@ type Mode = "start" | "dev" | "tui";
 const children = new Set<ChildProcess>();
 let stopping = false;
 
-function run(
-  args: string[],
-  options: { cwd?: string; managed?: boolean } = {},
-): ChildProcess {
+function run(args: string[], options: { cwd?: string; managed?: boolean } = {}): ChildProcess {
   const child = spawn(process.execPath, args, {
     cwd: options.cwd ?? REPOSITORY_ROOT,
     stdio: "inherit",
@@ -137,10 +134,7 @@ async function stopChildren(): Promise<void> {
       }),
   );
 
-  await Promise.race([
-    Promise.all(exits),
-    new Promise((resolve) => setTimeout(resolve, 3_000)),
-  ]);
+  await Promise.race([Promise.all(exits), new Promise((resolve) => setTimeout(resolve, 3_000))]);
 }
 
 function installSignalHandlers(): void {
@@ -218,9 +212,8 @@ async function main(): Promise<void> {
   if (mode === "tui") await startTui(process.argv[3]);
 }
 
-main()
-  .catch(async (error: unknown) => {
-    await stopChildren();
-    console.error(`[launcher] ${error instanceof Error ? error.message : String(error)}`);
-    process.exitCode = 1;
-  });
+main().catch(async (error: unknown) => {
+  await stopChildren();
+  console.error(`[launcher] ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
+});

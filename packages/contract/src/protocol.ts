@@ -199,9 +199,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isModelRef(value: unknown): value is ModelRef {
-  return (
-    isRecord(value) && typeof value.provider === "string" && typeof value.id === "string"
-  );
+  return isRecord(value) && typeof value.provider === "string" && typeof value.id === "string";
 }
 
 function isToolStatus(value: unknown): boolean {

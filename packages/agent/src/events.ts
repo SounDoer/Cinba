@@ -66,9 +66,7 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
       }
 
       case "message_update": {
-        const inner = event.assistantMessageEvent as
-          | { type?: string; delta?: unknown }
-          | undefined;
+        const inner = event.assistantMessageEvent as { type?: string; delta?: unknown } | undefined;
         if (currentMessageId === "" || typeof inner?.delta !== "string") return [];
         if (inner.type === "text_delta") {
           return [{ type: "text_appended", messageId: currentMessageId, text: inner.delta }];
@@ -82,8 +80,7 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
       case "message_end": {
         const usage = (
           event.message as
-            | { usage?: { totalTokens?: unknown; cost?: { total?: unknown } } }
-            | undefined
+            { usage?: { totalTokens?: unknown; cost?: { total?: unknown } } } | undefined
         )?.usage;
         if (!usage) return [];
         let changed = false;

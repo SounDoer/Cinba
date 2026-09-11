@@ -45,15 +45,9 @@ export function buildSpawnPlan(
 
 /** Start Pi's JS RPC entry directly, avoiding platform-specific command wrappers. */
 export function startPi(options: CoreOptions = {}): ChildProcess {
-  const entry = fileURLToPath(
-    import.meta.resolve("@earendil-works/pi-coding-agent/rpc-entry"),
-  );
-  const gate = fileURLToPath(
-    import.meta.resolve("@cinba/extensions/src/permission-gate.ts"),
-  );
-  const sessionEdit = fileURLToPath(
-    import.meta.resolve("@cinba/extensions/src/session-edit.ts"),
-  );
+  const entry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent/rpc-entry"));
+  const gate = fileURLToPath(import.meta.resolve("@cinba/extensions/src/permission-gate.ts"));
+  const sessionEdit = fileURLToPath(import.meta.resolve("@cinba/extensions/src/session-edit.ts"));
   const plan = buildSpawnPlan(entry, gate, {
     ...options,
     extensions: [sessionEdit, ...(options.extensions ?? [])],

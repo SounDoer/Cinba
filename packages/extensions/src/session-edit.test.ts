@@ -1,15 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-} from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import sessionEdit from "./session-edit.ts";
 
 test("the edit command navigates before the selected user message in the same session", async () => {
-  let handler:
-    | ((args: string, context: ExtensionCommandContext) => Promise<void>)
-    | undefined;
+  let handler: ((args: string, context: ExtensionCommandContext) => Promise<void>) | undefined;
   sessionEdit({
     registerCommand: (_name, options) => {
       handler = options.handler;

@@ -84,7 +84,10 @@ test("malformed server messages are dropped", () => {
     }),
     undefined,
   );
-  assert.equal(parseServerMessage({ type: "session_listing", sessions: [{ id: "s1" }] }), undefined);
+  assert.equal(
+    parseServerMessage({ type: "session_listing", sessions: [{ id: "s1" }] }),
+    undefined,
+  );
   assert.equal(parseServerMessage({ type: "never_heard_of_this" }), undefined);
 });
 
@@ -117,14 +120,8 @@ test("a blank prompt does not count", () => {
 });
 
 test("edit_message requires a non-blank entry id and text", () => {
-  assert.equal(
-    parseClientMessage({ type: "edit_message", entryId: "", text: "fixed" }),
-    undefined,
-  );
-  assert.equal(
-    parseClientMessage({ type: "edit_message", entryId: 1, text: "fixed" }),
-    undefined,
-  );
+  assert.equal(parseClientMessage({ type: "edit_message", entryId: "", text: "fixed" }), undefined);
+  assert.equal(parseClientMessage({ type: "edit_message", entryId: 1, text: "fixed" }), undefined);
   assert.equal(
     parseClientMessage({ type: "edit_message", entryId: "entry-1", text: "  " }),
     undefined,

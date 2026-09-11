@@ -81,7 +81,10 @@ test("events with missing or wrong fields are ignored safely", () => {
   const fold = createEventFolder();
 
   assert.deepEqual(
-    fold({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "orphan" } }),
+    fold({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "orphan" },
+    }),
     [],
   );
   assert.deepEqual(fold({ type: "tool_execution_start", toolName: "bash" }), []);

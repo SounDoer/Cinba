@@ -63,10 +63,7 @@ export function createServerRuntime(options: ServerRuntimeOptions): ServerRuntim
     state = "running";
 
     if (options.maintain) {
-      maintenanceTimer = setInterval(
-        options.maintain,
-        options.maintenanceIntervalMs ?? 60_000,
-      );
+      maintenanceTimer = setInterval(options.maintain, options.maintenanceIntervalMs ?? 60_000);
       maintenanceTimer.unref();
     }
 

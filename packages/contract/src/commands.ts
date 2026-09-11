@@ -13,14 +13,7 @@
 // wire rather than be listed here.
 
 export type CommandId =
-  | "model"
-  | "sessions"
-  | "new"
-  | "name"
-  | "providers"
-  | "login"
-  | "logout"
-  | "help";
+  "model" | "sessions" | "new" | "name" | "providers" | "login" | "logout" | "help";
 
 export type Command = {
   id: CommandId;

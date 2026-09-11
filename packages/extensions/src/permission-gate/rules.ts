@@ -120,7 +120,8 @@ const BUILT_IN_TOOLS = new Set([
 
 const askMalformedBuiltInInput: PermissionRule = (context) => {
   const input = context.input as { path?: unknown; command?: unknown } | undefined;
-  const needsPath = context.toolName === "read" || context.toolName === "edit" || context.toolName === "write";
+  const needsPath =
+    context.toolName === "read" || context.toolName === "edit" || context.toolName === "write";
   const needsCommand = context.toolName === "bash" || context.toolName === "powershell";
   if (
     (needsPath && (typeof input?.path !== "string" || input.path.trim() === "")) ||
@@ -155,7 +156,9 @@ const askOutsideWorkspaceWrite: PermissionRule = (context) => {
 };
 
 function isInformationOnly(args: readonly string[]): boolean {
-  return args.some((arg) => ["--help", "-h", "/?", "--version", "-whatif"].includes(arg.toLowerCase()));
+  return args.some((arg) =>
+    ["--help", "-h", "/?", "--version", "-whatif"].includes(arg.toLowerCase()),
+  );
 }
 
 const askShellRisk: PermissionRule = (context) => {
@@ -169,7 +172,16 @@ const askShellRisk: PermissionRule = (context) => {
     };
   }
 
-  const deletionCommands = new Set(["rm", "remove-item", "ri", "del", "erase", "rd", "rmdir", "unlink"]);
+  const deletionCommands = new Set([
+    "rm",
+    "remove-item",
+    "ri",
+    "del",
+    "erase",
+    "rd",
+    "rmdir",
+    "unlink",
+  ]);
   const permissionCommands = new Set(["chmod", "chown", "icacls", "takeown", "set-acl"]);
   const overwriteCommands = new Set(["set-content", "out-file", "clear-content"]);
   const fileAccessCommands = new Set([
@@ -194,24 +206,38 @@ const askShellRisk: PermissionRule = (context) => {
       return { ruleId: "shell.elevation", reason: "Privilege elevation requires confirmation" };
     }
     if (deletionCommands.has(invocation.name)) {
-      return { ruleId: "shell.delete", reason: `File deletion by "${invocation.name}" requires confirmation` };
+      return {
+        ruleId: "shell.delete",
+        reason: `File deletion by "${invocation.name}" requires confirmation`,
+      };
     }
     if (permissionCommands.has(invocation.name)) {
-      return { ruleId: "shell.change-permissions", reason: `Permission change by "${invocation.name}" requires confirmation` };
+      return {
+        ruleId: "shell.change-permissions",
+        reason: `Permission change by "${invocation.name}" requires confirmation`,
+      };
     }
     if (overwriteCommands.has(invocation.name)) {
-      return { ruleId: "shell.overwrite", reason: `File overwrite by "${invocation.name}" requires confirmation` };
+      return {
+        ruleId: "shell.overwrite",
+        reason: `File overwrite by "${invocation.name}" requires confirmation`,
+      };
     }
     if (
       fileAccessCommands.has(invocation.name) &&
       invocation.args.some((arg) => !arg.startsWith("-") && isSensitivePath(arg, context))
     ) {
-      return { ruleId: "shell.sensitive-path", reason: "Shell access to a sensitive path requires confirmation" };
+      return {
+        ruleId: "shell.sensitive-path",
+        reason: "Shell access to a sensitive path requires confirmation",
+      };
     }
     if (invocation.name === "git") {
       const args = invocation.args.map((arg) => arg.toLowerCase());
       const operation = args[0];
-      const force = args.some((arg) => arg === "--force" || arg === "-f" || /^-[a-z]*f[a-z]*$/i.test(arg));
+      const force = args.some(
+        (arg) => arg === "--force" || arg === "-f" || /^-[a-z]*f[a-z]*$/i.test(arg),
+      );
       if (
         (operation === "reset" && args.includes("--hard")) ||
         (operation === "clean" && force) ||
@@ -219,7 +245,10 @@ const askShellRisk: PermissionRule = (context) => {
         (operation === "checkout" && args.includes("--")) ||
         (operation === "push" && (force || args.includes("--force-with-lease")))
       ) {
-        return { ruleId: "shell.destructive-git", reason: `Destructive Git operation "${operation}" requires confirmation` };
+        return {
+          ruleId: "shell.destructive-git",
+          reason: `Destructive Git operation "${operation}" requires confirmation`,
+        };
       }
     }
   }

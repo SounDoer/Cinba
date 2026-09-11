@@ -25,10 +25,7 @@ import {
   TuiMainScreen,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import type {
-  Component,
-  TUI,
-} from "@earendil-works/pi-tui";
+import type { Component, TUI } from "@earendil-works/pi-tui";
 import {
   COMMANDS,
   commandArgument,
@@ -137,7 +134,9 @@ class ConfirmDialog implements Component {
     return [
       ...wrapTextWithAnsi(`${YELLOW}${BOLD}${this.#title}${RESET}`, width),
       ...(this.#message
-        ? this.#message.split("\n").flatMap((line) => wrapTextWithAnsi(`${DIM}${line}${RESET}`, width))
+        ? this.#message
+            .split("\n")
+            .flatMap((line) => wrapTextWithAnsi(`${DIM}${line}${RESET}`, width))
         : []),
       ...this.#list.render(width),
       `${DIM}↑↓ to choose, Enter to confirm, Esc to deny${RESET}`,
@@ -244,20 +243,6 @@ function showPrompt(): void {
   tui.setFocus(promptInput);
 }
 
-/** Raise a confirmation and resolve once the user has chosen. The core is blocked waiting for this answer. */
-function ask(title: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const dialog = new ConfirmDialog(title);
-    dialog.onAnswer = (confirmed) => {
-      transcript.append(confirmed ? `${DIM}   → allowed${RESET}` : `${DIM}   → denied${RESET}`);
-      showPrompt();
-      resolve(confirmed);
-    };
-    setBottom(dialog);
-    tui.setFocus(dialog);
-  });
-}
-
 // ---- Starting the core ----
 
 // ---- Talking to the core ----
@@ -310,7 +295,9 @@ function applyAction(action: ViewAction): void {
     case "tool_changed": {
       if (action.status === "pending") {
         transcript.append("");
-        transcript.append(`${YELLOW}[tool] ${action.toolName}${RESET} ${DIM}awaiting approval${RESET}`);
+        transcript.append(
+          `${YELLOW}[tool] ${action.toolName}${RESET} ${DIM}awaiting approval${RESET}`,
+        );
         if (action.args !== undefined) {
           for (const line of JSON.stringify(action.args, null, 2).split("\n")) {
             transcript.append(`${DIM}   ${line}${RESET}`);
@@ -630,7 +617,6 @@ promptInput.input.onSubmit = (value: string) => {
   // Go busy immediately rather than waiting for the signal to come back over
   // the socket. The server sends the same thing; this only locks the input at once.
   applyAction({ type: "busy_changed", busy: true });
-
 };
 
 // Esc stops an answer in progress. Pressing it while idle does nothing: exiting

@@ -52,10 +52,7 @@ type StoredEntry = {
  * no longer active remain in the file, so folding append order directly would
  * incorrectly draw every abandoned answer after an in-place edit.
  */
-export function activeBranchEntries(
-  entries: readonly unknown[],
-  leafId: string | null,
-): unknown[] {
+export function activeBranchEntries(entries: readonly unknown[], leafId: string | null): unknown[] {
   if (leafId === null) return [];
 
   const byId = new Map<string, StoredEntry>();

@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { NAME_COLOURS, nameColourIndex, projectName, sessionSubtitle, sessionTitle } from "./labels.ts";
+import {
+  NAME_COLOURS,
+  nameColourIndex,
+  projectName,
+  sessionSubtitle,
+  sessionTitle,
+} from "./labels.ts";
 import type { SessionSummary } from "./protocol.ts";
 
 const WINDOWS_PATH = ["C:", "Users", "me", "repos", "Cinba"].join("\\");

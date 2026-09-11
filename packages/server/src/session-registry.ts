@@ -61,11 +61,7 @@ export type SessionRegistry = {
   abort(session: LiveSession): void;
   editMessage(session: LiveSession, entryId: string, text: string): Promise<boolean>;
   denyPendingConfirmations(session: LiveSession): void;
-  respondToConfirmation(
-    session: LiveSession,
-    requestId: string,
-    confirmed: boolean,
-  ): void;
+  respondToConfirmation(session: LiveSession, requestId: string, confirmed: boolean): void;
   listModels(session: LiveSession): Promise<ModelRef[]>;
   setModel(session: LiveSession, model: ModelRef): Promise<boolean>;
   rename(session: LiveSession, name: string): Promise<boolean>;
@@ -207,8 +203,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     }
 
     const data = state.data as
-      | { sessionId?: unknown; model?: { provider?: unknown; id?: unknown } }
-      | undefined;
+      { sessionId?: unknown; model?: { provider?: unknown; id?: unknown } } | undefined;
     if (typeof data?.sessionId !== "string") {
       console.error("[cinba] Pi did not report a session id; abandoning this start");
       void launch.pi.close();
@@ -333,11 +328,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
           type?: unknown;
           message?: { role?: unknown };
         };
-        return (
-          entry.id === entryId &&
-          entry.type === "message" &&
-          entry.message?.role === "user"
-        );
+        return entry.id === entryId && entry.type === "message" && entry.message?.role === "user";
       }) as { parentId?: unknown } | undefined;
       if (!target) throw new Error("the user message is no longer on the active branch");
       const expectedLeaf = typeof target.parentId === "string" ? target.parentId : null;
@@ -424,9 +415,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     }
 
     managed.model = model;
-    emitManaged(managed, [
-      { type: "model_in_use", provider: model.provider, modelId: model.id },
-    ]);
+    emitManaged(managed, [{ type: "model_in_use", provider: model.provider, modelId: model.id }]);
     return true;
   }
 
@@ -435,9 +424,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     if (!managed) return false;
     const response = await managed.pi.setSessionName(name);
     if (!response.success) {
-      emitManaged(managed, [
-        { type: "notice", text: `not renamed: ${String(response.error)}` },
-      ]);
+      emitManaged(managed, [{ type: "notice", text: `not renamed: ${String(response.error)}` }]);
       return false;
     }
     emitManaged(managed, [{ type: "notice", text: `named "${name}"` }]);
@@ -454,7 +441,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     open,
     stop,
     closeAll: () => {
-      for (const id of [...live.keys()]) stop(id);
+      for (const id of live.keys()) stop(id);
     },
     emit,
     snapshot,

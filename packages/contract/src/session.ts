@@ -158,7 +158,10 @@ export function createSession(initial?: Snapshot): Session {
           // receiving this request is what proves the exceptional one is pending.
           for (let i = entries.length - 1; i >= 0; i--) {
             const entry = entries[i]!;
-            if (entry.kind === "tool" && (entry.status === "running" || entry.status === "pending")) {
+            if (
+              entry.kind === "tool" &&
+              (entry.status === "running" || entry.status === "pending")
+            ) {
               entry.status = "pending";
               entry.confirmRequestId = action.requestId;
               entry.confirmTitle = action.title;
@@ -216,7 +219,8 @@ export function createSession(initial?: Snapshot): Session {
  * expected rather than a disagreement.
  */
 export function sameTranscript(a: readonly Entry[], b: readonly Entry[]): boolean {
-  const meaningful = (entries: readonly Entry[]) => entries.filter((entry) => entry.kind !== "notice");
+  const meaningful = (entries: readonly Entry[]) =>
+    entries.filter((entry) => entry.kind !== "notice");
   const left = meaningful(a);
   const right = meaningful(b);
   return (
@@ -246,9 +250,7 @@ function sameMeaningfulEntry(left: Entry, right: Entry): boolean {
       );
     case "model":
       return (
-        right.kind === "model" &&
-        left.provider === right.provider &&
-        left.modelId === right.modelId
+        right.kind === "model" && left.provider === right.provider && left.modelId === right.modelId
       );
     default:
       return false;

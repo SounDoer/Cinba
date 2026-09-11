@@ -108,7 +108,11 @@ test("a confirm request moves the most recent active card to pending", () => {
   const entries = session.snapshot().entries;
   assert(entries[0]?.kind === "tool");
   assert(entries[1]?.kind === "tool");
-  assert.equal(entries[0].confirmRequestId, undefined, "a finished card must not have a confirmation attached");
+  assert.equal(
+    entries[0].confirmRequestId,
+    undefined,
+    "a finished card must not have a confirmation attached",
+  );
   assert.equal(entries[1].confirmRequestId, "u1");
   assert.equal(entries[1].confirmTitle, "Allow bash?");
   assert.equal(
