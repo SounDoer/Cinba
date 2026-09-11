@@ -123,6 +123,55 @@ test("a tool call whose result was never stored stays pending", () => {
   assert.equal(tool?.type === "tool_changed" && tool.status, "pending");
 });
 
+test("a normally completed thinking-only assistant reply is recovered as visible text", () => {
+  const actions = foldSessionEntries([
+    {
+      type: "message",
+      id: "reply-1",
+      message: {
+        role: "assistant",
+        content: [{ type: "thinking", thinking: "The answer was returned in the wrong field." }],
+        stopReason: "stop",
+      },
+    },
+  ]);
+
+  assert.deepEqual(actions, [
+    { type: "message_added", messageId: "reply-1", role: "assistant", stableId: true },
+    {
+      type: "text_appended",
+      messageId: "reply-1",
+      text: "The answer was returned in the wrong field.",
+    },
+  ]);
+});
+
+test("thinking without a final answer is not promoted for incomplete assistant turns", () => {
+  for (const stopReason of ["toolUse", "aborted", "length"]) {
+    const actions = foldSessionEntries([
+      {
+        type: "message",
+        id: stopReason,
+        message: {
+          role: "assistant",
+          content: [{ type: "thinking", thinking: "Still working." }],
+          stopReason,
+        },
+      },
+    ]);
+
+    assert.deepEqual(actions, [
+      {
+        type: "message_added",
+        messageId: stopReason,
+        role: "assistant",
+        stableId: true,
+      },
+      { type: "thinking_appended", messageId: stopReason, text: "Still working." },
+    ]);
+  }
+});
+
 test("unknown and malformed entries are skipped, not fatal", () => {
   // Old sessions and future Pi versions both land here.
   const actions = foldSessionEntries([

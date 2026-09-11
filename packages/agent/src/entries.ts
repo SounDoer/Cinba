@@ -30,6 +30,7 @@ type Part = {
 type StoredMessage = {
   role?: unknown;
   content?: unknown;
+  stopReason?: unknown;
   toolCallId?: unknown;
   toolName?: unknown;
   isError?: unknown;
@@ -135,15 +136,32 @@ export function foldSessionEntries(entries: readonly unknown[]): ViewAction[] {
     const messageId = entry.id;
     actions.push({ type: "message_added", messageId, role: message.role, stableId: true });
 
+    const messageParts = parts(message);
+    const hasText = messageParts.some(
+      (part) => part.type === "text" && typeof part.text === "string" && part.text !== "",
+    );
+    const recoverThinkingOnlyReply =
+      message.role === "assistant" && message.stopReason === "stop" && !hasText;
+
     // Walk the parts in their stored order so a tool call raised midway through
     // an answer lands between the text before it and the text after it.
-    for (const part of parts(message)) {
+    for (const part of messageParts) {
       if (part.type === "text" && typeof part.text === "string") {
         actions.push({ type: "text_appended", messageId, text: part.text });
         continue;
       }
       if (part.type === "thinking" && typeof part.thinking === "string") {
-        actions.push({ type: "thinking_appended", messageId, text: part.thinking });
+        // Some OpenAI-compatible reasoning endpoints occasionally finish with
+        // the entire response in reasoning_content and no content field. Once
+        // Pi has persisted a normally completed turn, keeping that response
+        // exclusively in the collapsed thinking panel makes the answer appear
+        // to be missing. Recover only this exact terminal shape; tool-use,
+        // aborted and length-limited messages must remain thinking.
+        actions.push({
+          type: recoverThinkingOnlyReply ? "text_appended" : "thinking_appended",
+          messageId,
+          text: part.thinking,
+        });
         continue;
       }
       if (part.type === "toolCall" && typeof part.id === "string") {
