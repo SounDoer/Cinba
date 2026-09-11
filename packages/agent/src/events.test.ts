@@ -95,7 +95,7 @@ test("events with missing or wrong fields are ignored safely", () => {
   );
 });
 
-test("tool_execution_start means awaiting approval, never already executed", () => {
+test("tool_execution_start means running unless a confirmation arrives", () => {
   const fold = createEventFolder();
 
   const actions = fold({
@@ -111,7 +111,7 @@ test("tool_execution_start means awaiting approval, never already executed", () 
       toolCallId: "call_1",
       toolName: "bash",
       args: { command: "ls" },
-      status: "pending",
+      status: "running",
     },
   ]);
 });

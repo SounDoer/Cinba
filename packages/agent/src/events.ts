@@ -101,16 +101,15 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
 
       case "tool_execution_start": {
         if (typeof event.toolCallId !== "string" || typeof event.toolName !== "string") return [];
-        // Note: this only means processing started. Execution happens after the
-        // permission confirmation, so the status here can only be pending —
-        // rendering it as executed would give the user false reassurance.
+        // Most tools now pass the permission policy without a prompt. A later
+        // confirm_requested action moves an exceptional tool back to pending.
         return [
           {
             type: "tool_changed",
             toolCallId: event.toolCallId,
             toolName: event.toolName,
             args: event.args,
-            status: "pending",
+            status: "running",
           },
         ];
       }

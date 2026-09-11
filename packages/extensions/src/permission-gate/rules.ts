@@ -1,5 +1,5 @@
 import { isInsideWorkspace, isProtectedRoot, isSensitivePath } from "./paths.ts";
-import { hasOutputRedirection, parseShellInvocations } from "./shell.ts";
+import { hasRiskyOutputRedirection, parseShellInvocations } from "./shell.ts";
 import type { PermissionContext, PermissionRule } from "./types.ts";
 
 function shellCommand(context: PermissionContext): string | undefined {
@@ -162,7 +162,7 @@ const askShellRisk: PermissionRule = (context) => {
   const command = shellCommand(context);
   if (!command) return undefined;
 
-  if (hasOutputRedirection(command)) {
+  if (hasRiskyOutputRedirection(command)) {
     return {
       ruleId: "shell.output-redirection",
       reason: "Shell output redirection can overwrite files and requires confirmation",

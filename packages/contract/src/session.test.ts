@@ -93,11 +93,11 @@ test("two concurrent tools get one card each", () => {
   assert.equal(session.snapshot().entries.length, 2);
 });
 
-test("a confirm request attaches to the most recent pending card", () => {
+test("a confirm request moves the most recent active card to pending", () => {
   const session = createSession();
 
   session.apply({ type: "tool_changed", toolCallId: "a", toolName: "read", status: "done" });
-  session.apply({ type: "tool_changed", toolCallId: "b", toolName: "bash", status: "pending" });
+  session.apply({ type: "tool_changed", toolCallId: "b", toolName: "bash", status: "running" });
   session.apply({ type: "confirm_requested", requestId: "u1" });
 
   const entries = session.snapshot().entries;
@@ -105,6 +105,7 @@ test("a confirm request attaches to the most recent pending card", () => {
   assert(entries[1]?.kind === "tool");
   assert.equal(entries[0].confirmRequestId, undefined, "a finished card must not have a confirmation attached");
   assert.equal(entries[1].confirmRequestId, "u1");
+  assert.equal(entries[1].status, "pending");
 });
 
 test("answering a confirmation clears the pending marker on the card", () => {

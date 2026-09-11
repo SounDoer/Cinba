@@ -146,11 +146,14 @@ export function createSession(initial?: Snapshot): Session {
 
         case "confirm_requested": {
           // The UI request carries no toolCallId, so attach it to the most
-          // recent pending card. Pi blocks while confirming, so under normal
-          // conditions at most one confirmation is outstanding.
+          // recent active card. Pi blocks while confirming, so under normal
+          // conditions at most one confirmation is outstanding. Tool start is
+          // optimistically running because most operations are auto-allowed;
+          // receiving this request is what proves the exceptional one is pending.
           for (let i = entries.length - 1; i >= 0; i--) {
             const entry = entries[i]!;
-            if (entry.kind === "tool" && entry.status === "pending") {
+            if (entry.kind === "tool" && (entry.status === "running" || entry.status === "pending")) {
+              entry.status = "pending";
               entry.confirmRequestId = action.requestId;
               return;
             }

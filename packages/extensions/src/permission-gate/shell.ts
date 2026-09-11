@@ -72,8 +72,10 @@ function unwrapCommand(tokens: string[]): { tokens: string[]; wrappers: string[]
   return { tokens: tokens.slice(index), wrappers };
 }
 
-/** Whether the command contains output redirection outside quoted text. */
-export function hasOutputRedirection(command: string): boolean {
+const OUTPUT_SINKS = new Set(["/dev/null", "nul", "nul:", "$null"]);
+
+/** Whether output is redirected to something that may be a real file. */
+export function hasRiskyOutputRedirection(command: string): boolean {
   let quote: "'" | '"' | undefined;
   for (let index = 0; index < command.length; index += 1) {
     const character = command[index]!;
@@ -85,7 +87,37 @@ export function hasOutputRedirection(command: string): boolean {
       quote = character;
       continue;
     }
-    if (character === ">") return true;
+    if (character !== ">") continue;
+
+    let cursor = index + 1;
+    if (command[cursor] === ">") cursor += 1;
+    while (/\s/.test(command[cursor] ?? "")) cursor += 1;
+
+    // File-descriptor duplication such as 2>&1 does not write a file.
+    if (command[cursor] === "&") {
+      while (cursor < command.length && !/[\s;|]/.test(command[cursor]!)) cursor += 1;
+      index = cursor - 1;
+      continue;
+    }
+
+    let target = "";
+    const targetQuote = command[cursor];
+    if (targetQuote === "'" || targetQuote === '"') {
+      cursor += 1;
+      while (cursor < command.length && command[cursor] !== targetQuote) {
+        target += command[cursor]!;
+        cursor += 1;
+      }
+      if (command[cursor] === targetQuote) cursor += 1;
+    } else {
+      while (cursor < command.length && !/[\s;|&]/.test(command[cursor]!)) {
+        target += command[cursor]!;
+        cursor += 1;
+      }
+    }
+
+    if (!OUTPUT_SINKS.has(target.toLowerCase())) return true;
+    index = cursor - 1;
   }
   return false;
 }

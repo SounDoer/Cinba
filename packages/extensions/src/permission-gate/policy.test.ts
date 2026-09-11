@@ -185,5 +185,12 @@ test("allows ordinary built-in operations by default", () => {
 
 test("does not mistake quoted redirection or help output for a risky operation", () => {
   assert.equal(evaluatePermission(command(POSIX, 'echo "a > b"')).effect, "allow");
+  assert.equal(
+    evaluatePermission(command(POSIX, "cat package.json 2>/dev/null | head -50")).effect,
+    "allow",
+  );
+  assert.equal(evaluatePermission(command(POSIX, "npm test >/dev/null 2>&1")).effect, "allow");
+  assert.equal(evaluatePermission(command(WINDOWS, "npm test *> $null")).effect, "allow");
+  assert.equal(evaluatePermission(command(WINDOWS, "npm test 2>NUL")).effect, "allow");
   assert.equal(evaluatePermission(command(POSIX, "rm --help")).effect, "allow");
 });
