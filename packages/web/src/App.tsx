@@ -7,17 +7,17 @@ import { PromptComposer } from "./PromptComposer.tsx";
 import { ProjectPicker } from "./ProjectPicker.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { SessionPicker } from "./SessionPicker.tsx";
-import { ProviderPicker } from "./ProviderPicker.tsx";
+import { ProviderSettings } from "./ProviderSettings.tsx";
 import { useCore } from "./use-core.ts";
 
 /** One web colour for each stable slot supplied by the shared naming rules. */
 const CORE_COLOURS = ["#3b6fd4", "#2e9166", "#b4642a", "#8b4bc4", "#b03a52", "#2b7f96"];
 
-type ActivePicker = "project" | "model" | "session" | "provider" | null;
+type ActiveOverlay = "project" | "model" | "session" | "provider" | null;
 
 export function App({ serverUrl }: { serverUrl: string }) {
   const core = useCore(serverUrl);
-  const [activePicker, setActivePicker] = useState<ActivePicker>(null);
+  const [activeOverlay, setActiveOverlay] = useState<ActiveOverlay>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -40,7 +40,7 @@ export function App({ serverUrl }: { serverUrl: string }) {
         </span>
         <button
           onClick={() => {
-            if (core.listSessions()) setActivePicker("session");
+            if (core.listSessions()) setActiveOverlay("session");
           }}
           disabled={!core.connected}
         >
@@ -48,7 +48,7 @@ export function App({ serverUrl }: { serverUrl: string }) {
         </button>
         <button
           onClick={() => {
-            if (core.listModels()) setActivePicker("model");
+            if (core.listModels()) setActiveOverlay("model");
           }}
           disabled={!core.connected || core.snapshot.busy}
         >
@@ -56,7 +56,7 @@ export function App({ serverUrl }: { serverUrl: string }) {
         </button>
         <button
           onClick={() => {
-            if (core.listProviders()) setActivePicker("provider");
+            if (core.listProviders()) setActiveOverlay("provider");
           }}
           disabled={!core.connected}
         >
@@ -82,16 +82,16 @@ export function App({ serverUrl }: { serverUrl: string }) {
         onAbort={core.abort}
       />
 
-      {activePicker === "provider" ? (
-        <ProviderPicker
+      {activeOverlay === "provider" ? (
+        <ProviderSettings
           providers={core.providers}
           onSetApiKey={core.setApiKey}
           onClearCredential={core.clearCredential}
-          onClose={() => setActivePicker(null)}
+          onClose={() => setActiveOverlay(null)}
         />
       ) : null}
 
-      {activePicker === "session" ? (
+      {activeOverlay === "session" ? (
         <SessionPicker
           sessions={core.sessions}
           currentId={core.sessionId}
@@ -99,28 +99,28 @@ export function App({ serverUrl }: { serverUrl: string }) {
           onRename={core.renameSession}
           onDelete={core.deleteSession}
           onNewHere={() => {
-            setActivePicker("project");
+            setActiveOverlay("project");
           }}
-          onClose={() => setActivePicker(null)}
+          onClose={() => setActiveOverlay(null)}
         />
       ) : null}
 
-      {activePicker === "project" ? (
+      {activeOverlay === "project" ? (
         <ProjectPicker
           listing={core.listing}
           startPath={core.cwd}
           onListDirectory={core.listDirectory}
           onCreateConversation={core.createConversation}
-          onClose={() => setActivePicker(null)}
+          onClose={() => setActiveOverlay(null)}
         />
       ) : null}
 
-      {activePicker === "model" ? (
+      {activeOverlay === "model" ? (
         <ModelPicker
           models={core.models}
           current={core.model}
           onSelect={core.selectModel}
-          onClose={() => setActivePicker(null)}
+          onClose={() => setActiveOverlay(null)}
         />
       ) : null}
     </>

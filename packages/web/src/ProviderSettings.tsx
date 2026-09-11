@@ -17,7 +17,7 @@
 import { useState } from "react";
 import type { ProviderStatus } from "@cinba/contract";
 
-export function ProviderPicker({
+export function ProviderSettings({
   providers,
   onSetApiKey,
   onClearCredential,
