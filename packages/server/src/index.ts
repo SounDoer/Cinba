@@ -90,6 +90,7 @@ function toViewers(sessionId: string, message: ServerMessage): void {
 
 const sessions = createSessionRegistry({
   defaultModel: () => config.get().model,
+  hasViewers: (sessionId) => [...viewing.values()].includes(sessionId),
   onActions: (sessionId, actions) => {
     toViewers(sessionId, { type: "actions", actions });
   },
@@ -137,7 +138,16 @@ async function resolveDefaultSession(): Promise<LiveSession | undefined> {
 
 /** Point a client at a conversation and hand it the full picture. */
 function show(socket: WebSocket, session: LiveSession): void {
+  const previousSessionId = viewing.get(socket);
   viewing.set(socket, session.id);
+  if (
+    previousSessionId &&
+    previousSessionId !== session.id &&
+    ![...viewing.values()].includes(previousSessionId)
+  ) {
+    const previous = sessions.get(previousSessionId);
+    if (previous) sessions.denyPendingConfirmations(previous);
+  }
   config.update({
     lastSessionId: session.id,
     // New conversations start where the last one you looked at lives.
@@ -451,7 +461,12 @@ function onConnection(socket: WebSocket, request: IncomingMessage): void {
   });
   socket.on("close", () => {
     clients.delete(socket);
+    const previousSessionId = viewing.get(socket);
     viewing.delete(socket);
+    if (previousSessionId && ![...viewing.values()].includes(previousSessionId)) {
+      const previous = sessions.get(previousSessionId);
+      if (previous) sessions.denyPendingConfirmations(previous);
+    }
     console.log(`[cinba] client disconnected, ${clients.size} left`);
   });
 }

@@ -60,6 +60,7 @@ export type SessionRegistry = {
   prompt(session: LiveSession, text: string): void;
   abort(session: LiveSession): void;
   editMessage(session: LiveSession, entryId: string, text: string): Promise<boolean>;
+  denyPendingConfirmations(session: LiveSession): void;
   respondToConfirmation(
     session: LiveSession,
     requestId: string,
@@ -74,6 +75,7 @@ export type SessionRegistryOptions = {
   defaultModel: () => ModelRef | undefined;
   onActions: (sessionId: string, actions: ViewAction[]) => void;
   onSnapshot: (sessionId: string, snapshot: ServerMessage) => void;
+  hasViewers?: (sessionId: string) => boolean;
   launchPi?: (options: OpenSessionOptions) => PiLaunch;
   flushIntervalMs?: number;
 };
@@ -247,6 +249,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     launch.pi.onUiRequest(async (request) => {
       const action = foldUiRequest(request);
       if (!action) return { cancelled: true };
+      if (options.hasViewers && !options.hasViewers(session.id)) return { confirmed: false };
       emitManaged(session, [action]);
       const confirmed = await new Promise<boolean>((resolve) => {
         session.pendingConfirms.set(request.id, resolve);
@@ -389,6 +392,13 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     resolve(confirmed);
   }
 
+  function denyPendingConfirmations(session: LiveSession): void {
+    const managed = findManaged(session);
+    if (!managed) return;
+    for (const resolve of managed.pendingConfirms.values()) resolve(false);
+    managed.pendingConfirms.clear();
+  }
+
   async function listModels(session: LiveSession): Promise<ModelRef[]> {
     const managed = findManaged(session);
     if (!managed) return [];
@@ -451,6 +461,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     prompt,
     abort,
     editMessage,
+    denyPendingConfirmations,
     respondToConfirmation,
     listModels,
     setModel,

@@ -1,5 +1,5 @@
-import { isProtectedRoot } from "./paths.ts";
-import { parseShellInvocations } from "./shell.ts";
+import { isInsideWorkspace, isProtectedRoot, isSensitivePath } from "./paths.ts";
+import { hasOutputRedirection, parseShellInvocations } from "./shell.ts";
 import type { PermissionContext, PermissionRule } from "./types.ts";
 
 function shellCommand(context: PermissionContext): string | undefined {
@@ -105,4 +105,139 @@ export const BLOCK_RULES: readonly PermissionRule[] = [
   blockProtectedRootDeletion,
   blockDiskDestruction,
   blockProtectedRootPermissionChange,
+];
+
+const BUILT_IN_TOOLS = new Set([
+  "read",
+  "bash",
+  "powershell",
+  "edit",
+  "write",
+  "grep",
+  "find",
+  "ls",
+]);
+
+const askMalformedBuiltInInput: PermissionRule = (context) => {
+  const input = context.input as { path?: unknown; command?: unknown } | undefined;
+  const needsPath = context.toolName === "read" || context.toolName === "edit" || context.toolName === "write";
+  const needsCommand = context.toolName === "bash" || context.toolName === "powershell";
+  if (
+    (needsPath && (typeof input?.path !== "string" || input.path.trim() === "")) ||
+    (needsCommand && (typeof input?.command !== "string" || input.command.trim() === ""))
+  ) {
+    return {
+      ruleId: "input.unclassified",
+      reason: "The built-in tool input could not be classified safely",
+    };
+  }
+  return undefined;
+};
+
+const askSensitivePath: PermissionRule = (context) => {
+  const input = context.input as { path?: unknown } | undefined;
+  if (!["read", "edit", "write", "grep"].includes(context.toolName)) return undefined;
+  if (typeof input?.path !== "string" || !isSensitivePath(input.path, context)) return undefined;
+  return {
+    ruleId: "path.sensitive",
+    reason: `Access to sensitive path "${input.path}" requires confirmation`,
+  };
+};
+
+const askOutsideWorkspaceWrite: PermissionRule = (context) => {
+  if (context.toolName !== "edit" && context.toolName !== "write") return undefined;
+  const path = (context.input as { path?: unknown } | undefined)?.path;
+  if (typeof path !== "string" || isInsideWorkspace(path, context)) return undefined;
+  return {
+    ruleId: "path.write-outside-workspace",
+    reason: `Writing outside the workspace to "${path}" requires confirmation`,
+  };
+};
+
+function isInformationOnly(args: readonly string[]): boolean {
+  return args.some((arg) => ["--help", "-h", "/?", "--version", "-whatif"].includes(arg.toLowerCase()));
+}
+
+const askShellRisk: PermissionRule = (context) => {
+  const command = shellCommand(context);
+  if (!command) return undefined;
+
+  if (hasOutputRedirection(command)) {
+    return {
+      ruleId: "shell.output-redirection",
+      reason: "Shell output redirection can overwrite files and requires confirmation",
+    };
+  }
+
+  const deletionCommands = new Set(["rm", "remove-item", "ri", "del", "erase", "rd", "rmdir", "unlink"]);
+  const permissionCommands = new Set(["chmod", "chown", "icacls", "takeown", "set-acl"]);
+  const overwriteCommands = new Set(["set-content", "out-file", "clear-content"]);
+  const fileAccessCommands = new Set([
+    "cat",
+    "type",
+    "get-content",
+    "gc",
+    "grep",
+    "select-string",
+    "head",
+    "tail",
+    "more",
+    "less",
+    "set-content",
+    "out-file",
+    "clear-content",
+  ]);
+
+  for (const invocation of parseShellInvocations(command)) {
+    if (isInformationOnly(invocation.args)) continue;
+    if (invocation.wrappers.includes("sudo")) {
+      return { ruleId: "shell.elevation", reason: "Privilege elevation requires confirmation" };
+    }
+    if (deletionCommands.has(invocation.name)) {
+      return { ruleId: "shell.delete", reason: `File deletion by "${invocation.name}" requires confirmation` };
+    }
+    if (permissionCommands.has(invocation.name)) {
+      return { ruleId: "shell.change-permissions", reason: `Permission change by "${invocation.name}" requires confirmation` };
+    }
+    if (overwriteCommands.has(invocation.name)) {
+      return { ruleId: "shell.overwrite", reason: `File overwrite by "${invocation.name}" requires confirmation` };
+    }
+    if (
+      fileAccessCommands.has(invocation.name) &&
+      invocation.args.some((arg) => !arg.startsWith("-") && isSensitivePath(arg, context))
+    ) {
+      return { ruleId: "shell.sensitive-path", reason: "Shell access to a sensitive path requires confirmation" };
+    }
+    if (invocation.name === "git") {
+      const args = invocation.args.map((arg) => arg.toLowerCase());
+      const operation = args[0];
+      const force = args.some((arg) => arg === "--force" || arg === "-f" || /^-[a-z]*f[a-z]*$/i.test(arg));
+      if (
+        (operation === "reset" && args.includes("--hard")) ||
+        (operation === "clean" && force) ||
+        operation === "restore" ||
+        (operation === "checkout" && args.includes("--")) ||
+        (operation === "push" && (force || args.includes("--force-with-lease")))
+      ) {
+        return { ruleId: "shell.destructive-git", reason: `Destructive Git operation "${operation}" requires confirmation` };
+      }
+    }
+  }
+  return undefined;
+};
+
+const askUnknownTool: PermissionRule = (context) => {
+  if (BUILT_IN_TOOLS.has(context.toolName)) return undefined;
+  return {
+    ruleId: "tool.unknown",
+    reason: `Unknown tool "${context.toolName}" requires confirmation`,
+  };
+};
+
+export const ASK_RULES: readonly PermissionRule[] = [
+  askMalformedBuiltInInput,
+  askSensitivePath,
+  askOutsideWorkspaceWrite,
+  askShellRisk,
+  askUnknownTool,
 ];

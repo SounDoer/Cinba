@@ -44,7 +44,10 @@ test("blocks when there is no UI, rather than allowing", async () => {
   // failing open would let every tool pass silently — with no error either.
   const handler = captureHandler();
 
-  const result = await handler({ toolName: "bash", input: { command: "npm test" } }, makeCtx(false));
+  const result = await handler(
+    { toolName: "bash", input: { command: "git reset --hard" } },
+    makeCtx(false),
+  );
 
   assert.deepEqual(result, {
     block: true,
@@ -70,7 +73,7 @@ test("read-only tools still pass when there is no UI", async () => {
   // Read-only tools carry no risk, and blocking them would make headless use impossible.
   const handler = captureHandler();
 
-  const result = await handler({ toolName: "read", input: { file: "a.txt" } }, makeCtx(false));
+  const result = await handler({ toolName: "read", input: { path: "a.txt" } }, makeCtx(false));
 
   assert.equal(result, undefined);
 });
@@ -78,24 +81,50 @@ test("read-only tools still pass when there is no UI", async () => {
 test("read-only tools do not interrupt the user", async () => {
   const handler = captureHandler();
 
-  for (const toolName of ["read", "glob", "grep"]) {
-    const result = await handler({ toolName, input: {} }, makeCtx(true));
+  const tools = [
+    { toolName: "read", input: { path: "README.md" } },
+    { toolName: "grep", input: { pattern: "hello" } },
+    { toolName: "find", input: { pattern: "*.ts" } },
+    { toolName: "ls", input: {} },
+  ];
+  for (const { toolName, input } of tools) {
+    const result = await handler({ toolName, input }, makeCtx(true));
     assert.equal(result, undefined, `${toolName} must not be blocked`);
   }
 });
 
-test("an approval lets the call through", async () => {
+test("ordinary workspace writes and shell commands do not interrupt the user", async () => {
+  const handler = captureHandler();
+  const context = makeCtx(true);
+
+  assert.equal(
+    await handler({ toolName: "write", input: { path: "src/new-file.ts", content: "" } }, context),
+    undefined,
+  );
+  assert.equal(
+    await handler({ toolName: "powershell", input: { command: "npm test" } }, context),
+    undefined,
+  );
+});
+
+test("an approval lets an Ask decision through", async () => {
   const handler = captureHandler();
 
-  const result = await handler({ toolName: "bash", input: { command: "ls" } }, makeCtx(true, true));
+  const result = await handler(
+    { toolName: "bash", input: { command: "git reset --hard" } },
+    makeCtx(true, true),
+  );
 
   assert.equal(result, undefined);
 });
 
-test("a refusal blocks the call and hands the model a reason", async () => {
+test("a refusal blocks an Ask decision and hands the model a reason", async () => {
   const handler = captureHandler();
 
-  const result = await handler({ toolName: "bash", input: { command: "ls" } }, makeCtx(true, false));
+  const result = await handler(
+    { toolName: "bash", input: { command: "git reset --hard" } },
+    makeCtx(true, false),
+  );
 
   assert.deepEqual(result, { block: true, reason: "The user denied this tool call" });
 });

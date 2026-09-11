@@ -215,6 +215,85 @@ test("public session commands hide the Pi transport from callers", async () => {
   }
 });
 
+test("a confirmation is denied immediately when nobody is viewing the session", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  const transport = new FakeTransport();
+  const registry = createSessionRegistry({
+    defaultModel: () => undefined,
+    hasViewers: () => false,
+    onActions: () => {},
+    onSnapshot: () => {},
+    launchPi: () => ({
+      pi: new PiClient(transport),
+      failed: new Promise<undefined>(() => {}),
+    }),
+  });
+
+  try {
+    const opened = await registry.open({ cwd });
+    assert(opened);
+    transport.commands = [];
+    transport.emit({
+      type: "extension_ui_request",
+      id: "confirm-1",
+      method: "confirm",
+      title: "Allow deletion?",
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.deepEqual(transport.commands.at(-1), {
+      type: "extension_ui_response",
+      id: "confirm-1",
+      confirmed: false,
+    });
+    assert.equal(opened.pendingConfirms.size, 0);
+  } finally {
+    registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("pending confirmations are denied when the last viewer leaves", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  const transport = new FakeTransport();
+  const registry = createSessionRegistry({
+    defaultModel: () => undefined,
+    hasViewers: () => true,
+    onActions: () => {},
+    onSnapshot: () => {},
+    launchPi: () => ({
+      pi: new PiClient(transport),
+      failed: new Promise<undefined>(() => {}),
+    }),
+  });
+
+  try {
+    const opened = await registry.open({ cwd });
+    assert(opened);
+    transport.commands = [];
+    transport.emit({
+      type: "extension_ui_request",
+      id: "confirm-2",
+      method: "confirm",
+      title: "Allow deletion?",
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(opened.pendingConfirms.size, 1);
+
+    registry.denyPendingConfirmations(opened);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(opened.pendingConfirms.size, 0);
+    assert.deepEqual(transport.commands.at(-1), {
+      type: "extension_ui_response",
+      id: "confirm-2",
+      confirmed: false,
+    });
+  } finally {
+    registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("editing navigates in place before sending the replacement prompt", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
   const transport = new FakeTransport();

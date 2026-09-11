@@ -1,6 +1,7 @@
 export type ShellInvocation = {
   name: string;
   args: string[];
+  wrappers: string[];
 };
 
 function finishToken(tokens: string[], token: string): string {
@@ -22,8 +23,9 @@ export function parseShellInvocations(command: string): ShellInvocation[] {
   const finishInvocation = () => {
     token = finishToken(tokens, token);
     if (tokens.length > 0) {
-      const [name, ...args] = unwrapCommand(tokens);
-      if (name) invocations.push({ name: executableName(name), args });
+      const unwrapped = unwrapCommand(tokens);
+      const [name, ...args] = unwrapped.tokens;
+      if (name) invocations.push({ name: executableName(name), args, wrappers: unwrapped.wrappers });
     }
     tokens = [];
   };
@@ -57,15 +59,35 @@ export function parseShellInvocations(command: string): ShellInvocation[] {
   return invocations;
 }
 
-function unwrapCommand(tokens: string[]): string[] {
+function unwrapCommand(tokens: string[]): { tokens: string[]; wrappers: string[] } {
   let index = 0;
+  const wrappers: string[] = [];
   while (index < tokens.length) {
     const candidate = executableName(tokens[index]!);
     if (candidate !== "sudo" && candidate !== "command") break;
+    wrappers.push(candidate);
     index += 1;
     while (tokens[index]?.startsWith("-")) index += 1;
   }
-  return tokens.slice(index);
+  return { tokens: tokens.slice(index), wrappers };
+}
+
+/** Whether the command contains output redirection outside quoted text. */
+export function hasOutputRedirection(command: string): boolean {
+  let quote: "'" | '"' | undefined;
+  for (let index = 0; index < command.length; index += 1) {
+    const character = command[index]!;
+    if (quote) {
+      if (character === quote) quote = undefined;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      continue;
+    }
+    if (character === ">") return true;
+  }
+  return false;
 }
 
 function executableName(value: string): string {

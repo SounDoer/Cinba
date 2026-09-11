@@ -110,10 +110,80 @@ test("blocks recursive permission changes on protected roots only", () => {
   }
 });
 
-test("keeps the existing allow and ask defaults during the block-rule phase", () => {
+test("asks before direct access to sensitive files", () => {
+  const cases = [
+    { ...POSIX, toolName: "read", input: { path: ".env.production" } },
+    { ...POSIX, toolName: "grep", input: { pattern: "token", path: "~/.ssh" } },
+    { ...WINDOWS, toolName: "edit", input: { path: "$env:USERPROFILE\\.aws\\credentials" } },
+    { ...WINDOWS, toolName: "write", input: { path: ".npmrc" } },
+  ];
+
+  for (const context of cases) {
+    const decision = evaluatePermission(context);
+    assert.equal(decision.effect, "ask", JSON.stringify(context.input));
+    assert.equal(decision.ruleId, "path.sensitive");
+  }
+});
+
+test("asks before writing outside the workspace", () => {
+  const decision = evaluatePermission({
+    ...WINDOWS,
+    toolName: "write",
+    input: { path: "C:\\Users\\alice\\Desktop\\note.txt", content: "hello" },
+  });
+
+  assert.equal(decision.effect, "ask");
+  assert.equal(decision.ruleId, "path.write-outside-workspace");
+});
+
+test("asks for deletion, overwrite, destructive Git, elevation, and permission changes", () => {
+  const cases = [
+    command(POSIX, "rm ./old.txt"),
+    command(WINDOWS, "Remove-Item .\\dist -Recurse"),
+    command(POSIX, "echo rebuilt > output.txt"),
+    command(WINDOWS, "Set-Content .\\config.json updated"),
+    command(POSIX, "git reset --hard"),
+    command(POSIX, "git clean -fd"),
+    command(POSIX, "git restore src/app.ts"),
+    command(POSIX, "git push --force-with-lease"),
+    command(POSIX, "sudo npm test"),
+    command(WINDOWS, "icacls .\\cache /reset"),
+  ];
+
+  for (const context of cases) {
+    assert.equal(evaluatePermission(context).effect, "ask", JSON.stringify(context.input));
+  }
+});
+
+test("asks when common shell commands access a sensitive path", () => {
+  const cases = [command(POSIX, "cat .env"), command(WINDOWS, "Get-Content .npmrc")];
+  for (const context of cases) {
+    const decision = evaluatePermission(context);
+    assert.equal(decision.effect, "ask");
+    assert.equal(decision.ruleId, "shell.sensitive-path");
+  }
+});
+
+test("asks before an unknown extension tool runs", () => {
+  const decision = evaluatePermission({ ...POSIX, toolName: "deploy", input: { target: "prod" } });
+  assert.equal(decision.effect, "ask");
+  assert.equal(decision.ruleId, "tool.unknown");
+});
+
+test("allows ordinary built-in operations by default", () => {
   assert.equal(
     evaluatePermission({ ...WINDOWS, toolName: "read", input: { path: "README.md" } }).effect,
     "allow",
   );
-  assert.equal(evaluatePermission(command(WINDOWS, "npm test")).effect, "ask");
+  assert.equal(
+    evaluatePermission({ ...WINDOWS, toolName: "edit", input: { path: "src/app.ts" } }).effect,
+    "allow",
+  );
+  assert.equal(evaluatePermission(command(WINDOWS, "npm test")).effect, "allow");
+  assert.equal(evaluatePermission(command(POSIX, "git status && npm test")).effect, "allow");
+});
+
+test("does not mistake quoted redirection or help output for a risky operation", () => {
+  assert.equal(evaluatePermission(command(POSIX, 'echo "a > b"')).effect, "allow");
+  assert.equal(evaluatePermission(command(POSIX, "rm --help")).effect, "allow");
 });
