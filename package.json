@@ -10,6 +10,9 @@
     "packages/*"
   ],
   "scripts": {
+    "start": "node scripts/launch.ts start",
+    "dev": "node scripts/launch.ts dev",
+    "tui": "node scripts/launch.ts tui",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.scripts.json",
     "test": "node --test --experimental-strip-types \"packages/*/src/**/*.test.ts\"",
     "test:e2e": "node --test --experimental-strip-types \"packages/*/src/**/*.e2e.ts\"",

@@ -4,6 +4,8 @@
   "type": "module",
   "version": "0.0.0",
   "scripts": {
+    "start": "node src/index.ts",
+    "dev": "node --watch src/index.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json"
   },
   "dependencies": {
