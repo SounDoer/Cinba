@@ -17,6 +17,7 @@
 // Usage: node <repo>/packages/server/src/index.ts
 
 import type { WebSocket } from "ws";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { rmSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
@@ -26,6 +27,7 @@ import { IDLE_TIMEOUT_MS, assessIdle, canStopNow } from "./reclaim.ts";
 import { createConfigStore } from "./config.ts";
 import { createCredentialService } from "./credential-service.ts";
 import { listDirectories } from "./directory-browser.ts";
+import { createHealthHandler, isSafeToRestart, normalizeRevision } from "./health.ts";
 import { createServerRuntime } from "./server-runtime.ts";
 import { type LiveSession, createSessionRegistry } from "./session-registry.ts";
 import { createStaticFileHandler } from "./static-files.ts";
@@ -42,6 +44,7 @@ const HOST = "127.0.0.1";
  * only after a second machine is set up.
  */
 const PORT = Number(process.env.CINBA_PORT) || 4517;
+const REVISION = normalizeRevision(process.env.CINBA_REVISION);
 
 /** Where the built UI lives. Located relative to the repo layout, not through package resolution. */
 const WEB_DIST = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
@@ -84,6 +87,23 @@ const sessions = createSessionRegistry({
 });
 
 const credentials = createCredentialService({ onChanged: markCredentialsStale });
+
+const serveHealth = createHealthHandler({
+  revision: REVISION,
+  safeToRestart: () =>
+    isSafeToRestart(
+      sessions.values().map((session) => ({
+        busy: session.ledger.snapshot().busy,
+        awaitingConfirmation: session.pendingConfirms.size > 0,
+      })),
+    ),
+});
+
+async function serveHttp(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  if (!serveHealth(request, response)) {
+    await serveStatic(request, response);
+  }
+}
 
 /**
  * The conversation to show a client that has not chosen one: the last one used,
@@ -504,7 +524,7 @@ function onConnection(socket: WebSocket): void {
 const runtime = createServerRuntime({
   host: HOST,
   port: PORT,
-  serveHttp: serveStatic,
+  serveHttp,
   acceptWebSocket: isAllowedWebSocketOrigin,
   onConnection,
   maintain: () => {
