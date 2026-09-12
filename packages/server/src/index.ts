@@ -29,6 +29,7 @@ import { listDirectories } from "./directory-browser.ts";
 import { createServerRuntime } from "./server-runtime.ts";
 import { type LiveSession, createSessionRegistry } from "./session-registry.ts";
 import { createStaticFileHandler } from "./static-files.ts";
+import { isAllowedWebSocketOrigin } from "./websocket-origin.ts";
 import { type ModelRef, type ServerMessage, parseClientMessage } from "@cinba/contract";
 
 const HOST = "127.0.0.1";
@@ -504,6 +505,7 @@ const runtime = createServerRuntime({
   host: HOST,
   port: PORT,
   serveHttp: serveStatic,
+  acceptWebSocket: isAllowedWebSocketOrigin,
   onConnection,
   maintain: () => {
     // Checked every minute rather than on a timer per conversation: a minute

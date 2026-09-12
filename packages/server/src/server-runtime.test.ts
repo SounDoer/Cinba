@@ -13,6 +13,7 @@ test("start opens HTTP and stop releases the chosen port", async () => {
     serveHttp: (_request, response) => {
       response.end("ready");
     },
+    acceptWebSocket: () => true,
     onConnection: () => {},
   });
 
@@ -40,6 +41,7 @@ test("WebSocket connections are delegated on the configured path", async () => {
     serveHttp: (_request, response) => {
       response.end("ready");
     },
+    acceptWebSocket: () => true,
     onConnection: (socket) => {
       connected = true;
       socket.send("hello");
@@ -63,6 +65,35 @@ test("WebSocket connections are delegated on the configured path", async () => {
   }
 });
 
+test("a refused WebSocket handshake never reaches the connection handler", async () => {
+  let connected = false;
+  const runtime = createServerRuntime({
+    host: "127.0.0.1",
+    port: 0,
+    serveHttp: (_request, response) => {
+      response.end("ready");
+    },
+    acceptWebSocket: () => false,
+    onConnection: () => {
+      connected = true;
+    },
+  });
+
+  const address = await runtime.start();
+  const socket = new WebSocket(`ws://${address.host}:${address.port}/ws`);
+  try {
+    const status = await new Promise<number>((resolve, reject) => {
+      socket.once("unexpected-response", (_request, response) => resolve(response.statusCode ?? 0));
+      socket.once("error", reject);
+    });
+    assert.equal(status, 401);
+    assert.equal(connected, false);
+  } finally {
+    socket.close();
+    await runtime.stop();
+  }
+});
+
 test("maintenance begins on start and ends on stop", async () => {
   let runs = 0;
   const runtime = createServerRuntime({
@@ -71,6 +102,7 @@ test("maintenance begins on start and ends on stop", async () => {
     serveHttp: (_request, response) => {
       response.end();
     },
+    acceptWebSocket: () => true,
     onConnection: () => {},
     maintain: () => {
       runs += 1;

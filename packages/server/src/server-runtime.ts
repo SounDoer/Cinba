@@ -19,6 +19,7 @@ export type ServerRuntimeOptions = {
   port: number;
   webSocketPath?: string;
   serveHttp(request: IncomingMessage, response: ServerResponse): void | Promise<void>;
+  acceptWebSocket(request: IncomingMessage): boolean;
   onConnection(socket: WebSocket, request: IncomingMessage): void;
   maintain?: () => void;
   maintenanceIntervalMs?: number;
@@ -32,6 +33,7 @@ export function createServerRuntime(options: ServerRuntimeOptions): ServerRuntim
   const webSocketServer = new WebSocketServer({
     server: httpServer,
     path: options.webSocketPath ?? "/ws",
+    verifyClient: ({ req }: { req: IncomingMessage }) => options.acceptWebSocket(req),
   });
   webSocketServer.on("connection", options.onConnection);
 

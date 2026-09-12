@@ -1,13 +1,5 @@
-// Is a connection from this machine?
-//
-// The one question standing between a visitor and this machine's API keys. It
-// answers nothing today — the service binds to 127.0.0.1, so every connection
-// is local and this rejects none of them. That is the point: the check is
-// already here for the day a door opens outward, rather than being something
-// to remember at the moment it starts mattering.
-//
-// Its own module because it is worth testing, and because the address forms
-// are easy to get subtly wrong.
+// Recognize an IP address belonging to this machine's loopback interface.
+// Kept separate because the address forms are easy to get subtly wrong.
 
 /**
  * Node reports an IPv4 client on a dual-stack socket as an IPv4-mapped IPv6
