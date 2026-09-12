@@ -5,5 +5,8 @@
   "version": "0.0.0",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "@cinba/core-client": "*"
   }
 }
