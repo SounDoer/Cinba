@@ -5,6 +5,7 @@ export const DEPLOYMENT_PHASES = [
   "waiting_for_drain",
   "switching",
   "verifying",
+  "superseded",
   "succeeded",
   "rolled_back",
   "failed",

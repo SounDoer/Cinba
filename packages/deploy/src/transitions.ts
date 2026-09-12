@@ -8,10 +8,11 @@ import {
 const NEXT_PHASES: Record<DeploymentPhase, ReadonlySet<DeploymentPhase>> = {
   idle: new Set(),
   preparing: new Set(["checking", "failed"]),
-  checking: new Set(["waiting_for_drain", "failed"]),
+  checking: new Set(["waiting_for_drain", "superseded", "failed"]),
   waiting_for_drain: new Set(["switching", "failed"]),
   switching: new Set(["verifying", "rolled_back", "failed"]),
   verifying: new Set(["succeeded", "rolled_back", "failed"]),
+  superseded: new Set(),
   succeeded: new Set(),
   rolled_back: new Set(),
   failed: new Set(),

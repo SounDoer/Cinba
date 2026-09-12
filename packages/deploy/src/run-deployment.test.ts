@@ -99,7 +99,14 @@ test("one deployment records every durable phase in order", async () => {
     fake.statuses.map((status) => status.phase),
     ["preparing", "checking", "waiting_for_drain", "switching", "verifying", "succeeded"],
   );
-  assert.deepEqual(fake.events, ["fetch", "fast-forward", "prepare", "activate", "verify"]);
+  assert.deepEqual(fake.events, [
+    "fetch",
+    "fast-forward",
+    "prepare",
+    "fetch",
+    "activate",
+    "verify",
+  ]);
   assert.equal(fake.statuses.at(-1)?.runningRevision, TARGET);
 });
 
@@ -208,4 +215,32 @@ test("an interrupted durable phase enters recovery before fetching prod", async 
   assert.equal(result.kind === "failed" && result.failure, "rollback");
   assert.deepEqual(fake.events, ["recover"]);
   assert.deepEqual(fake.statuses, []);
+});
+
+test("a newer prod discovered after checking supersedes the stale candidate", async () => {
+  const newer = "1111111111111111111111111111111111111111";
+  const targets = [TARGET, newer, newer, newer];
+  const fake = fakes({
+    async fetchTarget() {
+      fake.events.push("fetch");
+      return targets.shift() ?? newer;
+    },
+  });
+  const result = await runDeployment(OPTIONS, fake.dependencies);
+  assert.deepEqual(result, { kind: "succeeded", targetRevision: newer });
+  assert.deepEqual(
+    fake.statuses.map((status) => status.phase),
+    [
+      "preparing",
+      "checking",
+      "superseded",
+      "preparing",
+      "checking",
+      "waiting_for_drain",
+      "switching",
+      "verifying",
+      "succeeded",
+    ],
+  );
+  assert.equal(fake.statuses.at(2)?.failedRevision, undefined);
 });

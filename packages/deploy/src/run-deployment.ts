@@ -59,7 +59,7 @@ export type DeploymentRunResult =
   | { kind: "rolled_back"; targetRevision: string; failure: DeploymentFailure; cause: unknown }
   | { kind: "failed"; targetRevision?: string; failure: DeploymentFailure; cause: unknown };
 
-const TERMINAL_PHASES = new Set(["idle", "succeeded", "rolled_back", "failed"]);
+const TERMINAL_PHASES = new Set(["idle", "superseded", "succeeded", "rolled_back", "failed"]);
 
 function preparationFailure(
   error: unknown,
@@ -127,7 +127,8 @@ export async function runDeployment(
   await dependencies.writeStatus(options.statusPath, status);
 
   const moveTo = async (
-    phase: "checking" | "waiting_for_drain" | "switching" | "verifying" | "succeeded",
+    phase:
+      "checking" | "waiting_for_drain" | "switching" | "verifying" | "superseded" | "succeeded",
   ) => {
     const next = advanceDeployment(status, phase, { now: dependencies.now() });
     await dependencies.writeStatus(options.statusPath, next);
@@ -191,6 +192,17 @@ export async function runDeployment(
       throw cause;
     }
     return await fail(preparationFailure(cause), cause);
+  }
+
+  try {
+    const latestRevision = await dependencies.fetchTarget(options.repoPath);
+    if (latestRevision !== targetRevision) {
+      await moveTo("superseded");
+      return await runDeployment(options, dependencies);
+    }
+  } catch {
+    // The fetched target was already approved and fully checked. A transient
+    // second fetch failure does not make that known commit unsafe to deploy.
   }
 
   await moveTo("waiting_for_drain");
