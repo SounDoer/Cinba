@@ -298,6 +298,63 @@ test("pending confirmations are denied when the last viewer leaves", async () =>
   }
 });
 
+test("a confirmation timeout denies the request and expires its tool card", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  const transport = new FakeTransport();
+  const registry = createSessionRegistry({
+    defaultModel: () => undefined,
+    hasViewers: () => true,
+    onActions: () => {},
+    onSnapshot: () => {},
+    launchPi: () => ({
+      pi: new PiClient(transport),
+      failed: new Promise<undefined>(() => {}),
+    }),
+  });
+
+  try {
+    const opened = await registry.open({ cwd });
+    assert(opened);
+    transport.commands = [];
+    transport.emit({
+      type: "tool_execution_start",
+      toolCallId: "tool-1",
+      toolName: "bash",
+      args: { command: "git reset --hard" },
+    });
+    transport.emit({
+      type: "extension_ui_request",
+      id: "confirm-timeout",
+      method: "confirm",
+      title: "Allow bash?",
+      timeout: 10,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    assert.equal(opened.pendingConfirms.size, 0);
+    assert.deepEqual(transport.commands.at(-1), {
+      type: "extension_ui_response",
+      id: "confirm-timeout",
+      confirmed: false,
+    });
+    const tool = opened.ledger
+      .snapshot()
+      .entries.find((entry) => entry.kind === "tool" && entry.toolCallId === "tool-1");
+    assert.deepEqual(tool, {
+      kind: "tool",
+      toolCallId: "tool-1",
+      toolName: "bash",
+      args: { command: "git reset --hard" },
+      status: "error",
+      result: "Confirmation timed out.",
+      confirmRequestId: undefined,
+    });
+  } finally {
+    registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("editing navigates in place before sending the replacement prompt", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
   const transport = new FakeTransport();

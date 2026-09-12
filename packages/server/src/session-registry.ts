@@ -28,9 +28,14 @@ export type LiveSession = {
   readonly cwd: string;
   ledger: Session;
   model: ModelRef | undefined;
-  pendingConfirms: Map<string, (confirmed: boolean) => void>;
+  pendingConfirms: Map<string, PendingConfirmation>;
   idleSince: number | undefined;
   staleCredentials: boolean;
+};
+
+type PendingConfirmation = {
+  resolve: (confirmed: boolean) => void;
+  timer: NodeJS.Timeout | undefined;
 };
 
 type ManagedSession = LiveSession & {
@@ -140,6 +145,45 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
       sessionId: session.id,
       model: session.model,
     };
+  }
+
+  function finishConfirmation(
+    session: ManagedSession,
+    requestId: string,
+    confirmed: boolean,
+    timedOut = false,
+  ): void {
+    const pendingConfirmation = session.pendingConfirms.get(requestId);
+    if (!pendingConfirmation) {
+      return;
+    }
+    session.pendingConfirms.delete(requestId);
+    if (pendingConfirmation.timer) {
+      clearTimeout(pendingConfirmation.timer);
+    }
+
+    const tool = session.ledger
+      .snapshot()
+      .entries.find((entry) => entry.kind === "tool" && entry.confirmRequestId === requestId);
+    if (tool?.kind === "tool" && (confirmed || timedOut)) {
+      emitManaged(session, [
+        {
+          type: "tool_changed",
+          toolCallId: tool.toolCallId,
+          toolName: tool.toolName,
+          status: confirmed ? "running" : "error",
+          result: timedOut ? "Confirmation timed out." : undefined,
+        },
+      ]);
+    }
+
+    pendingConfirmation.resolve(confirmed);
+  }
+
+  function denyAllConfirmations(session: ManagedSession): void {
+    for (const requestId of session.pendingConfirms.keys()) {
+      finishConfirmation(session, requestId, false);
+    }
   }
 
   async function list(cwd?: string): Promise<SessionSummary[]> {
@@ -274,7 +318,17 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
       }
       emitManaged(session, [action]);
       const confirmed = await new Promise<boolean>((resolve) => {
-        session.pendingConfirms.set(request.id, resolve);
+        const timeout =
+          typeof request.timeout === "number" &&
+          Number.isFinite(request.timeout) &&
+          request.timeout > 0
+            ? request.timeout
+            : undefined;
+        const timer = timeout
+          ? setTimeout(() => finishConfirmation(session, request.id, false, true), timeout)
+          : undefined;
+        timer?.unref();
+        session.pendingConfirms.set(request.id, { resolve, timer });
       });
       return { confirmed };
     });
@@ -296,10 +350,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     if (session.flushTimer) {
       clearTimeout(session.flushTimer);
     }
-    for (const resolve of session.pendingConfirms.values()) {
-      resolve(false);
-    }
-    session.pendingConfirms.clear();
+    denyAllConfirmations(session);
     void session.pi.close().catch((error: unknown) => {
       console.error(
         `[cinba] could not close Pi for ${session.id}:`,
@@ -362,10 +413,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     const wasBusy = managed.ledger.snapshot().busy;
     emitManaged(managed, [{ type: "busy_changed", busy: true }]);
     try {
-      for (const resolve of managed.pendingConfirms.values()) {
-        resolve(false);
-      }
-      managed.pendingConfirms.clear();
+      denyAllConfirmations(managed);
       if (wasBusy) {
         await managed.pi.abort();
       }
@@ -413,29 +461,10 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     confirmed: boolean,
   ): void {
     const managed = findManaged(session);
-    const resolve = managed?.pendingConfirms.get(requestId);
-    if (!managed || !resolve) {
+    if (!managed) {
       return;
     }
-    managed.pendingConfirms.delete(requestId);
-
-    if (confirmed) {
-      const pending = managed.ledger
-        .snapshot()
-        .entries.find((entry) => entry.kind === "tool" && entry.confirmRequestId === requestId);
-      if (pending?.kind === "tool") {
-        emitManaged(managed, [
-          {
-            type: "tool_changed",
-            toolCallId: pending.toolCallId,
-            toolName: pending.toolName,
-            status: "running",
-          },
-        ]);
-      }
-    }
-
-    resolve(confirmed);
+    finishConfirmation(managed, requestId, confirmed);
   }
 
   function denyPendingConfirmations(session: LiveSession): void {
@@ -443,10 +472,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     if (!managed) {
       return;
     }
-    for (const resolve of managed.pendingConfirms.values()) {
-      resolve(false);
-    }
-    managed.pendingConfirms.clear();
+    denyAllConfirmations(managed);
   }
 
   async function listModels(session: LiveSession): Promise<ModelRef[]> {

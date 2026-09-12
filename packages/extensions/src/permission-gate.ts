@@ -8,6 +8,8 @@ import { homedir } from "node:os";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { evaluatePermission } from "./permission-gate/policy.ts";
 
+const CONFIRMATION_TIMEOUT_MS = 10 * 60_000;
+
 export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
     const decision = evaluatePermission({
@@ -38,7 +40,9 @@ export default function (pi: ExtensionAPI) {
     }
 
     const explanation = `Rule: ${decision.ruleId}\nReason: ${decision.reason}`;
-    const allowed = await ctx.ui.confirm(`Allow ${event.toolName}?`, explanation);
+    const allowed = await ctx.ui.confirm(`Allow ${event.toolName}?`, explanation, {
+      timeout: CONFIRMATION_TIMEOUT_MS,
+    });
 
     if (!allowed) {
       return { block: true, reason: "The user denied this tool call" };

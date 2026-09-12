@@ -6,7 +6,9 @@ type ToolCallEvent = { toolName: string; input: unknown };
 type Ctx = {
   cwd: string;
   hasUI: boolean;
-  ui: { confirm: (title: string, message: string) => Promise<boolean> };
+  ui: {
+    confirm: (title: string, message: string, options?: { timeout?: number }) => Promise<boolean>;
+  };
 };
 type Handler = (event: ToolCallEvent, ctx: Ctx) => Promise<unknown>;
 
@@ -115,10 +117,10 @@ test("ordinary workspace writes and shell commands do not interrupt the user", a
 
 test("an approval lets an Ask decision through", async () => {
   const handler = captureHandler();
-  let prompt: { title: string; message: string } | undefined;
+  let prompt: { title: string; message: string; timeout: number | undefined } | undefined;
   const context = makeCtx(true, true);
-  context.ui.confirm = async (title, message) => {
-    prompt = { title, message };
+  context.ui.confirm = async (title, message, options) => {
+    prompt = { title, message, timeout: options?.timeout };
     return true;
   };
 
@@ -132,6 +134,7 @@ test("an approval lets an Ask decision through", async () => {
     title: "Allow bash?",
     message:
       'Rule: shell.destructive-git\nReason: Destructive Git operation "reset" requires confirmation',
+    timeout: 10 * 60_000,
   });
 });
 
