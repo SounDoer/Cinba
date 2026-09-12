@@ -1,31 +1,83 @@
-# AGENTS.md
+# AGENTS.md — Cinba
 
-本仓库是基于 https://pi.dev/ 的个人 Agent 开发项目。
+Cinba is a personal agent-development project built on [pi.dev](https://pi.dev/): a Node 24 +
+TypeScript monorepo, one core server serving web, TUI and desktop clients.
 
-本仓库的 agent 协作约定。
+This file records only what the code cannot reveal. Add an entry only when all three hold: the code
+does not show it, automation cannot reliably catch it, and getting it wrong is expensive.
 
-## 1. 代码一律使用英文
+**When the docs and the code disagree, the code on `master` wins.**
 
-所有进入版本库的**代码**文本一律使用英文：commit message、分支名、PR 标题与描述、
-代码注释、测试描述、变量与函数命名，以及**产品界面上的文本**（按钮、提示、状态栏、
-发给模型的理由）。
+## Language
 
-## 2. `docs/` 下的文档使用中文
+**Code is English.** Everything that enters the repository as code — commit messages, branch names,
+PR titles and descriptions, comments, test descriptions, identifiers, and user-facing product text
+(buttons, hints, status lines, reasons sent to the model) — is written in English.
 
-设计文档、方案讨论、spec、plan、notes 用中文写。这些是给人读的思考记录，
-中文表达更准确，也更容易回头读懂。
+**`docs/` is Chinese.** Specs, plans and notes are thinking records written for a human reader;
+Chinese carries the nuance better and stays easier to re-read later.
 
-## 3. 对话交流优先使用中文
+**Conversation is Chinese.** Discussion, explanations and status reports default to Chinese.
+Technical terms, API names, commands and error strings stay in their original English.
 
-与用户的交流（讨论、说明、方案汇报）默认使用中文表达，专业术语、API 名称、命令、
-错误信息等保留英文原文，不做翻译。
+**Explain concretely.** The user is treating this project as a learning case for AI frameworks and
+software development. Favour plain, concrete explanations over jargon when discussing a design or
+diagnosing a problem.
 
-## 4. 沟通方式
+**Sources.** Prefer <https://pi.dev/docs/latest> and <https://pi.dev/packages> when researching a
+design or a bug.
 
-用户正在以此项目作为 AI 框架和软件开发的学习案例，在讨论方案和解释问题的过程中可以更形象地小白解释帮助用户理解。
+## Commands
 
-## 5. 信源
+| Command | Purpose |
+| --- | --- |
+| `npm run check` | **The merge gate**: format + lint + typecheck + test + e2e + build. |
+| `npm start` | Run the built web application — the real usage shape. |
+| `npm run dev` | Vite dev server plus the core server. |
+| `npm run tui` | Run the TUI client. |
+| `npm test` | Unit tests, `node --test`, single run. |
+| `npm run test:e2e` | End-to-end tests against real processes; slower than the unit run. |
 
-讨论新方案或解决 bug 的过程中，可以优先参考优质信源，比如：
-https://pi.dev/docs/latest
-https://pi.dev/packages
+`scripts/launch.ts` owns every launcher; core is fixed to 4517 and the web dev server to 5173.
+Start processes through it, not around it. The `*.cmd` files at the root are double-click wrappers
+over the same scripts.
+
+## Project structure
+
+- `packages/contract/` — the protocol and types between server and clients. Changing it changes
+  every client; confirm all three followed.
+- `packages/agent/` — the layer that talks to the pi process.
+- `packages/core-client/` — the shared connection wrapper. Web, TUI and desktop all go through it.
+- `packages/extensions/` — extensions such as the permission gate.
+- `docs/specs/`, `docs/plans/`, `docs/notes/` — designs, implementation plans, research records,
+  each filename date-prefixed. Look for an existing spec before starting work.
+
+## Git workflow
+
+**Commits follow [Conventional Commits](https://www.conventionalcommits.org/) with a scope:
+`fix(agent): ...`.** The scope is the workspace package name without the `@cinba/` prefix.
+
+**Work lands on `master` by default** and history stays linear. If a change needs isolating, say so
+and let the user decide — do not branch silently.
+
+## Boundaries
+
+**Never**
+
+- Reach the core server directly, bypassing `packages/core-client/`.
+- Push without running `npm run check`.
+
+**Ask first**
+
+- Moving work off `master`.
+- Adding a runtime dependency.
+
+**Always**
+
+- Run `npm run check` before merging.
+- After changing `packages/contract/`, confirm web, TUI and desktop are all in sync.
+
+## Known pitfalls
+
+Nothing recorded yet. Add an entry here the first time a trap costs real time — see the admission
+test at the top of this file.
