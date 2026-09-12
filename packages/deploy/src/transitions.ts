@@ -45,7 +45,9 @@ export function beginDeployment(options: {
     targetRevision: options.targetRevision,
     ...(options.runningRevision && {
       runningRevision: options.runningRevision,
-      previousRevision: options.runningRevision,
+    }),
+    ...(options.previousStatus?.previousRevision && {
+      previousRevision: options.previousStatus.previousRevision,
     }),
     ...(options.previousStatus?.failedRevision && {
       failedRevision: options.previousStatus.failedRevision,
@@ -85,6 +87,11 @@ export function advanceDeployment(
     }
   }
   if (nextPhase === "succeeded") {
+    if (current.runningRevision) {
+      next.previousRevision = current.runningRevision;
+    } else {
+      delete next.previousRevision;
+    }
     next.runningRevision = current.targetRevision;
     delete next.failedRevision;
   }

@@ -81,6 +81,9 @@ function fakes(overrides: Record<string, unknown> = {}) {
         cause: new Error("recovered"),
       };
     },
+    async cleanup() {
+      return [];
+    },
     ...overrides,
   };
   return { dependencies, statuses, events };

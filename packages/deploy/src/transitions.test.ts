@@ -31,7 +31,6 @@ test("a deployment starts with the rollback revision protected", () => {
       updatedAt: at(1).toISOString(),
       targetRevision: TARGET,
       runningRevision: CURRENT,
-      previousRevision: CURRENT,
       failedRevision: OLD_FAILURE,
     },
   );
@@ -105,6 +104,31 @@ test("a rollback failure does not claim that either release is running", () => {
   status = advanceDeployment(status, "failed", { failure: "rollback", now: at(3) });
 
   assert.equal(status.runningRevision, undefined);
-  assert.equal(status.previousRevision, CURRENT);
+  assert.equal(status.previousRevision, undefined);
   assert.equal(status.failedRevision, TARGET);
+});
+
+test("a failed candidate does not erase the older successful fallback", () => {
+  const older = OLD_FAILURE;
+  let status = beginDeployment({
+    targetRevision: TARGET,
+    runningRevision: CURRENT,
+    previousStatus: {
+      version: 1,
+      phase: "succeeded",
+      updatedAt: at(0).toISOString(),
+      targetRevision: CURRENT,
+      runningRevision: CURRENT,
+      previousRevision: older,
+    },
+    now: at(1),
+  });
+  assert.equal(status.previousRevision, older);
+  for (const phase of ["checking", "waiting_for_drain", "switching", "verifying"] as const) {
+    status = advanceDeployment(status, phase, { now: at(2) });
+  }
+  status = advanceDeployment(status, "rolled_back", { failure: "health", now: at(3) });
+
+  assert.equal(status.runningRevision, CURRENT);
+  assert.equal(status.previousRevision, older);
 });

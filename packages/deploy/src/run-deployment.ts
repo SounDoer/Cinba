@@ -4,6 +4,7 @@ import { decideDeployment } from "./decision.ts";
 import { fetchProdRevision, isFastForward } from "./git-source.ts";
 import { ReleasePreparationError, prepareRelease } from "./prepare-release.ts";
 import { recoverInterruptedDeployment } from "./recover-deployment.ts";
+import { cleanupReleases } from "./release-cleanup.ts";
 import { readDeploymentStatus, writeDeploymentStatus } from "./status-file.ts";
 import type { DeploymentFailure } from "./status.ts";
 import { advanceDeployment, beginDeployment } from "./transitions.ts";
@@ -32,6 +33,7 @@ type RunDependencies = {
   verifyConnection: typeof verifyCoreConnection;
   now: () => Date;
   recover: typeof recoverInterruptedDeployment;
+  cleanup: typeof cleanupReleases;
 };
 
 const DEFAULT_DEPENDENCIES: RunDependencies = {
@@ -47,6 +49,7 @@ const DEFAULT_DEPENDENCIES: RunDependencies = {
   verifyConnection: verifyCoreConnection,
   now: () => new Date(),
   recover: recoverInterruptedDeployment,
+  cleanup: cleanupReleases,
 };
 
 export type DeploymentRunResult =
@@ -92,6 +95,15 @@ export async function runDeployment(
   if (previousStatus && !TERMINAL_PHASES.has(previousStatus.phase)) {
     return await dependencies.recover(options, previousStatus);
   }
+  if (previousStatus?.runningRevision) {
+    await dependencies.cleanup({
+      repoPath: options.repoPath,
+      releasesRoot: options.releasesRoot,
+      currentLink: options.currentLink,
+      runningRevision: previousStatus.runningRevision,
+      previousRevision: previousStatus.previousRevision,
+    });
+  }
 
   let targetRevision: string;
   try {
@@ -128,6 +140,15 @@ export async function runDeployment(
     });
     await dependencies.writeStatus(options.statusPath, next);
     status = next;
+    if (next.runningRevision) {
+      await dependencies.cleanup({
+        repoPath: options.repoPath,
+        releasesRoot: options.releasesRoot,
+        currentLink: options.currentLink,
+        runningRevision: next.runningRevision,
+        previousRevision: next.previousRevision,
+      });
+    }
     return { kind: "failed", targetRevision, failure, cause };
   };
 
@@ -222,6 +243,13 @@ export async function runDeployment(
 
   if (verification.kind === "succeeded") {
     await moveTo("succeeded");
+    await dependencies.cleanup({
+      repoPath: options.repoPath,
+      releasesRoot: options.releasesRoot,
+      currentLink: options.currentLink,
+      runningRevision: status.runningRevision!,
+      previousRevision: status.previousRevision,
+    });
     return { kind: "succeeded", targetRevision };
   }
 
@@ -230,6 +258,15 @@ export async function runDeployment(
     now: dependencies.now(),
   });
   await dependencies.writeStatus(options.statusPath, next);
+  if (next.runningRevision) {
+    await dependencies.cleanup({
+      repoPath: options.repoPath,
+      releasesRoot: options.releasesRoot,
+      currentLink: options.currentLink,
+      runningRevision: next.runningRevision,
+      previousRevision: next.previousRevision,
+    });
+  }
   return {
     kind: verification.kind,
     targetRevision,
