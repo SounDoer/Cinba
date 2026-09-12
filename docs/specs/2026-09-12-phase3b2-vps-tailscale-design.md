@@ -1,7 +1,7 @@
 # 形态 C 第 3 步：VPS + Tailscale 远程接入设计
 
 日期：2026-09-12
-状态：讨论草案；关键方向已确认，VPS 现状与部分实现细节待实操核对
+状态：实现中；本地部署机制已完成，VPS 现状、系统配置与首次部署仍待实操核对
 前置：本机 Core + Web + TUI、多会话、模型切换、凭据管理、权限确认、消息编辑、
 Core 身份、正式／开发启动器与质量检查基线均已完成并完成人工回归
 
@@ -305,7 +305,7 @@ prod → VPS 应当运行的版本
 `prod` 不直接开发、不产生独立提交，只快进到已经验证过的 `master` commit。VPS 只监控
 `origin/prod`，因此普通 `master` push 不会打断正在使用的 VPS。
 
-未来增加本地发布命令，例如 `npm run promote`：
+本地发布命令 `npm run promote` 已实现：
 
 ```text
 确认当前在 master
@@ -315,8 +315,11 @@ prod → VPS 应当运行的版本
 → git push origin master:prod
 ```
 
+脚本还会在质量检查后再次确认工作区仍然干净、`HEAD` 没有变化，然后用非强制 push 推进
+`prod`。它现在只负责安全地更新部署分支，不会自行连接或轮询 VPS。
+
 真正跑通一次发布后，可再用 Skill 包装为“展示差异 → 检查 → 用户确认 → 推进 prod → 等待部署
-→ 验证线上版本”的完整流程。底层确定性动作必须保留为仓库脚本，Skill 只负责编排。
+→ 验证线上版本”的完整流程。底层确定性动作继续保留为仓库脚本，Skill 只负责编排和汇报。
 
 仓库可以改为公开，因此 VPS 读取 GitHub 不需要 token 或 deploy key。公开前必须单独审计当前文件
 与 Git 历史，确认没有 API key、token、密码、私人主机信息或不应公开的运行数据。仓库可见性由
@@ -350,15 +353,72 @@ release 在记录错误后删除；清理前必须解析并保护 `current` 的�
 
 部署任务使用 `flock` 保证任意时刻只有一个实例能修改 release 与 `current`。准备阶段发现
 `prod` 已出现更新时可以放弃尚未切换的旧目标并追到最新 commit；一旦进入切换阶段，就必须把
-当前目标的成功或回滚流程完整走完。timer 在锁被占用时安静退出，下一分钟重新检查。
+当前目标的成功或回滚流程完整走完。旧目标会记为 `superseded`，不会被误记为失败或隔离。
+timer 在锁被占用时以专用退出码 `75` 安静退出，下一分钟重新检查。
 
 失败的目标 commit 记录为 `failedRevision`。只要 `origin/prod` 仍指向同一个失败 commit，timer
 就不重复部署；等待 `prod` 出现新的修复或 revert commit。Git 历史不通过强推回退：运行状态可
 立即切回上一成功版本，仓库则在 `master` 上用新修复或 `git revert` 继续向前，再推进 `prod`。
 
+### 14.1 已落地的状态机与故障恢复
+
+部署器把每次尝试原子写入 `/home/cinba/.cinba/deployment.json`，只记录可公开的 revision、阶段和
+精简失败类别，不记录命令输出、路径、凭据或会话内容。已实现的阶段为：
+
+```text
+idle
+→ preparing
+→ checking
+→ waiting_for_drain
+→ switching
+→ verifying
+→ succeeded
+
+checking → superseded
+任一工作阶段 → failed
+switching / verifying → rolled_back
+```
+
+精简失败类别为 `fetch`、`checkout`、`install`、`checks`、`drain`、`switch`、`start`、`health`、
+`rollback` 和 `cleanup`。完整错误只进入部署进程日志。
+
+部署进程意外退出后，下次运行不会盲目重做。它会把持久化阶段与 `current` 符号链接的真实目标进行
+核对：
+
+- 中断发生在准备、检查或等待排空阶段，且 `current` 未变：丢弃未启用的候选版本并记录失败；
+- 中断发生在切换或验证阶段，且 `current` 已指向候选版本：继续启动并验证，失败则恢复上一版本；
+- `current` 仍指向旧版本：验证旧服务可用，再把这次尝试收束为失败或已回滚；
+- `current` 指向预期之外的版本：停止猜测，记录 `rollback` 失败，等待人工检查。
+
+第一次部署没有上一版本可回退。若新 Core 启动或健康检查失败，部署器只移除自己刚设置的
+`current`，结果记为 `failed`，不会把“什么都没恢复”称为 `rolled_back`。
+
+成功后只保留当前与上一个成功 release。失败候选不会覆盖较早的成功后备版本；清理前还会再次
+确认 `current` 与状态中的运行 revision 完全一致，并忽略形状可疑的目录。
+
+### 14.2 已落地的代码职责
+
+自动部署代码集中在 `packages/deploy`：
+
+```text
+deployment-config / release-layout   固定目录与路径边界
+status / status-file / transitions   状态格式、原子持久化与合法迁移
+git-source / decision                拉取 prod、快进校验与是否部署
+prepare-release                      独立 worktree、npm ci 与 npm run check
+activate-release / switch-release    draining、停止服务与原子切换
+verify / verify-activation           HTTP revision、WebSocket 与自动回退
+recover-deployment                   中断后的状态核对与收束
+release-cleanup                      只保留两个成功版本
+deployment-lock / locked-deployment  flock 单实例入口
+run-deployment / deployment-cli      完整流程编排与命令行入口
+```
+
+这些模块已经通过本地单元测试和仓库完整质量检查，但尚未替代真实 VPS 验证。systemd unit、Caddy
+站点和 Tailscale Grant 仍必须根据机器现状生成并现场验证。
+
 ## 15. 健康与版本接口
 
-在 Cinba server 中新增：
+Cinba server 已新增：
 
 ```text
 GET /healthz
@@ -398,7 +458,13 @@ packages/server/src/server-runtime.ts 继续只负责 HTTP / WebSocket 生命周
 ```
 
 revision 如何从 release 注入、`safeToRestart` 的严格定义、draining 的具体消息与回滚健康检查
-仍需在实现计划中细化。
+已经在代码与测试中落地。生产入口 `packages/server/src/service-entry.ts` 会从当前 release 读取完整
+Git `HEAD`，校验为 40 位 commit 后再设置 `CINBA_REVISION`，避免部署器验证到模糊或伪造的版本。
+
+尚未落地的是“从 Cinba HTTP 接口读取部署状态”。部署状态格式属于 `@cinba/deploy`，若让
+`@cinba/server` 直接复用其严格解析器，就会新增一个内部 runtime dependency；按照仓库约定，实施
+前需要单独确认。当前 `/healthz` 已足够让部署器验证运行版本，状态接口主要服务于后续 Promote
+Skill 的远程进度汇报，不阻塞 VPS 首次部署。
 
 ## 16. 本阶段不做
 
@@ -414,7 +480,7 @@ revision 如何从 release 注入、`safeToRestart` 的严格定义、draining �
 最后一条不是取消这些能力。3b-2 现在建立 HTTPS，是为了让后续第 4 步可以在正确的基础上实现
 移动端与浏览器高级能力。
 
-## 17. 实操前仍需确认
+## 17. 剩余工作与实操前确认
 
 1. VPS 的 Linux 发行版、Node.js、Git、Tailscale 与 Caddy 版本。
 2. 现有 Linux 用户、Caddyfile、站点、listener 和防火墙布局。
@@ -422,8 +488,11 @@ revision 如何从 release 注入、`safeToRestart` 的严格定义、draining �
    `TS_PERMIT_CERT_UID=caddy`。
 4. VPS 的 Tailscale IP、MagicDNS 完整域名，以及机器名是否适合进入公开证书日志。
 5. tailnet 现有 Grants／ACL，避免新增规则与旧的宽泛规则叠加后意外放大权限。
-6. Origin 校验覆盖本机正式模式、Vite 开发模式、远程 HTTPS 与无 Origin 的 TUI。
-7. 自动部署的状态文件格式、draining 协议细节与自动回滚健康检查。
-8. 仓库公开前的当前文件与完整 Git 历史安全审计。
+6. 在真实远程 HTTPS 入口复核 Origin 校验；本机正式模式、Vite 开发模式和无 Origin 客户端已有
+   自动测试。
+7. 决定是否让 server 暴露经过裁剪的部署状态，以及是否接受对应内部 runtime dependency。
+8. 编写并安装匹配真实 VPS 的 systemd user units，完成首次 bootstrap 与异常重启验证。
+9. 用真实 Caddy、Tailscale、HTTP、WebSocket 和自动回滚完成端到端部署演练。
+10. 仓库公开前审计当前文件与完整 Git 历史；确认后由用户手动修改 GitHub 可见性。
 
 以上实操信息没有核实前，不编造 Caddyfile、systemd unit 或 Tailscale Grant 的最终内容。
