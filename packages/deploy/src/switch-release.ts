@@ -44,6 +44,29 @@ function normalizeExpectedRevision(releasesRoot: string, revision: string): stri
   return posix.basename(releasePath(releasesRoot, revision));
 }
 
+/** Read current without following it, rejecting every shape except our release symlink. */
+export async function readCurrentReleaseRevision(
+  options: { releasesRoot: string; currentLink: string },
+  overrides: Pick<Partial<SwitchDependencies>, "pathKind" | "readLink"> = {},
+): Promise<string | undefined> {
+  if (!posix.isAbsolute(options.currentLink) || options.currentLink === "/") {
+    throw new Error("Current link must be a safe absolute POSIX path");
+  }
+  const dependencies = { ...DEFAULT_DEPENDENCIES, ...overrides };
+  const kind = await dependencies.pathKind(options.currentLink);
+  if (kind === "missing") {
+    return undefined;
+  }
+  if (kind !== "symlink") {
+    throw new Error("Current release is not a symbolic link");
+  }
+  return currentReleaseRevision({
+    releasesRoot: options.releasesRoot,
+    currentLink: options.currentLink,
+    linkTarget: await dependencies.readLink(options.currentLink),
+  });
+}
+
 async function requireCurrentRevision(
   options: { releasesRoot: string; currentLink: string; expectedRevision: string },
   dependencies: SwitchDependencies,

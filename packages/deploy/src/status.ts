@@ -20,6 +20,7 @@ export const DEPLOYMENT_FAILURES = [
   "start",
   "health",
   "rollback",
+  "cleanup",
 ] as const;
 
 export type DeploymentPhase = (typeof DEPLOYMENT_PHASES)[number];

@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { removeCurrentRelease, switchCurrentRelease } from "./switch-release.ts";
+import {
+  readCurrentReleaseRevision,
+  removeCurrentRelease,
+  switchCurrentRelease,
+} from "./switch-release.ts";
 
 const ROOT = "/home/cinba/releases";
 const CURRENT_LINK = "/home/cinba/current";
@@ -175,4 +179,33 @@ test("a failed first deployment removes current only when it still names that ta
     /does not match/,
   );
   assert.deepEqual(changed.removed, []);
+});
+
+test("current can be inspected without following an unsafe filesystem entry", async () => {
+  const linked = fakes();
+  assert.equal(
+    await readCurrentReleaseRevision(
+      { releasesRoot: ROOT, currentLink: CURRENT_LINK },
+      linked.dependencies,
+    ),
+    CURRENT,
+  );
+
+  const missing = fakes({ currentKind: "missing" });
+  assert.equal(
+    await readCurrentReleaseRevision(
+      { releasesRoot: ROOT, currentLink: CURRENT_LINK },
+      missing.dependencies,
+    ),
+    undefined,
+  );
+
+  const directory = fakes({ currentKind: "directory" });
+  await assert.rejects(
+    readCurrentReleaseRevision(
+      { releasesRoot: ROOT, currentLink: CURRENT_LINK },
+      directory.dependencies,
+    ),
+    /not a symbolic link/,
+  );
 });

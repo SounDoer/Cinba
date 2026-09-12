@@ -3,8 +3,9 @@ import { startCoreService } from "./core-service.ts";
 import { decideDeployment } from "./decision.ts";
 import { fetchProdRevision, isFastForward } from "./git-source.ts";
 import { ReleasePreparationError, prepareRelease } from "./prepare-release.ts";
+import { recoverInterruptedDeployment } from "./recover-deployment.ts";
 import { readDeploymentStatus, writeDeploymentStatus } from "./status-file.ts";
-import type { DeploymentFailure, DeploymentStatus } from "./status.ts";
+import type { DeploymentFailure } from "./status.ts";
 import { advanceDeployment, beginDeployment } from "./transitions.ts";
 import { verifyCoreConnection, waitForHealthyRevision } from "./verify.ts";
 import { verifyActivatedRelease } from "./verify-activation.ts";
@@ -30,6 +31,7 @@ type RunDependencies = {
   waitForHealth: typeof waitForHealthyRevision;
   verifyConnection: typeof verifyCoreConnection;
   now: () => Date;
+  recover: typeof recoverInterruptedDeployment;
 };
 
 const DEFAULT_DEPENDENCIES: RunDependencies = {
@@ -44,12 +46,12 @@ const DEFAULT_DEPENDENCIES: RunDependencies = {
   waitForHealth: waitForHealthyRevision,
   verifyConnection: verifyCoreConnection,
   now: () => new Date(),
+  recover: recoverInterruptedDeployment,
 };
 
 export type DeploymentRunResult =
   | { kind: "up_to_date"; targetRevision: string }
   | { kind: "quarantined"; targetRevision: string; failure: DeploymentFailure | undefined }
-  | { kind: "recovery_required"; status: DeploymentStatus }
   | { kind: "succeeded"; targetRevision: string }
   | { kind: "rolled_back"; targetRevision: string; failure: DeploymentFailure; cause: unknown }
   | { kind: "failed"; targetRevision?: string; failure: DeploymentFailure; cause: unknown };
@@ -88,7 +90,7 @@ export async function runDeployment(
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...overrides };
   const previousStatus = await dependencies.readStatus(options.statusPath);
   if (previousStatus && !TERMINAL_PHASES.has(previousStatus.phase)) {
-    return { kind: "recovery_required", status: previousStatus };
+    return await dependencies.recover(options, previousStatus);
   }
 
   let targetRevision: string;

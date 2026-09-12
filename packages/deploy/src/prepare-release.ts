@@ -82,6 +82,19 @@ async function cleanFailedRelease(
   }
 }
 
+/** Remove one validated release worktree that is known not to be current. */
+export async function discardRelease(
+  options: { repoPath: string; releasesRoot: string; revision: string },
+  overrides: Partial<ReleasePreparationDependencies> = {},
+): Promise<void> {
+  const dependencies = { ...DEFAULT_DEPENDENCIES, ...overrides };
+  await cleanFailedRelease(
+    options.repoPath,
+    releasePath(options.releasesRoot, options.revision),
+    dependencies,
+  );
+}
+
 async function cleanAfterFailure(
   repoPath: string,
   path: string,

@@ -72,6 +72,15 @@ function fakes(overrides: Record<string, unknown> = {}) {
       tick += 1;
       return new Date(`2026-09-12T00:00:${String(tick).padStart(2, "0")}.000Z`);
     },
+    async recover(_options: unknown, status: DeploymentStatus) {
+      events.push("recover");
+      return {
+        kind: "failed" as const,
+        targetRevision: status.targetRevision!,
+        failure: "rollback" as const,
+        cause: new Error("recovered"),
+      };
+    },
     ...overrides,
   };
   return { dependencies, statuses, events };
@@ -185,17 +194,15 @@ test("fetch failures do not invent an unknown target in durable status", async (
   assert.deepEqual(fake.statuses, []);
 });
 
-test("an interrupted durable phase is preserved for explicit recovery", async () => {
+test("an interrupted durable phase enters recovery before fetching prod", async () => {
   const interrupted = previous({ phase: "switching", targetRevision: TARGET });
   const fake = fakes({
     async readStatus() {
       return interrupted;
     },
   });
-  assert.deepEqual(await runDeployment(OPTIONS, fake.dependencies), {
-    kind: "recovery_required",
-    status: interrupted,
-  });
-  assert.deepEqual(fake.events, []);
+  const result = await runDeployment(OPTIONS, fake.dependencies);
+  assert.equal(result.kind === "failed" && result.failure, "rollback");
+  assert.deepEqual(fake.events, ["recover"]);
   assert.deepEqual(fake.statuses, []);
 });
