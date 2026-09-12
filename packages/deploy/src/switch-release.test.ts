@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { switchCurrentRelease } from "./switch-release.ts";
+import { removeCurrentRelease, switchCurrentRelease } from "./switch-release.ts";
 
 const ROOT = "/home/cinba/releases";
 const CURRENT_LINK = "/home/cinba/current";
@@ -156,4 +156,23 @@ test("a failed atomic rename removes only the temporary link", async () => {
     /rename failed/,
   );
   assert.deepEqual(fake.removed, [`${CURRENT_LINK}.next`]);
+});
+
+test("a failed first deployment removes current only when it still names that target", async () => {
+  const matching = fakes({ currentTarget: `releases/${TARGET}` });
+  await removeCurrentRelease(
+    { releasesRoot: ROOT, currentLink: CURRENT_LINK, expectedCurrentRevision: TARGET },
+    matching.dependencies,
+  );
+  assert.deepEqual(matching.removed, [CURRENT_LINK]);
+
+  const changed = fakes({ currentTarget: `releases/${CURRENT}` });
+  await assert.rejects(
+    removeCurrentRelease(
+      { releasesRoot: ROOT, currentLink: CURRENT_LINK, expectedCurrentRevision: TARGET },
+      changed.dependencies,
+    ),
+    /does not match/,
+  );
+  assert.deepEqual(changed.removed, []);
 });

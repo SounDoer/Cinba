@@ -39,3 +39,18 @@ export async function stopCoreService(runCommand: RunCommand = defaultRunCommand
     throw new Error("Cinba service did not become inactive after draining");
   }
 }
+
+/** Start the selected release and confirm systemd still considers its service active. */
+export async function startCoreService(runCommand: RunCommand = defaultRunCommand): Promise<void> {
+  await runCommand("systemctl", ["--user", "start", "cinba.service"]);
+  const result = await runCommand("systemctl", [
+    "--user",
+    "show",
+    "--property=ActiveState",
+    "--value",
+    "cinba.service",
+  ]);
+  if (result.stdout.trim() !== "active") {
+    throw new Error("Cinba service did not become active after starting");
+  }
+}

@@ -44,6 +44,23 @@ function normalizeExpectedRevision(releasesRoot: string, revision: string): stri
   return posix.basename(releasePath(releasesRoot, revision));
 }
 
+async function requireCurrentRevision(
+  options: { releasesRoot: string; currentLink: string; expectedRevision: string },
+  dependencies: SwitchDependencies,
+): Promise<void> {
+  if ((await dependencies.pathKind(options.currentLink)) !== "symlink") {
+    throw new Error("Current release is not a symbolic link");
+  }
+  const actualRevision = currentReleaseRevision({
+    releasesRoot: options.releasesRoot,
+    currentLink: options.currentLink,
+    linkTarget: await dependencies.readLink(options.currentLink),
+  });
+  if (actualRevision !== options.expectedRevision) {
+    throw new Error("Current release does not match the expected revision");
+  }
+}
+
 /** Atomically point current at a prepared release after proving the old pointer is expected. */
 export async function switchCurrentRelease(
   options: {
@@ -75,17 +92,17 @@ export async function switchCurrentRelease(
       throw new Error("Current release is missing instead of matching the expected revision");
     }
   } else {
-    if (currentKind !== "symlink") {
-      throw new Error("Current release is not a symbolic link");
-    }
-    const actualRevision = currentReleaseRevision({
-      releasesRoot: options.releasesRoot,
-      currentLink: options.currentLink,
-      linkTarget: await dependencies.readLink(options.currentLink),
-    });
-    if (expectedRevision === undefined || actualRevision !== expectedRevision) {
+    if (expectedRevision === undefined) {
       throw new Error("Current release does not match the expected revision");
     }
+    await requireCurrentRevision(
+      {
+        releasesRoot: options.releasesRoot,
+        currentLink: options.currentLink,
+        expectedRevision,
+      },
+      dependencies,
+    );
   }
 
   const temporaryLink = `${options.currentLink}.next`;
@@ -109,4 +126,27 @@ export async function switchCurrentRelease(
     }
     throw error;
   }
+}
+
+/** Remove current after proving that a failed first deployment is the link it names. */
+export async function removeCurrentRelease(
+  options: { releasesRoot: string; currentLink: string; expectedCurrentRevision: string },
+  overrides: Partial<SwitchDependencies> = {},
+): Promise<void> {
+  if (!posix.isAbsolute(options.currentLink) || options.currentLink === "/") {
+    throw new Error("Current link must be a safe absolute POSIX path");
+  }
+  const dependencies = { ...DEFAULT_DEPENDENCIES, ...overrides };
+  await requireCurrentRevision(
+    {
+      releasesRoot: options.releasesRoot,
+      currentLink: options.currentLink,
+      expectedRevision: normalizeExpectedRevision(
+        options.releasesRoot,
+        options.expectedCurrentRevision,
+      ),
+    },
+    dependencies,
+  );
+  await dependencies.removeLink(options.currentLink);
 }
