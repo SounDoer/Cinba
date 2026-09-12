@@ -569,7 +569,7 @@ function shutdown(): void {
   drain.request();
 }
 
-function startService(): void {
+export function startService(): void {
   drain = createDrainController({
     isSafe: safeToRestart,
     stop: async (mode) => {
