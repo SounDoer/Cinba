@@ -17,13 +17,11 @@
 // Usage: node <repo>/packages/server/src/index.ts
 
 import type { WebSocket } from "ws";
-import type { IncomingMessage } from "node:http";
 import { rmSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findSession } from "@cinba/agent";
-import { isLoopback } from "./loopback.ts";
 import { IDLE_TIMEOUT_MS, assessIdle, canStopNow } from "./reclaim.ts";
 import { createConfigStore } from "./config.ts";
 import { createCredentialService } from "./credential-service.ts";
@@ -58,17 +56,6 @@ const config = createConfigStore(join(homedir(), ".cinba", "config.json"), {
 const viewing = new Map<WebSocket, string>();
 
 const clients = new Set<WebSocket>();
-
-/**
- * Which clients arrived over the loopback address.
- *
- * Credential changes are refused from anywhere else. Today every connection is
- * loopback and this rejects nothing — but the whole point is that it is already
- * in place before that stops being true. Reading a conversation and changing
- * which API key the machine uses are not the same kind of act, and the second
- * should not become reachable the moment a door opens outward.
- */
-const local = new WeakSet<WebSocket>();
 
 // ---- Sending ----
 
@@ -380,17 +367,6 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
       return;
 
     case "set_api_key": {
-      if (!local.has(socket)) {
-        // Deliberately says nothing about why beyond this: a remote caller
-        // learns only that it cannot.
-        console.warn("[cinba] refused a credential change from a non-local client");
-        if (current) {
-          sessions.emit(current, [
-            { type: "notice", text: "credentials can only be changed locally" },
-          ]);
-        }
-        return;
-      }
       const result = await credentials.configure(message.providerId, message.apiKey);
       if (current) {
         sessions.emit(current, [{ type: "notice", text: result.notice }]);
@@ -400,10 +376,6 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
     }
 
     case "clear_credential": {
-      if (!local.has(socket)) {
-        console.warn("[cinba] refused a credential change from a non-local client");
-        return;
-      }
       const result = await credentials.remove(message.providerId);
       if (current) {
         sessions.emit(current, [{ type: "notice", text: result.notice }]);
@@ -489,11 +461,8 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
 
 // ---- Starting the service ----
 
-function onConnection(socket: WebSocket, request: IncomingMessage): void {
+function onConnection(socket: WebSocket): void {
   clients.add(socket);
-  if (isLoopback(request.socket.remoteAddress)) {
-    local.add(socket);
-  }
 
   // Before anything else: which machine the client has reached.
   sendTo(socket, { type: "core_identity", name: config.get().coreName });
