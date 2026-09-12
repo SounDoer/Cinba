@@ -1,4 +1,12 @@
 node_modules/
 dist/
 .env
+.env.*
+!.env.example
 *.log
+.cinba/
+.pi/
+*.key
+*.pem
+*.p12
+*.pfx
