@@ -27,6 +27,12 @@ import { IDLE_TIMEOUT_MS, assessIdle, canStopNow } from "./reclaim.ts";
 import { createConfigStore } from "./config.ts";
 import { createCredentialService } from "./credential-service.ts";
 import { listDirectories } from "./directory-browser.ts";
+import {
+  DRAIN_TIMEOUT_MS,
+  type DrainController,
+  canProcessDuringDrain,
+  createDrainController,
+} from "./drain.ts";
 import { createHealthHandler, isSafeToRestart, normalizeRevision } from "./health.ts";
 import { createServerRuntime } from "./server-runtime.ts";
 import { type LiveSession, createSessionRegistry } from "./session-registry.ts";
@@ -60,6 +66,7 @@ const config = createConfigStore(join(homedir(), ".cinba", "config.json"), {
 const viewing = new Map<WebSocket, string>();
 
 const clients = new Set<WebSocket>();
+let drain: DrainController | undefined;
 
 // ---- Sending ----
 
@@ -82,21 +89,25 @@ const sessions = createSessionRegistry({
   hasViewers: (sessionId) => [...viewing.values()].includes(sessionId),
   onActions: (sessionId, actions) => {
     toViewers(sessionId, { type: "actions", actions });
+    drain?.check();
   },
   onSnapshot: toViewers,
 });
 
 const credentials = createCredentialService({ onChanged: markCredentialsStale });
 
+function safeToRestart(): boolean {
+  return isSafeToRestart(
+    sessions.values().map((session) => ({
+      busy: session.ledger.snapshot().busy,
+      awaitingConfirmation: session.pendingConfirms.size > 0,
+    })),
+  );
+}
+
 const serveHealth = createHealthHandler({
   revision: REVISION,
-  safeToRestart: () =>
-    isSafeToRestart(
-      sessions.values().map((session) => ({
-        busy: session.ledger.snapshot().busy,
-        awaitingConfirmation: session.pendingConfirms.size > 0,
-      })),
-    ),
+  safeToRestart,
 });
 
 async function serveHttp(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -326,6 +337,15 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
 
   const current = sessions.get(viewing.get(socket) ?? "");
 
+  if (drain?.draining && !canProcessDuringDrain(message.type)) {
+    if (current) {
+      sessions.emit(current, [
+        { type: "notice", text: "Core is restarting; new work is temporarily unavailable" },
+      ]);
+    }
+    return;
+  }
+
   switch (message.type) {
     case "prompt":
       if (!current) {
@@ -525,7 +545,7 @@ const runtime = createServerRuntime({
   host: HOST,
   port: PORT,
   serveHttp,
-  acceptWebSocket: isAllowedWebSocketOrigin,
+  acceptWebSocket: (request) => drain?.draining !== true && isAllowedWebSocketOrigin(request),
   onConnection,
   maintain: () => {
     // Checked every minute rather than on a timer per conversation: a minute
@@ -536,18 +556,42 @@ const runtime = createServerRuntime({
   },
 });
 
-let shuttingDown = false;
 function shutdown(): void {
-  if (shuttingDown) {
+  if (!drain) {
     return;
   }
-  shuttingDown = true;
-  console.log(`\n[cinba] shutting down, reclaiming ${sessions.size} Pi child process(es)`);
-  sessions.closeAll();
-  void runtime.stop().finally(() => process.exit(0));
+  if (drain.draining) {
+    console.log("\n[cinba] forcing shutdown after a second stop request");
+    drain.force();
+    return;
+  }
+  console.log(`\n[cinba] draining before shutdown (up to ${DRAIN_TIMEOUT_MS / 60_000} minutes)`);
+  drain.request();
 }
 
 function startService(): void {
+  drain = createDrainController({
+    isSafe: safeToRestart,
+    stop: async (mode) => {
+      if (mode === "forced") {
+        for (const session of sessions.values()) {
+          sessions.denyPendingConfirmations(session);
+          if (session.ledger.snapshot().busy) {
+            sessions.abort(session);
+          }
+        }
+      }
+      console.log(`[cinba] shutting down, reclaiming ${sessions.size} Pi child process(es)`);
+      sessions.closeAll();
+      await runtime.stop();
+    },
+    onStopped: (error) => {
+      if (error) {
+        console.error("[cinba] shutdown failed:", error);
+      }
+      process.exit(error ? 1 : 0);
+    },
+  });
   void runtime
     .start()
     .then((address) => {
