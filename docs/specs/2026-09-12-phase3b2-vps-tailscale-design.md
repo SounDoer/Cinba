@@ -298,21 +298,21 @@ Permission Gate 人工确认
 已确认分支语义：
 
 ```text
-main → 开发主线
+master → 开发主线
 prod → VPS 应当运行的版本
 ```
 
-`prod` 不直接开发、不产生独立提交，只快进到已经验证过的 `main` commit。VPS 只监控
-`origin/prod`，因此普通 `main` push 不会打断正在使用的 VPS。
+`prod` 不直接开发、不产生独立提交，只快进到已经验证过的 `master` commit。VPS 只监控
+`origin/prod`，因此普通 `master` push 不会打断正在使用的 VPS。
 
 未来增加本地发布命令，例如 `npm run promote`：
 
 ```text
-确认当前在 main
+确认当前在 master
 → 工作区干净
-→ main 与 origin/main 同步
+→ master 与 origin/master 同步
 → npm run check 全绿
-→ git push origin main:prod
+→ git push origin master:prod
 ```
 
 真正跑通一次发布后，可再用 Skill 包装为“展示差异 → 检查 → 用户确认 → 推进 prod → 等待部署
@@ -354,7 +354,7 @@ release 在记录错误后删除；清理前必须解析并保护 `current` 的�
 
 失败的目标 commit 记录为 `failedRevision`。只要 `origin/prod` 仍指向同一个失败 commit，timer
 就不重复部署；等待 `prod` 出现新的修复或 revert commit。Git 历史不通过强推回退：运行状态可
-立即切回上一成功版本，仓库则在 `main` 上用新修复或 `git revert` 继续向前，再推进 `prod`。
+立即切回上一成功版本，仓库则在 `master` 上用新修复或 `git revert` 继续向前，再推进 `prod`。
 
 ## 15. 健康与版本接口
 
