@@ -16,6 +16,7 @@ export const DEPLOYMENT_FAILURES = [
   "install",
   "checks",
   "drain",
+  "switch",
   "start",
   "health",
   "rollback",

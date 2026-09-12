@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { activatePreparedRelease } from "./activate-release.ts";
+import { type ReleaseActivationError, activatePreparedRelease } from "./activate-release.ts";
 
 const OPTIONS = {
   releasesRoot: "/home/cinba/releases",
@@ -34,7 +34,26 @@ test("a drain failure leaves current untouched", async () => {
         switched = true;
       },
     }),
-    /drain failed/,
+    (error: unknown) => {
+      assert.equal((error as ReleaseActivationError).failure, "drain");
+      assert.equal((error as Error).cause instanceof Error, true);
+      return true;
+    },
   );
   assert.equal(switched, false);
+});
+
+test("a switch failure is distinguishable after the old core has stopped", async () => {
+  await assert.rejects(
+    activatePreparedRelease(OPTIONS, {
+      async stopService() {},
+      async switchRelease() {
+        throw new Error("switch failed");
+      },
+    }),
+    (error: unknown) => {
+      assert.equal((error as ReleaseActivationError).failure, "switch");
+      return true;
+    },
+  );
 });

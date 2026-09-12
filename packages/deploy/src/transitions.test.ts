@@ -96,3 +96,15 @@ test("invalid jumps and misplaced failure codes are refused", () => {
     message: "Failure code is only valid at failure",
   });
 });
+
+test("a rollback failure does not claim that either release is running", () => {
+  let status = beginDeployment({ targetRevision: TARGET, runningRevision: CURRENT, now: at(1) });
+  for (const phase of ["checking", "waiting_for_drain", "switching", "verifying"] as const) {
+    status = advanceDeployment(status, phase, { now: at(2) });
+  }
+  status = advanceDeployment(status, "failed", { failure: "rollback", now: at(3) });
+
+  assert.equal(status.runningRevision, undefined);
+  assert.equal(status.previousRevision, CURRENT);
+  assert.equal(status.failedRevision, TARGET);
+});

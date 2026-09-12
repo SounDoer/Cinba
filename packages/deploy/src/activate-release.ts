@@ -13,6 +13,16 @@ type ActivationDependencies = {
   switchRelease: (options: ActivationOptions) => Promise<void>;
 };
 
+export class ReleaseActivationError extends Error {
+  readonly failure: "drain" | "switch";
+
+  constructor(failure: "drain" | "switch", cause: unknown) {
+    super(`Release activation failed during ${failure}`, { cause });
+    this.name = "ReleaseActivationError";
+    this.failure = failure;
+  }
+}
+
 const DEFAULT_DEPENDENCIES: ActivationDependencies = {
   stopService: stopCoreService,
   switchRelease: switchCurrentRelease,
@@ -24,6 +34,14 @@ export async function activatePreparedRelease(
   overrides: Partial<ActivationDependencies> = {},
 ): Promise<void> {
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...overrides };
-  await dependencies.stopService();
-  await dependencies.switchRelease(options);
+  try {
+    await dependencies.stopService();
+  } catch (error) {
+    throw new ReleaseActivationError("drain", error);
+  }
+  try {
+    await dependencies.switchRelease(options);
+  } catch (error) {
+    throw new ReleaseActivationError("switch", error);
+  }
 }

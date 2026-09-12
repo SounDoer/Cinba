@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { prepareRelease } from "./prepare-release.ts";
+import { ReleasePreparationError, prepareRelease } from "./prepare-release.ts";
 
 const REPO = "/home/cinba/Cinba";
 const ROOT = "/home/cinba/releases";
@@ -87,7 +87,11 @@ test("a failed install removes only the release created by this attempt", async 
       { repoPath: REPO, releasesRoot: ROOT, targetRevision: TARGET },
       fake.dependencies,
     ),
-    { message: "preparation failed" },
+    (error: unknown) => {
+      assert.equal(error instanceof ReleasePreparationError, true);
+      assert.equal((error as ReleasePreparationError).failure, "install");
+      return true;
+    },
   );
   assert.deepEqual(fake.calls.at(-1), {
     command: "git",
@@ -95,6 +99,32 @@ test("a failed install removes only the release created by this attempt", async 
     cwd: REPO,
   });
   assert.deepEqual(fake.removed, [PATH]);
+});
+
+test("checking is announced after installation and failures keep their stage", async () => {
+  const fake = fakes({ failAt: 3 });
+  await assert.rejects(
+    prepareRelease(
+      {
+        repoPath: REPO,
+        releasesRoot: ROOT,
+        targetRevision: TARGET,
+        async onChecking() {
+          fake.calls.push({ command: "status", args: ["checking"], cwd: PATH });
+        },
+      },
+      fake.dependencies,
+    ),
+    (error: unknown) => {
+      assert.equal((error as ReleasePreparationError).failure, "checks");
+      return true;
+    },
+  );
+  assert.deepEqual(fake.calls.slice(1, 4), [
+    { command: "npm", args: ["ci"], cwd: PATH },
+    { command: "status", args: ["checking"], cwd: PATH },
+    { command: "npm", args: ["run", "check"], cwd: PATH },
+  ]);
 });
 
 test("a cleanup failure is reported together with the preparation failure", async () => {

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { lstat, mkdir, rm } from "node:fs/promises";
 import { posix } from "node:path";
 import { releasePath } from "./release-layout.ts";
+import type { DeploymentFailure } from "./status.ts";
 
 type RunCommand = (command: string, args: string[], cwd: string) => Promise<void>;
 
@@ -11,6 +12,18 @@ type ReleasePreparationDependencies = {
   removeDirectory: (path: string) => Promise<void>;
   runCommand: RunCommand;
 };
+
+type PreparationFailure = Extract<DeploymentFailure, "checkout" | "install" | "checks">;
+
+export class ReleasePreparationError extends Error {
+  readonly failure: PreparationFailure;
+
+  constructor(failure: PreparationFailure, cause: unknown) {
+    super(`Release preparation failed during ${failure}`, { cause });
+    this.name = "ReleasePreparationError";
+    this.failure = failure;
+  }
+}
 
 function defaultRunCommand(command: string, args: string[], cwd: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -69,9 +82,32 @@ async function cleanFailedRelease(
   }
 }
 
+async function cleanAfterFailure(
+  repoPath: string,
+  path: string,
+  error: unknown,
+  dependencies: ReleasePreparationDependencies,
+): Promise<never> {
+  try {
+    await cleanFailedRelease(repoPath, path, dependencies);
+  } catch (cleanupError) {
+    throw new AggregateError(
+      [error, cleanupError],
+      "Release preparation failed and its directory could not be cleaned",
+      { cause: cleanupError },
+    );
+  }
+  throw error;
+}
+
 /** Prepare and validate a target revision without changing the running release. */
 export async function prepareRelease(
-  options: { repoPath: string; releasesRoot: string; targetRevision: string },
+  options: {
+    repoPath: string;
+    releasesRoot: string;
+    targetRevision: string;
+    onChecking?: () => Promise<void>;
+  },
   overrides: Partial<ReleasePreparationDependencies> = {},
 ): Promise<{ path: string; revision: string }> {
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...overrides };
@@ -89,19 +125,38 @@ export async function prepareRelease(
       ["worktree", "add", "--detach", path, revision],
       options.repoPath,
     );
+  } catch (error) {
+    return await cleanAfterFailure(
+      options.repoPath,
+      path,
+      new ReleasePreparationError("checkout", error),
+      dependencies,
+    );
+  }
+  try {
     await dependencies.runCommand("npm", ["ci"], path);
+  } catch (error) {
+    return await cleanAfterFailure(
+      options.repoPath,
+      path,
+      new ReleasePreparationError("install", error),
+      dependencies,
+    );
+  }
+  try {
+    await options.onChecking?.();
+  } catch (error) {
+    return await cleanAfterFailure(options.repoPath, path, error, dependencies);
+  }
+  try {
     await dependencies.runCommand("npm", ["run", "check"], path);
   } catch (error) {
-    try {
-      await cleanFailedRelease(options.repoPath, path, dependencies);
-    } catch (cleanupError) {
-      throw new AggregateError(
-        [error, cleanupError],
-        "Release preparation failed and its directory could not be cleaned",
-        { cause: cleanupError },
-      );
-    }
-    throw error;
+    return await cleanAfterFailure(
+      options.repoPath,
+      path,
+      new ReleasePreparationError("checks", error),
+      dependencies,
+    );
   }
 
   return { path, revision };

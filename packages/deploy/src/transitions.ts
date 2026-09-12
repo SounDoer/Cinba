@@ -80,6 +80,9 @@ export function advanceDeployment(
   if (isFailure) {
     next.failedRevision = current.targetRevision;
     next.failure = options.failure;
+    if (options.failure === "rollback") {
+      delete next.runningRevision;
+    }
   }
   if (nextPhase === "succeeded") {
     next.runningRevision = current.targetRevision;
