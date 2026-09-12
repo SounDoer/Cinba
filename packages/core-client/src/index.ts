@@ -5,6 +5,7 @@ export type {
   CoreClientHandlers,
   CoreClientOptions,
   CoreConnectionState,
+  ReconnectScheduler,
   SnapshotState,
   Socket,
   SocketFactory,

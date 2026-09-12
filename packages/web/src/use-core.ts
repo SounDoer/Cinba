@@ -40,33 +40,37 @@ export function useCore(serverUrl: string) {
   useEffect(() => {
     let active = true;
 
-    const client = new CoreClient(serverUrl, {
-      onConnectionChanged: (state) => {
-        if (active) {
-          setConnectionState(state);
-        }
+    const client = new CoreClient(
+      serverUrl,
+      {
+        onConnectionChanged: (state) => {
+          if (active) {
+            setConnectionState(state);
+          }
+        },
+        onSnapshot: (state) => {
+          mirrorRef.current = createSession(state.snapshot);
+          setSnapshot(state.snapshot);
+          setCwd(state.cwd);
+          setModel(state.model);
+          setSessionId(state.sessionId);
+        },
+        onActions: (actions) => {
+          for (const action of actions) {
+            mirrorRef.current.apply(action);
+          }
+          setSnapshot(mirrorRef.current.snapshot());
+        },
+        onDirListing: setListing,
+        onModelListing: setModels,
+        onModelChanged: setModel,
+        onSessionListing: setSessions,
+        onSessionOpened: setSessionId,
+        onProviderListing: setProviders,
+        onCoreIdentity: setCoreName,
       },
-      onSnapshot: (state) => {
-        mirrorRef.current = createSession(state.snapshot);
-        setSnapshot(state.snapshot);
-        setCwd(state.cwd);
-        setModel(state.model);
-        setSessionId(state.sessionId);
-      },
-      onActions: (actions) => {
-        for (const action of actions) {
-          mirrorRef.current.apply(action);
-        }
-        setSnapshot(mirrorRef.current.snapshot());
-      },
-      onDirListing: setListing,
-      onModelListing: setModels,
-      onModelChanged: setModel,
-      onSessionListing: setSessions,
-      onSessionOpened: setSessionId,
-      onProviderListing: setProviders,
-      onCoreIdentity: setCoreName,
-    });
+      { autoReconnect: true },
+    );
     clientRef.current = client;
 
     return () => {

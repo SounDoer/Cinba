@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CoreClient, type CoreClientHandlers, type Socket } from "./core-client.ts";
+import {
+  CoreClient,
+  type CoreClientHandlers,
+  type ReconnectScheduler,
+  type Socket,
+} from "./core-client.ts";
 
 /** A fake connection, for testing protocol logic without starting a server. */
 function createFakeSocket(): {
@@ -32,6 +37,36 @@ function createFakeSocket(): {
     receive: (obj) => socket.onmessage?.({ data: JSON.stringify(obj) }),
     fail: (error) => socket.onerror?.(error),
     disconnect: () => socket.onclose?.({}),
+  };
+}
+
+function createFakeScheduler(): ReconnectScheduler & {
+  delays: number[];
+  pendingCount: () => number;
+  runNext: () => void;
+} {
+  const timers = new Map<object, () => void>();
+  const delays: number[] = [];
+  return {
+    delays,
+    setTimeout: (callback, delayMs) => {
+      const handle = {};
+      delays.push(delayMs);
+      timers.set(handle, callback);
+      return handle;
+    },
+    clearTimeout: (handle) => {
+      if (typeof handle === "object" && handle !== null) {
+        timers.delete(handle);
+      }
+    },
+    pendingCount: () => timers.size,
+    runNext: () => {
+      const next = timers.entries().next().value as [object, () => void] | undefined;
+      assert.ok(next, "expected a pending reconnect timer");
+      timers.delete(next[0]);
+      next[1]();
+    },
   };
 }
 
@@ -94,6 +129,211 @@ test("close is idempotent and detaches the socket", () => {
   assert.equal(client.connectionState, "disconnected");
   assert.equal(fake.socket.onmessage, null);
   assert.deepEqual(states, ["connecting", "connected", "disconnected"]);
+});
+
+test("reconnects after the initial connection fails", () => {
+  const scheduler = createFakeScheduler();
+  const first = createFakeSocket();
+  const second = createFakeSocket();
+  const sockets = [first, second];
+  const states: string[] = [];
+  let attempts = 0;
+  const client = new CoreClient(
+    TEST_URL,
+    { onConnectionChanged: (state) => states.push(state) },
+    {
+      autoReconnect: true,
+      reconnectScheduler: scheduler,
+      socketFactory: () => {
+        const socket = sockets[attempts]!.socket;
+        attempts += 1;
+        return socket;
+      },
+    },
+  );
+
+  first.disconnect();
+  assert.equal(client.connectionState, "disconnected");
+  assert.deepEqual(scheduler.delays, [1_000]);
+
+  scheduler.runNext();
+  assert.equal(client.connectionState, "connecting");
+  second.open();
+
+  assert.equal(client.connectionState, "connected");
+  assert.equal(attempts, 2);
+  assert.deepEqual(states, ["connecting", "disconnected", "connecting", "connected"]);
+});
+
+test("reconnects after an established connection closes", () => {
+  const scheduler = createFakeScheduler();
+  const first = createFakeSocket();
+  const second = createFakeSocket();
+  const sockets = [first, second];
+  let attempts = 0;
+  const client = new CoreClient(
+    TEST_URL,
+    {},
+    {
+      autoReconnect: true,
+      reconnectScheduler: scheduler,
+      socketFactory: () => {
+        const socket = sockets[attempts]!.socket;
+        attempts += 1;
+        return socket;
+      },
+    },
+  );
+
+  first.open();
+  first.disconnect();
+  scheduler.runNext();
+  second.open();
+
+  assert.equal(client.connectionState, "connected");
+  assert.equal(attempts, 2);
+});
+
+test("backs off reconnect attempts up to thirty seconds", () => {
+  const scheduler = createFakeScheduler();
+  const errors: unknown[] = [];
+  const client = new CoreClient(
+    TEST_URL,
+    { onError: (error) => errors.push(error) },
+    {
+      autoReconnect: true,
+      reconnectScheduler: scheduler,
+      socketFactory: () => {
+        throw new Error("offline");
+      },
+    },
+  );
+
+  for (let index = 0; index < 6; index += 1) {
+    scheduler.runNext();
+  }
+
+  assert.deepEqual(scheduler.delays, [1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000]);
+  assert.equal(errors.length, 7);
+  assert.equal(scheduler.pendingCount(), 1);
+  client.close();
+});
+
+test("resets the reconnect delay after a successful connection", () => {
+  const scheduler = createFakeScheduler();
+  const connected = createFakeSocket();
+  let attempts = 0;
+  const client = new CoreClient(
+    TEST_URL,
+    {},
+    {
+      autoReconnect: true,
+      reconnectScheduler: scheduler,
+      socketFactory: () => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new Error("offline");
+        }
+        return connected.socket;
+      },
+    },
+  );
+
+  scheduler.runNext();
+  connected.open();
+  connected.disconnect();
+
+  assert.deepEqual(scheduler.delays, [1_000, 1_000]);
+  client.close();
+});
+
+test("close cancels reconnect and prevents future sockets", () => {
+  const scheduler = createFakeScheduler();
+  const first = createFakeSocket();
+  let attempts = 0;
+  const client = new CoreClient(
+    TEST_URL,
+    {},
+    {
+      autoReconnect: true,
+      reconnectScheduler: scheduler,
+      socketFactory: () => {
+        attempts += 1;
+        return first.socket;
+      },
+    },
+  );
+
+  first.disconnect();
+  assert.equal(scheduler.pendingCount(), 1);
+  client.close();
+
+  assert.equal(scheduler.pendingCount(), 0);
+  assert.equal(attempts, 1);
+  assert.equal(first.closeCount(), 0);
+});
+
+test("maintains at most one socket and one reconnect timer", () => {
+  const scheduler = createFakeScheduler();
+  const first = createFakeSocket();
+  const second = createFakeSocket();
+  const sockets = [first, second];
+  let attempts = 0;
+  const client = new CoreClient(
+    TEST_URL,
+    {},
+    {
+      autoReconnect: true,
+      reconnectScheduler: scheduler,
+      socketFactory: () => {
+        const socket = sockets[attempts]!.socket;
+        attempts += 1;
+        return socket;
+      },
+    },
+  );
+
+  first.disconnect();
+  first.disconnect();
+  assert.equal(scheduler.pendingCount(), 1);
+
+  scheduler.runNext();
+  assert.equal(attempts, 2);
+  assert.equal(scheduler.pendingCount(), 0);
+  assert.equal(first.socket.onopen, null);
+  client.close();
+});
+
+test("does not replay commands after reconnecting", () => {
+  const scheduler = createFakeScheduler();
+  const first = createFakeSocket();
+  const second = createFakeSocket();
+  const sockets = [first, second];
+  let attempts = 0;
+  const client = new CoreClient(
+    TEST_URL,
+    {},
+    {
+      autoReconnect: true,
+      reconnectScheduler: scheduler,
+      socketFactory: () => {
+        const socket = sockets[attempts]!.socket;
+        attempts += 1;
+        return socket;
+      },
+    },
+  );
+
+  first.open();
+  client.prompt("run once");
+  client.respondConfirm("request-1", true);
+  first.disconnect();
+  assert.equal(client.prompt("while offline"), false);
+  scheduler.runNext();
+  second.open();
+
+  assert.equal(first.sent.length, 2);
+  assert.deepEqual(second.sent, []);
 });
 
 test("the conversation commands go out in protocol form", () => {

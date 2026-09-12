@@ -37,10 +37,29 @@ export type Socket = {
 
 export type SocketFactory = (url: string) => Socket;
 
+export type ReconnectScheduler = {
+  setTimeout(callback: () => void, delayMs: number): unknown;
+  clearTimeout(handle: unknown): void;
+};
+
 export type CoreConnectionState = "connecting" | "connected" | "disconnected";
 
 export type CoreClientOptions = {
   socketFactory?: SocketFactory;
+  autoReconnect?: boolean;
+  reconnectScheduler?: ReconnectScheduler;
+};
+
+const INITIAL_RECONNECT_DELAY_MS = 1_000;
+const MAX_RECONNECT_DELAY_MS = 30_000;
+
+const defaultReconnectScheduler: ReconnectScheduler = {
+  setTimeout: (callback, delayMs) =>
+    (
+      globalThis as unknown as { setTimeout(callback: () => void, delayMs: number): unknown }
+    ).setTimeout(callback, delayMs),
+  clearTimeout: (handle) =>
+    (globalThis as unknown as { clearTimeout(handle: unknown): void }).clearTimeout(handle),
 };
 
 /** Everything a snapshot says about the session it describes. An object rather than four positional arguments, which this had grown to. */
@@ -77,21 +96,25 @@ function createDefaultSocket(url: string): Socket {
 
 /** The client-side connection to one running Cinba Core. */
 export class CoreClient {
-  #socket: Socket;
+  readonly #url: string;
+  readonly #socketFactory: SocketFactory;
+  readonly #autoReconnect: boolean;
+  readonly #reconnectScheduler: ReconnectScheduler;
   #handlers: CoreClientHandlers;
+  #socket: Socket | undefined;
+  #reconnectTimer: unknown;
+  #nextReconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
+  #closed = false;
   #connectionState: CoreConnectionState = "connecting";
 
   constructor(url: string, handlers: CoreClientHandlers, options: CoreClientOptions = {}) {
+    this.#url = url;
     this.#handlers = handlers;
-    this.#socket = (options.socketFactory ?? createDefaultSocket)(url);
-    this.#socket.onopen = () => this.#transition("connected");
-    this.#socket.onmessage = (event) => this.#receive(event.data);
-    this.#socket.onerror = (event) => this.#handlers.onError?.(event);
-    this.#socket.onclose = () => {
-      this.#transition("disconnected");
-      this.#detach();
-    };
+    this.#socketFactory = options.socketFactory ?? createDefaultSocket;
+    this.#autoReconnect = options.autoReconnect ?? false;
+    this.#reconnectScheduler = options.reconnectScheduler ?? defaultReconnectScheduler;
     this.#handlers.onConnectionChanged?.("connecting");
+    this.#connect();
   }
 
   get connectionState(): CoreConnectionState {
@@ -162,20 +185,30 @@ export class CoreClient {
   }
 
   close(): void {
-    if (this.#connectionState === "disconnected") {
+    if (this.#closed) {
       return;
     }
+    this.#closed = true;
+    if (this.#reconnectTimer !== undefined) {
+      this.#reconnectScheduler.clearTimeout(this.#reconnectTimer);
+      this.#reconnectTimer = undefined;
+    }
+    const socket = this.#socket;
+    this.#socket = undefined;
+    if (socket) {
+      this.#detach(socket);
+    }
     this.#transition("disconnected");
-    this.#detach();
-    this.#socket.close();
+    socket?.close();
   }
 
   #send(message: ClientMessage): boolean {
-    if (this.#connectionState !== "connected") {
+    const socket = this.#socket;
+    if (this.#connectionState !== "connected" || !socket) {
       return false;
     }
     try {
-      this.#socket.send(JSON.stringify(message));
+      socket.send(JSON.stringify(message));
       return true;
     } catch (error) {
       this.#handlers.onError?.(error);
@@ -252,10 +285,67 @@ export class CoreClient {
     this.#handlers.onConnectionChanged?.(state);
   }
 
-  #detach(): void {
-    this.#socket.onopen = null;
-    this.#socket.onmessage = null;
-    this.#socket.onerror = null;
-    this.#socket.onclose = null;
+  #connect(): void {
+    if (this.#closed || this.#socket || this.#reconnectTimer !== undefined) {
+      return;
+    }
+    this.#transition("connecting");
+
+    let socket: Socket;
+    try {
+      socket = this.#socketFactory(this.#url);
+    } catch (error) {
+      this.#handlers.onError?.(error);
+      this.#transition("disconnected");
+      this.#scheduleReconnect();
+      return;
+    }
+
+    this.#socket = socket;
+    socket.onopen = () => {
+      if (this.#closed || this.#socket !== socket) {
+        return;
+      }
+      this.#nextReconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
+      this.#transition("connected");
+    };
+    socket.onmessage = (event) => {
+      if (this.#socket === socket) {
+        this.#receive(event.data);
+      }
+    };
+    socket.onerror = (event) => {
+      if (this.#socket === socket) {
+        this.#handlers.onError?.(event);
+      }
+    };
+    socket.onclose = () => {
+      if (this.#socket !== socket) {
+        return;
+      }
+      this.#detach(socket);
+      this.#socket = undefined;
+      this.#transition("disconnected");
+      this.#scheduleReconnect();
+    };
+  }
+
+  #scheduleReconnect(): void {
+    if (!this.#autoReconnect || this.#closed || this.#reconnectTimer !== undefined) {
+      return;
+    }
+    const delayMs = this.#nextReconnectDelayMs;
+    this.#nextReconnectDelayMs = Math.min(delayMs * 2, MAX_RECONNECT_DELAY_MS);
+    this.#reconnectTimer = this.#reconnectScheduler.setTimeout(() => {
+      this.#reconnectTimer = undefined;
+      this.#connect();
+    }, delayMs);
+  }
+
+  #detach(socket: Socket): void {
+    socket.onopen = null;
+    socket.onmessage = null;
+    socket.onerror = null;
+    socket.onclose = null;
   }
 }
