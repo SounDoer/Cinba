@@ -26,6 +26,7 @@ import { findSession } from "@cinba/agent";
 import { IDLE_TIMEOUT_MS, assessIdle, canStopNow } from "./reclaim.ts";
 import { createConfigStore } from "./config.ts";
 import { createCredentialService } from "./credential-service.ts";
+import { createDeploymentStatusHandler } from "./deployment-status.ts";
 import { listDirectories } from "./directory-browser.ts";
 import {
   DRAIN_TIMEOUT_MS,
@@ -109,11 +110,18 @@ const serveHealth = createHealthHandler({
   revision: REVISION,
   safeToRestart,
 });
+const serveDeploymentStatus = createDeploymentStatusHandler({
+  statusPath: join(homedir(), ".cinba", "deployment.json"),
+});
 
 async function serveHttp(request: IncomingMessage, response: ServerResponse): Promise<void> {
-  if (!serveHealth(request, response)) {
-    await serveStatic(request, response);
+  if (serveHealth(request, response)) {
+    return;
   }
+  if (await serveDeploymentStatus(request, response)) {
+    return;
+  }
+  await serveStatic(request, response);
 }
 
 /**

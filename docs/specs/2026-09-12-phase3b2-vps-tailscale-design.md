@@ -461,10 +461,10 @@ revision 如何从 release 注入、`safeToRestart` 的严格定义、draining �
 已经在代码与测试中落地。生产入口 `packages/server/src/service-entry.ts` 会从当前 release 读取完整
 Git `HEAD`，校验为 40 位 commit 后再设置 `CINBA_REVISION`，避免部署器验证到模糊或伪造的版本。
 
-尚未落地的是“从 Cinba HTTP 接口读取部署状态”。部署状态格式属于 `@cinba/deploy`，若让
-`@cinba/server` 直接复用其严格解析器，就会新增一个内部 runtime dependency；按照仓库约定，实施
-前需要单独确认。当前 `/healthz` 已足够让部署器验证运行版本，状态接口主要服务于后续 Promote
-Skill 的远程进度汇报，不阻塞 VPS 首次部署。
+部署状态也已通过 `GET /deployment-status` 提供。`@cinba/server` 依赖 `@cinba/deploy` 并直接复用
+同一份严格解析器：有效状态返回 `200`，尚无状态文件返回 `404 not_configured`，文件无法读取或
+内容损坏返回 `503 invalid`。错误详情不会进入响应。这个接口主要服务于后续 Promote Skill 的远程
+进度汇报；`/healthz` 仍只负责 Core 自身的存活、版本和是否可安全重启。
 
 ## 16. 本阶段不做
 
@@ -490,9 +490,8 @@ Skill 的远程进度汇报，不阻塞 VPS 首次部署。
 5. tailnet 现有 Grants／ACL，避免新增规则与旧的宽泛规则叠加后意外放大权限。
 6. 在真实远程 HTTPS 入口复核 Origin 校验；本机正式模式、Vite 开发模式和无 Origin 客户端已有
    自动测试。
-7. 决定是否让 server 暴露经过裁剪的部署状态，以及是否接受对应内部 runtime dependency。
-8. 编写并安装匹配真实 VPS 的 systemd user units，完成首次 bootstrap 与异常重启验证。
-9. 用真实 Caddy、Tailscale、HTTP、WebSocket 和自动回滚完成端到端部署演练。
-10. 仓库公开前审计当前文件与完整 Git 历史；确认后由用户手动修改 GitHub 可见性。
+7. 编写并安装匹配真实 VPS 的 systemd user units，完成首次 bootstrap 与异常重启验证。
+8. 用真实 Caddy、Tailscale、HTTP、WebSocket、部署状态接口和自动回滚完成端到端部署演练。
+9. 仓库公开前审计当前文件与完整 Git 历史；确认后由用户手动修改 GitHub 可见性。
 
 以上实操信息没有核实前，不编造 Caddyfile、systemd unit 或 Tailscale Grant 的最终内容。
