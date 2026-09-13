@@ -187,3 +187,28 @@ packages/tui/
 
 达成后进阶段 3（换 WebSocket，核心跑服务器）。届时主设计文档第 8 节记录的两条待解问题
 需要正式处理。
+
+## 9. Windows 全局命令（2026-09-13）
+
+TUI 改为连接常驻 Core 后，本机的自然入口应当是：先 `cd` 到项目，再直接输入 `cinba`。根包通过
+标准 npm `bin` 声明把 `cinba` 指向 `scripts/cinba.ts`；用户在仓库中执行一次 `npm link`，npm 就会
+在已经位于 `PATH` 的全局命令目录生成 Windows shim，并把它链接回当前 checkout。
+
+入口链为：
+
+```text
+任意 PowerShell 目录中的 cinba
+→ npm 管理的全局 Windows shim
+→ scripts/cinba.ts
+→ scripts/launch.ts tui <当前目录>
+→ packages/tui/src/index.ts
+```
+
+`scripts/cinba.ts` 只负责把当前目录和 `tui` mode 交给共享 launcher，不复制端口检查、子进程管理或
+TUI 启动逻辑。npm link 也不复制仓库文件，所以 checkout 更新后全局命令自动使用新代码；仓库移动
+后重新执行 `npm link` 即可。卸载使用 `npm unlink --global cinba`。
+
+仓库根目录已有同名 `cinba.cmd`，历史职责是双击启动 Web/Core。传统 `cmd.exe` 会优先搜索当前
+目录，因此仅当它正停在仓库根目录时，该文件会遮住全局 TUI 命令；PowerShell 不会隐式执行当前
+目录的脚本，不存在这个歧义。本次保留已有双击工作流，不为解决一个 legacy shell 的单目录特例而
+改变 `cinba.cmd` 的产品含义。

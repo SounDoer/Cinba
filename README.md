@@ -63,6 +63,30 @@ npm run tui -- C:\path\to\project
 
 You can also drag a project directory onto `cinba-tui.cmd`.
 
+To make the TUI available as `cinba` from every PowerShell working directory, link the repository
+once through npm:
+
+```powershell
+cd C:\path\to\Cinba
+npm link
+Get-Command cinba
+```
+
+With the Core running, change to any project and start the terminal client:
+
+```powershell
+cd C:\path\to\project
+cinba
+```
+
+The global command stays linked to this checkout and passes the current directory to the same
+`scripts/launch.ts tui` entry used by `npm run tui` and `cinba-tui.cmd`. Remove it with
+`npm unlink --global cinba`.
+
+In legacy `cmd.exe`, the repository's existing `cinba.cmd` Web launcher shadows the global command
+only while the repository root itself is the current directory. PowerShell does not implicitly run
+commands from the current directory, so its global `cinba` behavior is consistent everywhere.
+
 ### VPS terminal command
 
 The deployed Linux release includes a small `cinba` command for the service user. Install it once
