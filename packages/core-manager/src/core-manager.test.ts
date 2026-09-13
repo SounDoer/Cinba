@@ -22,24 +22,31 @@ function fakeChild(pid: number): ChildProcess {
 }
 
 test("reuses a Core that is already healthy", async () => {
+  const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
+  const config = createLocalCoreConfig({ homeDirectory: home });
   let spawns = 0;
   let locks = 0;
-  const status = await ensureLocalCore({
-    probe: async () => HEALTH,
-    spawnCore: () => {
-      spawns += 1;
-      return fakeChild(10);
-    },
-    acquireLock: async () => {
-      locks += 1;
-      return () => {};
-    },
-  });
+  try {
+    const status = await ensureLocalCore({
+      config,
+      probe: async () => HEALTH,
+      spawnCore: () => {
+        spawns += 1;
+        return fakeChild(10);
+      },
+      acquireLock: async () => {
+        locks += 1;
+        return () => {};
+      },
+    });
 
-  assert.equal(status.running, true);
-  assert.equal(status.managed, false);
-  assert.equal(spawns, 0);
-  assert.equal(locks, 0);
+    assert.equal(status.running, true);
+    assert.equal(status.managed, false);
+    assert.equal(spawns, 0);
+    assert.equal(locks, 0);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test("starts one managed Core and records its runtime", async () => {
@@ -75,22 +82,29 @@ test("starts one managed Core and records its runtime", async () => {
 });
 
 test("rechecks health after taking the lock", async () => {
+  const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
+  const config = createLocalCoreConfig({ homeDirectory: home });
   let probes = 0;
   let spawns = 0;
-  const status = await ensureLocalCore({
-    probe: async () => {
-      probes += 1;
-      return probes === 1 ? undefined : HEALTH;
-    },
-    spawnCore: () => {
-      spawns += 1;
-      return fakeChild(10);
-    },
-    acquireLock: async () => () => {},
-  });
+  try {
+    const status = await ensureLocalCore({
+      config,
+      probe: async () => {
+        probes += 1;
+        return probes === 1 ? undefined : HEALTH;
+      },
+      spawnCore: () => {
+        spawns += 1;
+        return fakeChild(10);
+      },
+      acquireLock: async () => () => {},
+    });
 
-  assert.equal(status.running, true);
-  assert.equal(spawns, 0);
+    assert.equal(status.running, true);
+    assert.equal(spawns, 0);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test("concurrent callers produce only one Core process", async () => {
