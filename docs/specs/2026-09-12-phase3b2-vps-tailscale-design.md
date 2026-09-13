@@ -321,9 +321,9 @@ prod → VPS 应当运行的版本
 真正跑通一次发布后，可再用 Skill 包装为“展示差异 → 检查 → 用户确认 → 推进 prod → 等待部署
 → 验证线上版本”的完整流程。底层确定性动作继续保留为仓库脚本，Skill 只负责编排和汇报。
 
-仓库可以改为公开，因此 VPS 读取 GitHub 不需要 token 或 deploy key。公开前必须单独审计当前文件
-与 Git 历史，确认没有 API key、token、密码、私人主机信息或不应公开的运行数据。仓库可见性由
-用户在审计后手动修改。
+仓库已于 2026-09-13 完成当前文件、完整 Git 历史和提交身份审计，并在补齐 README、项目元数据
+与 MIT License 后切换为 public。因此 VPS 读取 GitHub 不需要 token 或 deploy key。审计记录见
+`docs/notes/2026-09-13-public-repository-audit.md`。
 
 ## 14. 自动部署模型
 
@@ -492,6 +492,5 @@ Git `HEAD`，校验为 40 位 commit 后再设置 `CINBA_REVISION`，避免部�
    自动测试。
 7. 编写并安装匹配真实 VPS 的 systemd user units，完成首次 bootstrap 与异常重启验证。
 8. 用真实 Caddy、Tailscale、HTTP、WebSocket、部署状态接口和自动回滚完成端到端部署演练。
-9. 仓库公开前审计当前文件与完整 Git 历史；确认后由用户手动修改 GitHub 可见性。
 
 以上实操信息没有核实前，不编造 Caddyfile、systemd unit 或 Tailscale Grant 的最终内容。
