@@ -3,6 +3,15 @@
   "private": true,
   "type": "module",
   "version": "0.0.0",
+  "description": "A personal multi-interface AI coding agent built on pi.dev.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SounDoer/Cinba.git"
+  },
+  "homepage": "https://github.com/SounDoer/Cinba#readme",
+  "bugs": {
+    "url": "https://github.com/SounDoer/Cinba/issues"
+  },
   "engines": {
     "node": ">=24"
   },
