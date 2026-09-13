@@ -86,7 +86,11 @@ function defaultSpawnCore(config: LocalCoreConfig): ChildProcess {
     const child = spawn(process.execPath, [config.serverEntry], {
       cwd: config.repositoryRoot,
       detached: true,
-      env: { ...process.env, CINBA_CORE_LIFETIME: "on-demand" },
+      env: {
+        ...process.env,
+        CINBA_CORE_LIFETIME: "on-demand",
+        CINBA_PORT: "4517",
+      },
       stdio: ["ignore", log, log],
       windowsHide: true,
     });
