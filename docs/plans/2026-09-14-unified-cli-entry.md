@@ -40,3 +40,9 @@ Windows npm shim 继续由 `package.json#bin` 生成；`cinba-tui.cmd` 和 VPS l
 ## 边界
 
 本次不新增产品命令，不改变 Core 生命周期，不部署到 VPS，也不修改 prod、Caddy 或 Tailscale。
+
+## 实施结果
+
+已按目标结构完成：`scripts/launch.ts` 可安全导入并导出三个启动函数；`scripts/cinba.ts` 直接调用
+`launchTui()`；Windows 双击入口和 VPS wrapper 都已汇入产品 CLI。平台回归测试、CLI 单元测试与
+类型检查通过，最终以仓库 merge gate 结果为准。

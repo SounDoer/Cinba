@@ -212,3 +212,10 @@ TUI 启动逻辑。npm link 也不复制仓库文件，所以 checkout 更新后
 `cinba-dev.cmd`，支持拖拽项目目录的 TUI 入口继续是 `cinba-tui.cmd`。因此 `cinba` 在 PowerShell
 和传统 `cmd.exe` 的任意目录中都只表示全局 TUI 命令，同时三个 `.cmd` 文件仍保留各自清楚的双击
 用途。
+
+### 9.1 统一产品入口更新（2026-09-14）
+
+随着 `cinba core ...` 等子命令出现，`scripts/cinba.ts` 已从 Windows 专用薄入口升级为统一产品
+CLI。它现在直接调用 `scripts/launch.ts` 导出的 `launchTui()`，不再改写 `process.argv` 后动态导入
+launcher。`cinba-tui.cmd` 也先进入 `scripts/cinba.ts`；平台入口只负责让操作系统找到命令和提供
+默认项目，产品命令只解析一次。

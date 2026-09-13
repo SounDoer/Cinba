@@ -85,7 +85,10 @@ server 新增明确的生命周期模式，默认值必须是 `persistent`：
 
 ## 5. 客户端入口
 
-`scripts/launch.ts` 仍是所有 launcher 的唯一编排入口：
+> 2026-09-14 更新：`scripts/cinba.ts` 现在是产品 CLI 的统一解析入口；`scripts/launch.ts` 仍拥有
+> 下列进程编排，并以可导入函数供产品 CLI 调用。
+
+`scripts/launch.ts` 负责所有客户端进程编排：
 
 - `start`：先 build Web，再 `ensureLocalCore()`，打开浏览器后结束 launcher；Core 留在后台。
 - `tui`：默认连接本机时先 `ensureLocalCore()`，然后启动 TUI；设置 `CINBA_SERVER` 指向远程 Core

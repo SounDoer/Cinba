@@ -82,11 +82,15 @@ cinba
 ```
 
 The command starts the shared local Core when necessary, then opens the TUI in the current
-directory. A Web window, Desktop window, and any other TUI reuse that same Core. The global command
-stays linked to this checkout and passes the current directory to the same `scripts/launch.ts tui`
-entry used by `npm run tui` and `cinba-tui.cmd`. Remove it with `npm unlink --global cinba`. The Web
-launcher is named `cinba-web.cmd`, so the global `cinba` command remains unambiguous in both
-PowerShell and `cmd.exe`.
+directory. `cinba tui [project]` is the explicit form, while `cinba [project]` is a project-path
+shortcut. A Web window, Desktop window, and any other TUI reuse that same Core.
+
+The global npm shim and `cinba-tui.cmd` both enter the product command parser in
+`scripts/cinba.ts`. It delegates TUI process orchestration to the importable `launchTui()` function
+in `scripts/launch.ts`; `npm run tui` reaches that same function through the launcher's developer
+command interface. The global command stays linked to this checkout, so code updates take effect
+without relinking. Remove it with `npm unlink --global cinba`. The Web launcher is named
+`cinba-web.cmd`, so the global `cinba` command remains unambiguous in both PowerShell and `cmd.exe`.
 
 The local Core log is appended to `%USERPROFILE%\.cinba\core.log`. `npm run dev` remains a
 foreground development stack; stop the ordinary local Core before starting it if port 4517 is

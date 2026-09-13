@@ -295,13 +295,14 @@ Permission Gate 人工确认
 ### 12.2 VPS TUI 的用户命令
 
 VPS 上的 Core 由 systemd 常驻运行后，`cinba` 用户还需要一个适合日常 SSH 使用的短命令来打开
-TUI。该命令不复制 launcher 生命周期逻辑，而是继续进入仓库唯一入口 `scripts/launch.ts`：
+TUI。平台包装器不解析产品命令，而是进入统一入口 `scripts/cinba.ts`：
 
 ```text
 cinba
 → /home/cinba/.local/node/bin/node
-→ /home/cinba/current/scripts/launch.ts tui
-→ 默认项目 /home/cinba/Cinba
+→ /home/cinba/current/scripts/cinba.ts
+→ scripts/launch.ts 导出的 launchTui()
+→ packages/tui/src/index.ts
 ```
 
 仓库保存薄包装器 `packages/deploy/bin/cinba`。一次性安装器在
@@ -329,10 +330,11 @@ cinba
 该目录加入 `PATH`，必须在真实 VPS 安装时以 `command -v cinba` 验证；若不成立，应先查明该用户
 的 login profile 来源，不能随手追加 shell 配置。
 
-包装器以 `HOME` 推导同一套目录，并允许用第一个参数覆盖默认项目，所以相同 release 布局的其他
-Unix 环境也能复用。Windows 本机不直接执行 POSIX shell 包装器，而是通过 npm 全局 `bin` 使用
-同名 `cinba` 命令；需要拖拽项目目录时仍可使用 `cinba-tui.cmd`。两种平台入口最终都进入
-`scripts/launch.ts tui`，但各自的安装机制保持独立。
+包装器以 `HOME` 推导同一套目录，通过 `CINBA_DEFAULT_PROJECT` 向产品 CLI 提供 `$HOME/Cinba` 默认
+项目，并原样透传参数；因此 `cinba`、`cinba /path/to/project` 和将来的产品子命令都只由
+`scripts/cinba.ts` 解析。Windows 本机不直接执行 POSIX shell 包装器，而是通过 npm 全局 `bin`
+使用同名 `cinba` 命令；需要拖拽项目目录时仍可使用 `cinba-tui.cmd`。两种平台的安装机制保持
+独立，但产品命令入口相同。
 
 ## 13. Git 分支与自动部署
 
