@@ -35,6 +35,7 @@ import {
   createDrainController,
 } from "./drain.ts";
 import { createHealthHandler, isSafeToRestart, normalizeRevision } from "./health.ts";
+import { createLocalCoreControlHandler } from "./local-core-control.ts";
 import { createServerRuntime } from "./server-runtime.ts";
 import { SERVICE_IDLE_TIMEOUT_MS, assessServiceIdle, readCoreLifetime } from "./service-idle.ts";
 import { type LiveSession, createSessionRegistry } from "./session-registry.ts";
@@ -116,9 +117,22 @@ const serveHealth = createHealthHandler({
 const serveDeploymentStatus = createDeploymentStatusHandler({
   statusPath: join(homedir(), ".cinba", "deployment.json"),
 });
+const serveLocalCoreControl = createLocalCoreControlHandler({
+  lifetime: CORE_LIFETIME,
+  token: process.env.CINBA_LOCAL_CONTROL_TOKEN,
+  snapshot: () => ({
+    clientCount: clients.size,
+    safeToStop: safeToRestart(),
+    draining: drain?.draining ?? false,
+  }),
+  requestStop: () => drain?.request(),
+});
 
 async function serveHttp(request: IncomingMessage, response: ServerResponse): Promise<void> {
   if (serveHealth(request, response)) {
+    return;
+  }
+  if (serveLocalCoreControl(request, response)) {
     return;
   }
   if (await serveDeploymentStatus(request, response)) {
