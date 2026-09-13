@@ -9,6 +9,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { connect } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ensureLocalCore } from "@cinba/core-manager";
 
 const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const CORE_ENTRY = join(REPOSITORY_ROOT, "packages", "server", "src", "index.ts");
@@ -155,22 +156,13 @@ function installSignalHandlers(): void {
 }
 
 async function startRegular(): Promise<void> {
-  await requireFreePort(CORE_PORT, "Cinba core service");
-
   console.log("[launcher] Building the web application...");
   await runToCompletion([VITE_ENTRY, "build"], WEB_ROOT);
 
-  console.log("[launcher] Starting the Cinba core service...");
-  const core = run([CORE_ENTRY]);
-  await waitUntilReachable(CORE_URL, "Cinba core service");
+  console.log("[launcher] Ensuring the shared local Core is running...");
+  await ensureLocalCore();
   openBrowser(CORE_URL);
   console.log(`[launcher] Cinba is ready at ${CORE_URL}`);
-  console.log("[launcher] Press Ctrl+C to stop it.");
-
-  const code = await waitForExit(core);
-  if (code !== 0) {
-    throw new Error(`Cinba core service exited with code ${code}`);
-  }
 }
 
 async function startDevelopment(): Promise<void> {
@@ -199,8 +191,9 @@ async function startDevelopment(): Promise<void> {
 }
 
 async function startTui(workingDirectory: string | undefined): Promise<void> {
-  if (!(await isPortOpen(CORE_PORT))) {
-    throw new Error("the Cinba core service is not running; start the core service first");
+  if (!process.env.CINBA_SERVER) {
+    console.log("[launcher] Ensuring the shared local Core is running...");
+    await ensureLocalCore();
   }
 
   const cwd = workingDirectory ? join(workingDirectory) : process.cwd();

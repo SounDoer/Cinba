@@ -8,6 +8,9 @@
     "typecheck": "tsc -p tsconfig.json",
     "start": "electron ."
   },
+  "dependencies": {
+    "@cinba/core-manager": "*"
+  },
   "devDependencies": {
     "electron": "^44.2.0"
   }

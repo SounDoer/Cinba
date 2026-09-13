@@ -457,7 +457,7 @@ const coreClient = new CoreClient(SERVER_URL, {
     // its lifetime and its log.
     tui.stop();
     console.error(`Cannot reach the Cinba service at ${SERVER_URL}.`);
-    console.error("Start it first: double-click cinba-web.cmd in the repository root.");
+    console.error("Start it with the cinba command or cinba-web.cmd.");
     process.exit(1);
   },
   onSnapshot: (state) => {

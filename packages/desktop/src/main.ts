@@ -6,18 +6,26 @@
 // or any knowledge of the protocol.
 
 import { BrowserWindow, app } from "electron";
+import { ensureLocalCore } from "@cinba/core-manager";
 
 const UI_URL = "http://127.0.0.1:4517/";
 
-app.whenReady().then(() => {
-  const window = new BrowserWindow({
-    width: 980,
-    height: 760,
-    title: "Cinba",
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
-  });
+app
+  .whenReady()
+  .then(async () => {
+    await ensureLocalCore();
+    const window = new BrowserWindow({
+      width: 980,
+      height: 760,
+      title: "Cinba",
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    });
 
-  void window.loadURL(UI_URL);
-});
+    void window.loadURL(UI_URL);
+  })
+  .catch((error: unknown) => {
+    console.error(`[desktop] ${error instanceof Error ? error.message : String(error)}`);
+    app.quit();
+  });
 
 app.on("window-all-closed", () => app.quit());
