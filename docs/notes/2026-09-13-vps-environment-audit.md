@@ -1,6 +1,7 @@
 # VPS 首轮环境盘点
 
-日期：2026-09-13  
+日期：2026-09-13
+
 状态：首轮无提权只读检查已完成；管理员权限、Tailscale 控制面与云防火墙仍待核对
 
 ## 1. 检查边界
@@ -87,4 +88,3 @@ Cinba 使用现有管理员账号或 root 运行。
 2. 使用管理员权限读取 UFW／nftables 规则和 Caddy systemd 环境，但暂不修改。
 3. 在 Tailscale 管理后台核对 tailnet、MagicDNS、HTTPS 与现有 Grants／ACL。
 4. 根据真实管理员入口设计并逐项执行首次 bootstrap；所有 sudo 动作执行前单独解释和确认。
-
