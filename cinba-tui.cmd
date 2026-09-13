@@ -1,10 +1,15 @@
 @echo off
-rem Double-click launcher for the terminal client. Keep the selected project as
-rem its working directory while npm loads Cinba from the repository.
+setlocal
+rem Double-click or drag-and-drop launcher for the terminal client. Keep the
+rem selected project while Node loads Cinba from the repository.
+
+set "project=%CD%"
 
 if not "%~1"=="" (
-  if exist "%~1\" cd /d "%~1"
+  if exist "%~1\" set "project=%~f1"
 )
 
-call npm --prefix "%~dp0" run tui -- "%CD%"
-if errorlevel 1 pause
+call node "%~dp0scripts\launch.ts" tui "%project%"
+set "exitCode=%errorlevel%"
+if not "%exitCode%"=="0" pause
+exit /b %exitCode%
