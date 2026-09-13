@@ -1,6 +1,7 @@
 // Public entry point for clients that connect to a running Cinba Core.
 
 export { CoreClient } from "./core-client.ts";
+export { probeCoreHealth } from "./core-health.ts";
 export type {
   CoreClientHandlers,
   CoreClientOptions,
@@ -10,3 +11,4 @@ export type {
   Socket,
   SocketFactory,
 } from "./core-client.ts";
+export type { CoreHealth, HealthFetcher, HealthResponse } from "./core-health.ts";
