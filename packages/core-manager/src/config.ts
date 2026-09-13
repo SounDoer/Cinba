@@ -1,0 +1,37 @@
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+export type LocalCoreConfig = {
+  baseUrl: string;
+  repositoryRoot: string;
+  serverEntry: string;
+  stateDirectory: string;
+  startLockPath: string;
+  runtimePath: string;
+  logPath: string;
+};
+
+const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+export function createLocalCoreConfig(
+  options: {
+    homeDirectory?: string;
+    packageRoot?: string;
+    baseUrl?: string;
+  } = {},
+): LocalCoreConfig {
+  const packageRoot = options.packageRoot ?? PACKAGE_ROOT;
+  const repositoryRoot = resolve(packageRoot, "..", "..");
+  const stateDirectory = join(options.homeDirectory ?? homedir(), ".cinba");
+
+  return {
+    baseUrl: options.baseUrl ?? "http://127.0.0.1:4517/",
+    repositoryRoot,
+    serverEntry: join(repositoryRoot, "packages", "server", "src", "index.ts"),
+    stateDirectory,
+    startLockPath: join(stateDirectory, "core-start.lock"),
+    runtimePath: join(stateDirectory, "core-runtime.json"),
+    logPath: join(stateDirectory, "core.log"),
+  };
+}
