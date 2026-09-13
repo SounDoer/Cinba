@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for approved Cinba releases every minute
+
+[Timer]
+OnStartupSec=1min
+OnUnitInactiveSec=1min
+AccuracySec=1s
+Unit=cinba-update.service
+
+[Install]
+WantedBy=timers.target
