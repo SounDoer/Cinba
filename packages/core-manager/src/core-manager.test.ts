@@ -50,7 +50,10 @@ test("starts one managed Core and records its runtime", async () => {
   try {
     const status = await ensureLocalCore({
       config,
-      probe: async () => (++probes >= 3 ? HEALTH : undefined),
+      probe: async () => {
+        probes += 1;
+        return probes >= 3 ? HEALTH : undefined;
+      },
       spawnCore: () => fakeChild(4242),
       acquireLock: async () => () => {
         releases += 1;
@@ -75,7 +78,10 @@ test("rechecks health after taking the lock", async () => {
   let probes = 0;
   let spawns = 0;
   const status = await ensureLocalCore({
-    probe: async () => (++probes === 1 ? undefined : HEALTH),
+    probe: async () => {
+      probes += 1;
+      return probes === 1 ? undefined : HEALTH;
+    },
     spawnCore: () => {
       spawns += 1;
       return fakeChild(10);

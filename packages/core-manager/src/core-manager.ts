@@ -8,8 +8,8 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { probeCoreHealth, type CoreHealth } from "@cinba/core-client";
-import { createLocalCoreConfig, type LocalCoreConfig } from "./config.ts";
+import { type CoreHealth, probeCoreHealth } from "@cinba/core-client";
+import { type LocalCoreConfig, createLocalCoreConfig } from "./config.ts";
 import { acquireStartLock } from "./start-lock.ts";
 
 type RuntimeRecord = {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { probeCoreHealth, type HealthFetcher } from "./core-health.ts";
+import { type HealthFetcher, probeCoreHealth } from "./core-health.ts";
 
 function fetches(body: unknown, ok = true): HealthFetcher {
   return async () => ({ ok, json: async () => body });
