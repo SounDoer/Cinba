@@ -44,8 +44,10 @@ npm install
 npm start
 ```
 
-`npm start` builds the Web UI, starts the Core on `127.0.0.1:4517`, and opens it in the browser.
-On Windows, `cinba-web.cmd` provides the same flow as a double-click launcher.
+`npm start` builds the Web UI, ensures the shared local Core is running on `127.0.0.1:4517`, and
+opens it in the browser. The launcher can then exit: the Core stays in the background while any
+client is connected and stops safely after ten client-free minutes. On Windows, `cinba-web.cmd`
+provides the same flow as a double-click launcher.
 
 For development with Core watch mode and Vite hot reload:
 
@@ -55,7 +57,7 @@ npm run dev
 
 The development UI opens on `127.0.0.1:5173`. The equivalent Windows launcher is `cinba-dev.cmd`.
 
-To open the terminal client while the Core is already running:
+To open the terminal client:
 
 ```powershell
 npm run tui -- C:\path\to\project
@@ -72,17 +74,24 @@ npm link
 Get-Command cinba
 ```
 
-With the Core running, change to any project and start the terminal client:
+Change to any project and start the terminal client:
 
 ```powershell
 cd C:\path\to\project
 cinba
 ```
 
-The global command stays linked to this checkout and passes the current directory to the same
-`scripts/launch.ts tui` entry used by `npm run tui` and `cinba-tui.cmd`. Remove it with
-`npm unlink --global cinba`. The Web launcher is named `cinba-web.cmd`, so the global `cinba`
-command remains unambiguous in both PowerShell and `cmd.exe`.
+The command starts the shared local Core when necessary, then opens the TUI in the current
+directory. A Web window, Desktop window, and any other TUI reuse that same Core. The global command
+stays linked to this checkout and passes the current directory to the same `scripts/launch.ts tui`
+entry used by `npm run tui` and `cinba-tui.cmd`. Remove it with `npm unlink --global cinba`. The Web
+launcher is named `cinba-web.cmd`, so the global `cinba` command remains unambiguous in both
+PowerShell and `cmd.exe`.
+
+The local Core log is appended to `%USERPROFILE%\.cinba\core.log`. `npm run dev` remains a
+foreground development stack; stop the ordinary local Core before starting it if port 4517 is
+already occupied. Setting `CINBA_SERVER` for the TUI selects an explicitly managed remote Core and
+does not start the local one.
 
 ### VPS terminal command
 
@@ -110,16 +119,20 @@ selects another project directory.
 ## Architecture
 
 ```text
-Web / TUI / Desktop
+native launchers ──► core-manager ──► ensure one local server
+                                         │
+Web / TUI / Desktop                      │
+        │                                │
+        ▼                                │
+   core-client                           │
+        │ WebSocket                      │
+        ▼                                │
+      server ◄───────────────────────────┘
         │
-        ▼
-   core-client
-        │ WebSocket
-        ▼
-      server ──► agent ──► Pi process per active conversation
-        ▲                      │
-        └──── contract ◄───────┘
-                               └── extensions / permission gate
+        └──► agent ──► Pi process per active conversation
+                 ▲              │
+                 └── contract ◄─┘
+                              └── extensions / permission gate
 
 master ──► prod ──► deploy ──► releases/current ──► systemd service
 ```
@@ -128,6 +141,7 @@ master ──► prod ──► deploy ──► releases/current ──► syst
 | --- | --- |
 | `@cinba/contract` | Browser-safe protocol, ledger, commands, and shared labels |
 | `@cinba/core-client` | Shared Core connection used by every client |
+| `@cinba/core-manager` | Starts and inspects the one shared Core on the local computer |
 | `@cinba/server` | HTTP, WebSocket, sessions, credentials, draining, and health |
 | `@cinba/agent` | Pi process lifecycle, RPC transport, events, and stored sessions |
 | `@cinba/extensions` | Pi extensions, including the mandatory permission gate |
