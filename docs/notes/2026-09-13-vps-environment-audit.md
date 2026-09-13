@@ -88,3 +88,28 @@ Cinba 使用现有管理员账号或 root 运行。
 2. 使用管理员权限读取 UFW／nftables 规则和 Caddy systemd 环境，但暂不修改。
 3. 在 Tailscale 管理后台核对 tailnet、MagicDNS、HTTPS 与现有 Grants／ACL。
 4. 根据真实管理员入口设计并逐项执行首次 bootstrap；所有 sudo 动作执行前单独解释和确认。
+
+## 9. 首次 bootstrap 进展
+
+首轮盘点后，同日完成了以下实际配置：
+
+- 创建独立普通用户 `cinba`，home 为 `/home/cinba`，没有 sudo 权限，也没有可用于密码登录的密码；
+- 为 `cinba` 启用 systemd linger；
+- 从 Node.js 官方发布包安装并校验 Node.js 24.21.0，运行时独立位于 `cinba` home 下，不替换
+  系统已有的 Node.js 22；
+- 为首次安装与故障处理配置独立 SSH key；日常部署仍不依赖 SSH；
+- 将公开仓库 clone 到 `/home/cinba/Cinba`；
+- 加入并安装 `cinba.service`、`cinba-update.service` 与 `cinba-update.timer`；unit 已通过 VPS 上的
+  `systemd-analyze --user verify`；
+- 在真实 Linux 与 Node.js 24 环境中运行完整 `npm run check`，261 个单元测试、5 个 E2E 和 Web
+  build 全部通过；
+- 首次创建 `prod`，并通过一次受控的手工 bootstrap 部署生成首个 release 与 `current`；
+- 首个 Core 已由 systemd user service 运行并启用开机启动；
+- Core 已确认只监听 `127.0.0.1:4517`，健康接口返回准确的 40 位运行 revision；
+- update timer 已启用，并连续完成两次无更新检查；Core PID、`current` 和健康 revision 均未变化。
+
+首次没有 `/home/cinba/current` 时，由长期 checkout 中的部署器完成第一次 release 准备与切换；
+成功以后，update service 从 `current` 中运行。这个接棒流程已经在真实 VPS 上验证。
+
+尚未完成的安全边界仍是 Tailscale 安装与控制面策略、UFW／云安全组复核，以及不影响既有应用的
+Caddy Tailscale-only listener 配置。
