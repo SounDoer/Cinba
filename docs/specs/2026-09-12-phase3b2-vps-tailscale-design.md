@@ -147,8 +147,8 @@ SSH 只作为 VPS 管理通道，用于首次安装和故障处理，不是 Cinb
 - 添加、替换和删除 API key；
 - 允许或拒绝工具调用。
 
-不再按“本机／远程”制造功能差异。当前 server 中依据 loopback 拒绝远程凭据修改的逻辑需要在
-本阶段移除，也不增加 `canManageCredentials` 之类的前端能力开关。
+不再按“本机／远程”制造功能差异。server 中原先依据 loopback 拒绝远程凭据修改的逻辑已经移除，
+也没有增加 `canManageCredentials` 之类的前端能力开关。
 
 理由是：获准使用远程 Cinba 的人本来就能发消息、批准工具并操作 VPS shell。单独禁止凭据管理
 不能构成真正的安全边界，只会增加产品分叉和虚假的安全感。安全边界应放在 Tailscale Grant、
@@ -197,8 +197,7 @@ Origin 校验防的是浏览器中的跨站 WebSocket 攻击，不宣称能防�
 
 ### 9.2 Web 自动重连
 
-当前 `CoreClient` 断线后只进入 `disconnected`，Web 页面不会自动重连。本功能已拆到独立 session
-先行实现，要求：
+`CoreClient` 的 Web 自动重连已经在独立 session 先行实现并通过测试，其行为为：
 
 - 初次失败和中途断开都自动重试；
 - 使用有上限的退避；
