@@ -63,6 +63,29 @@ npm run tui -- C:\path\to\project
 
 You can also drag a project directory onto `cinba-tui.cmd`.
 
+### VPS terminal command
+
+The deployed Linux release includes a small `cinba` command for the service user. Install it once
+from the active release without editing `.bashrc`:
+
+```sh
+/home/cinba/.local/node/bin/node \
+  /home/cinba/current/packages/deploy/src/install-user-launcher.ts
+```
+
+The installer creates `/home/cinba/.local/bin/cinba` as a managed symlink through `current`, so it
+automatically follows later deployments. Start a new login shell, then verify and run it:
+
+```sh
+command -v cinba
+readlink /home/cinba/.local/bin/cinba
+cinba
+```
+
+For the `cinba` user, the command always uses `/home/cinba/.local/node/bin/node`, loads the TUI from
+`/home/cinba/current`, and defaults the project to `/home/cinba/Cinba`. An optional first argument
+selects another project directory.
+
 ## Architecture
 
 ```text

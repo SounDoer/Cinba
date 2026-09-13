@@ -292,6 +292,48 @@ Permission Gate 人工确认
 实际出现的管理动作，不授予 `NOPASSWD: ALL`，也不让自动部署器继承这些能力。普通项目工作由
 `cinba` 用户直接完成；常见系统管理逐项加入受限入口；未预料到的高风险管理仍由管理员处理。
 
+### 12.2 VPS TUI 的用户命令
+
+VPS 上的 Core 由 systemd 常驻运行后，`cinba` 用户还需要一个适合日常 SSH 使用的短命令来打开
+TUI。该命令不复制 launcher 生命周期逻辑，而是继续进入仓库唯一入口 `scripts/launch.ts`：
+
+```text
+cinba
+→ /home/cinba/.local/node/bin/node
+→ /home/cinba/current/scripts/launch.ts tui
+→ 默认项目 /home/cinba/Cinba
+```
+
+仓库保存薄包装器 `packages/deploy/bin/cinba`。一次性安装器在
+`/home/cinba/.local/bin/cinba` 创建指向
+`/home/cinba/current/packages/deploy/bin/cinba` 的符号链接，而不是把包装器复制出 release。这样
+`current` 原子切换后，短命令自然跟随新版本，不需要重新安装，也不会固定到某个待清理的 release。
+
+安装命令明确使用受管理的 Node.js 24，不依赖系统 Node.js 22：
+
+```sh
+/home/cinba/.local/node/bin/node \
+  /home/cinba/current/packages/deploy/src/install-user-launcher.ts
+```
+
+安装器只接受自己的预期链接；若同名普通文件或指向其他位置的链接已经存在，就停止并报告，不会
+静默覆盖。安装后新开 login shell，通过以下三项核对：
+
+```sh
+command -v cinba
+readlink /home/cinba/.local/bin/cinba
+cinba
+```
+
+这里使用 Linux 惯例中的 `~/.local/bin`，不修改 `.bashrc`。交互登录是否已经通过系统 profile 将
+该目录加入 `PATH`，必须在真实 VPS 安装时以 `command -v cinba` 验证；若不成立，应先查明该用户
+的 login profile 来源，不能随手追加 shell 配置。
+
+包装器以 `HOME` 推导同一套目录，并允许用第一个参数覆盖默认项目，所以相同 release 布局的其他
+Unix 环境也能复用。Windows 本机不能直接执行 POSIX shell 包装器，继续使用现有
+`cinba-tui.cmd`；若以后需要全局的本机 `cinba` 命令，应单独设计 Windows 安装入口，不混入本次
+VPS 部署边界。
+
 ## 13. Git 分支与自动部署
 
 已确认分支语义：
