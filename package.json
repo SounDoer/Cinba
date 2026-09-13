@@ -4,6 +4,7 @@
   "type": "module",
   "version": "0.0.0",
   "description": "A personal multi-interface AI coding agent built on pi.dev.",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SounDoer/Cinba.git"

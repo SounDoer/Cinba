@@ -137,5 +137,4 @@ The current sequence is:
 
 ## License
 
-No open-source license has been selected yet. Public source availability does not grant permission
-to copy, modify, or redistribute the project beyond rights provided by applicable law.
+Cinba is available under the [MIT License](LICENSE).
