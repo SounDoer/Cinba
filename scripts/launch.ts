@@ -1,4 +1,4 @@
-// Own the lifecycle shared by Cinba's Windows launchers and npm commands.
+// Own the process orchestration shared by Cinba's product CLI and npm commands.
 //
 // Usage:
 //   node scripts/launch.ts start
@@ -155,53 +155,69 @@ function installSignalHandlers(): void {
   }
 }
 
-async function startRegular(): Promise<void> {
-  console.log("[launcher] Building the web application...");
-  await runToCompletion([VITE_ENTRY, "build"], WEB_ROOT);
-
-  console.log("[launcher] Ensuring the shared local Core is running...");
-  await ensureLocalCore();
-  openBrowser(CORE_URL);
-  console.log(`[launcher] Cinba is ready at ${CORE_URL}`);
-}
-
-async function startDevelopment(): Promise<void> {
-  await requireFreePort(CORE_PORT, "Cinba core service");
-  await requireFreePort(WEB_PORT, "Vite development server");
-
-  console.log("[launcher] Starting Core watch mode and Vite hot reload...");
-  const core = run(["--watch", CORE_ENTRY]);
-  const web = run([VITE_ENTRY, "--host", "127.0.0.1"], { cwd: WEB_ROOT });
-
-  await Promise.all([
-    waitUntilReachable(CORE_URL, "Cinba core service"),
-    waitUntilReachable(DEV_URL, "Vite development server"),
-  ]);
-  openBrowser(DEV_URL);
-  console.log(`[launcher] Development mode is ready at ${DEV_URL}`);
-  console.log("[launcher] Press Ctrl+C once to stop Core and Vite.");
-
-  const first = await Promise.race([
-    waitForExit(core).then((code) => ({ name: "Core", code })),
-    waitForExit(web).then((code) => ({ name: "Vite", code })),
-  ]);
-  if (!stopping) {
-    throw new Error(`${first.name} exited with code ${first.code}; stopping development mode`);
+async function withLaunchLifecycle(operation: () => Promise<void>): Promise<void> {
+  installSignalHandlers();
+  try {
+    await operation();
+  } catch (error) {
+    await stopChildren();
+    throw error;
   }
 }
 
-async function startTui(workingDirectory: string | undefined): Promise<void> {
-  if (!process.env.CINBA_SERVER) {
+export async function launchWeb(): Promise<void> {
+  await withLaunchLifecycle(async () => {
+    console.log("[launcher] Building the web application...");
+    await runToCompletion([VITE_ENTRY, "build"], WEB_ROOT);
+
     console.log("[launcher] Ensuring the shared local Core is running...");
     await ensureLocalCore();
-  }
+    openBrowser(CORE_URL);
+    console.log(`[launcher] Cinba is ready at ${CORE_URL}`);
+  });
+}
 
-  const cwd = workingDirectory ? join(workingDirectory) : process.cwd();
-  console.log(`[launcher] Cinba terminal, working in: ${cwd}`);
-  const code = await waitForExit(run([TUI_ENTRY], { cwd, managed: false }));
-  if (code !== 0) {
-    throw new Error(`Cinba terminal exited with code ${code}`);
-  }
+export async function launchDevelopment(): Promise<void> {
+  await withLaunchLifecycle(async () => {
+    await requireFreePort(CORE_PORT, "Cinba core service");
+    await requireFreePort(WEB_PORT, "Vite development server");
+
+    console.log("[launcher] Starting Core watch mode and Vite hot reload...");
+    const core = run(["--watch", CORE_ENTRY]);
+    const web = run([VITE_ENTRY, "--host", "127.0.0.1"], { cwd: WEB_ROOT });
+
+    await Promise.all([
+      waitUntilReachable(CORE_URL, "Cinba core service"),
+      waitUntilReachable(DEV_URL, "Vite development server"),
+    ]);
+    openBrowser(DEV_URL);
+    console.log(`[launcher] Development mode is ready at ${DEV_URL}`);
+    console.log("[launcher] Press Ctrl+C once to stop Core and Vite.");
+
+    const first = await Promise.race([
+      waitForExit(core).then((code) => ({ name: "Core", code })),
+      waitForExit(web).then((code) => ({ name: "Vite", code })),
+    ]);
+    if (!stopping) {
+      throw new Error(`${first.name} exited with code ${first.code}; stopping development mode`);
+    }
+  });
+}
+
+export async function launchTui(workingDirectory: string | undefined): Promise<void> {
+  await withLaunchLifecycle(async () => {
+    if (!process.env.CINBA_SERVER) {
+      console.log("[launcher] Ensuring the shared local Core is running...");
+      await ensureLocalCore();
+    }
+
+    const cwd = workingDirectory ? join(workingDirectory) : process.cwd();
+    console.log(`[launcher] Cinba terminal, working in: ${cwd}`);
+    const code = await waitForExit(run([TUI_ENTRY], { cwd, managed: false }));
+    if (code !== 0) {
+      throw new Error(`Cinba terminal exited with code ${code}`);
+    }
+  });
 }
 
 function readMode(value: string | undefined): Mode {
@@ -213,21 +229,21 @@ function readMode(value: string | undefined): Mode {
 
 async function main(): Promise<void> {
   const mode = readMode(process.argv[2]);
-  installSignalHandlers();
 
   if (mode === "start") {
-    await startRegular();
+    await launchWeb();
   }
   if (mode === "dev") {
-    await startDevelopment();
+    await launchDevelopment();
   }
   if (mode === "tui") {
-    await startTui(process.argv[3]);
+    await launchTui(process.argv[3]);
   }
 }
 
-main().catch(async (error: unknown) => {
-  await stopChildren();
-  console.error(`[launcher] ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
-});
+if (import.meta.main) {
+  main().catch((error: unknown) => {
+    console.error(`[launcher] ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  });
+}

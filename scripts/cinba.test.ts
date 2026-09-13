@@ -1,26 +1,7 @@
 import assert from "node:assert/strict";
-import { dirname, join, resolve } from "node:path";
+import { resolve } from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
-import {
-  formatCoreStatus,
-  isDirectExecution,
-  parseCinbaCommand,
-  runCoreCommand,
-  tuiProcessArguments,
-} from "./cinba.ts";
-
-test("the global cinba command enters the shared TUI launcher in the current directory", () => {
-  const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-  const project = join(repositoryRoot, "example project");
-
-  assert.deepEqual(tuiProcessArguments(project), [
-    process.execPath,
-    join(repositoryRoot, "scripts", "launch.ts"),
-    "tui",
-    resolve(project),
-  ]);
-});
+import { formatCoreStatus, isDirectExecution, parseCinbaCommand, runCoreCommand } from "./cinba.ts";
 
 test("the npm junction path is recognized as direct command execution", () => {
   const paths = new Map([
@@ -38,11 +19,26 @@ test("the npm junction path is recognized as direct command execution", () => {
   );
 });
 
-test("Core subcommands are parsed without changing the bare TUI command", () => {
+test("TUI commands resolve the platform default, explicit mode, and project shorthand", () => {
   assert.deepEqual(parseCinbaCommand([], "example"), {
     type: "tui",
     workingDirectory: resolve("example"),
   });
+  assert.deepEqual(parseCinbaCommand(["tui"], "example"), {
+    type: "tui",
+    workingDirectory: resolve("example"),
+  });
+  assert.deepEqual(parseCinbaCommand(["tui", "other"], "example"), {
+    type: "tui",
+    workingDirectory: resolve("other"),
+  });
+  assert.deepEqual(parseCinbaCommand(["other"], "example"), {
+    type: "tui",
+    workingDirectory: resolve("other"),
+  });
+});
+
+test("Core subcommands are parsed independently of TUI commands", () => {
   assert.deepEqual(parseCinbaCommand(["core", "status"], "example"), {
     type: "core",
     action: "status",
@@ -55,8 +51,11 @@ test("Core subcommands are parsed without changing the bare TUI command", () => 
     type: "core",
     action: "stop",
   });
-  assert.throws(() => parseCinbaCommand(["status"], "example"), {
-    message: "usage: cinba | cinba core <status|start|stop>",
+  assert.throws(() => parseCinbaCommand(["core"], "example"), {
+    message: "usage: cinba [tui] [project] | cinba core <status|start|stop>",
+  });
+  assert.throws(() => parseCinbaCommand(["tui", "one", "two"], "example"), {
+    message: "usage: cinba [tui] [project] | cinba core <status|start|stop>",
   });
 });
 

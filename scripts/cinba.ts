@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type LocalCoreStatus,
@@ -9,10 +9,9 @@ import {
   inspectLocalCore,
   stopLocalCore,
 } from "@cinba/core-manager";
+import { launchTui } from "./launch.ts";
 
 const COMMAND_PATH = fileURLToPath(import.meta.url);
-const REPOSITORY_ROOT = dirname(dirname(COMMAND_PATH));
-const LAUNCHER_PATH = join(REPOSITORY_ROOT, "scripts", "launch.ts");
 
 export type CinbaCommand =
   { type: "tui"; workingDirectory: string } | { type: "core"; action: "status" | "start" | "stop" };
@@ -21,6 +20,12 @@ export function parseCinbaCommand(arguments_: string[], workingDirectory: string
   if (arguments_.length === 0) {
     return { type: "tui", workingDirectory: resolve(workingDirectory) };
   }
+  if (arguments_[0] === "tui" && arguments_.length <= 2) {
+    return {
+      type: "tui",
+      workingDirectory: resolve(arguments_[1] ?? workingDirectory),
+    };
+  }
   if (
     arguments_.length === 2 &&
     arguments_[0] === "core" &&
@@ -28,11 +33,10 @@ export function parseCinbaCommand(arguments_: string[], workingDirectory: string
   ) {
     return { type: "core", action: arguments_[1] };
   }
-  throw new Error("usage: cinba | cinba core <status|start|stop>");
-}
-
-export function tuiProcessArguments(workingDirectory: string): string[] {
-  return [process.execPath, LAUNCHER_PATH, "tui", resolve(workingDirectory)];
+  if (arguments_.length === 1 && arguments_[0] !== "core") {
+    return { type: "tui", workingDirectory: resolve(arguments_[0]) };
+  }
+  throw new Error("usage: cinba [tui] [project] | cinba core <status|start|stop>");
 }
 
 export function isDirectExecution(
@@ -80,10 +84,12 @@ export async function runCoreCommand(
 }
 
 async function main(): Promise<void> {
-  const command = parseCinbaCommand(process.argv.slice(2), process.cwd());
+  const command = parseCinbaCommand(
+    process.argv.slice(2),
+    process.env.CINBA_DEFAULT_PROJECT ?? process.cwd(),
+  );
   if (command.type === "tui") {
-    process.argv = tuiProcessArguments(command.workingDirectory);
-    await import("./launch.ts");
+    await launchTui(command.workingDirectory);
     return;
   }
 
