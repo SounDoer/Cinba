@@ -2,7 +2,7 @@
 set -eu
 
 cinba_home=${CINBA_HOME:-"$HOME"}
-project_directory=${1:-"$cinba_home/Cinba"}
+export CINBA_DEFAULT_PROJECT="$cinba_home/Cinba"
 
 exec "$cinba_home/.local/node/bin/node" \
-  "$cinba_home/current/scripts/launch.ts" tui "$project_directory"
+  "$cinba_home/current/scripts/cinba.ts" "$@"

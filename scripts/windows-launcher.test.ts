@@ -7,7 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 test(
-  "the TUI batch launcher passes a dragged project directly to the shared launcher",
+  "the TUI batch launcher passes a dragged project through the product CLI",
   { skip: process.platform !== "win32" },
   () => {
     const temporary = mkdtempSync(join(tmpdir(), "cinba-cmd-"));
@@ -31,7 +31,7 @@ test(
       });
 
       assert.equal(result.status, 0, result.stderr);
-      assert.match(result.stdout, /ARG1=\[.*scripts\\launch\.ts\]/i);
+      assert.match(result.stdout, /ARG1=\[.*scripts\\cinba\.ts\]/i);
       assert.match(result.stdout, /ARG2=\[tui\]/i);
       assert.match(result.stdout, new RegExp(`ARG3=\\[${escapeRegExp(project)}\\]`, "i"));
       assert.doesNotMatch(result.stdout, /npm <command>/i);

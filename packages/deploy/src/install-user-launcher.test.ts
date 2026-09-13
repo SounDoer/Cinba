@@ -4,13 +4,13 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { installUserLauncher, userLauncherPaths } from "./install-user-launcher.ts";
 
-test("the VPS launcher uses the managed Node and current release with a repository default", async () => {
+test("the VPS launcher enters the product CLI with its platform default", async () => {
   const launcherPath = fileURLToPath(new URL("../bin/cinba", import.meta.url));
   const launcher = await readFile(launcherPath, "utf8");
 
   assert.match(launcher, /"\$cinba_home\/\.local\/node\/bin\/node"/);
-  assert.match(launcher, /"\$cinba_home\/current\/scripts\/launch\.ts" tui/);
-  assert.match(launcher, /project_directory=\$\{1:-"\$cinba_home\/Cinba"\}/);
+  assert.match(launcher, /export CINBA_DEFAULT_PROJECT="\$cinba_home\/Cinba"/);
+  assert.match(launcher, /"\$cinba_home\/current\/scripts\/cinba\.ts" "\$@"/);
   assert.match(launcher, /^exec /m);
 });
 
