@@ -558,7 +558,7 @@ node scripts/repl.ts "run the ls command"     # 出现确认时答 n
 必须同时看到：命令没执行（`isError` 为 true），且模型知道自己被拒了。
 
 **子进程回收依赖 Pi 的这一条行为，不是我们自己做的。** `server` 的 `shutdown()`
-只在优雅退出时跑；被强杀、崩溃、或关掉 `cinba.cmd` 窗口时它跑不到。真正兜底的是：
+只在优雅退出时跑；被强杀、崩溃、或关掉 `cinba-web.cmd` 窗口时它跑不到。真正兜底的是：
 父进程一死，子进程的 stdin 管道 EOF，Pi 自己退出。
 
 2026-09-08 实测（开了 4 个会话、用 `taskkill /F` 强杀服务、不给任何 handler 机会）：

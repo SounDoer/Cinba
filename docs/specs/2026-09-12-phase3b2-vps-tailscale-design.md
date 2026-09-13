@@ -330,9 +330,9 @@ cinba
 的 login profile 来源，不能随手追加 shell 配置。
 
 包装器以 `HOME` 推导同一套目录，并允许用第一个参数覆盖默认项目，所以相同 release 布局的其他
-Unix 环境也能复用。Windows 本机不能直接执行 POSIX shell 包装器，继续使用现有
-`cinba-tui.cmd`；若以后需要全局的本机 `cinba` 命令，应单独设计 Windows 安装入口，不混入本次
-VPS 部署边界。
+Unix 环境也能复用。Windows 本机不直接执行 POSIX shell 包装器，而是通过 npm 全局 `bin` 使用
+同名 `cinba` 命令；需要拖拽项目目录时仍可使用 `cinba-tui.cmd`。两种平台入口最终都进入
+`scripts/launch.ts tui`，但各自的安装机制保持独立。
 
 ## 13. Git 分支与自动部署
 

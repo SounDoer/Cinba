@@ -45,7 +45,7 @@ npm start
 ```
 
 `npm start` builds the Web UI, starts the Core on `127.0.0.1:4517`, and opens it in the browser.
-On Windows, `cinba.cmd` provides the same flow as a double-click launcher.
+On Windows, `cinba-web.cmd` provides the same flow as a double-click launcher.
 
 For development with Core watch mode and Vite hot reload:
 
@@ -81,11 +81,8 @@ cinba
 
 The global command stays linked to this checkout and passes the current directory to the same
 `scripts/launch.ts tui` entry used by `npm run tui` and `cinba-tui.cmd`. Remove it with
-`npm unlink --global cinba`.
-
-In legacy `cmd.exe`, the repository's existing `cinba.cmd` Web launcher shadows the global command
-only while the repository root itself is the current directory. PowerShell does not implicitly run
-commands from the current directory, so its global `cinba` behavior is consistent everywhere.
+`npm unlink --global cinba`. The Web launcher is named `cinba-web.cmd`, so the global `cinba`
+command remains unambiguous in both PowerShell and `cmd.exe`.
 
 ### VPS terminal command
 

@@ -209,7 +209,7 @@ viewing: Map<WebSocket, sessionId>   // 每个客户端在看哪个
 和 `main.tsx` 里那 20 行同构。画的部分先原样不动。
 
 - 启动时按当前目录列会话：有就打开最近那个，没有就新建一个。**`cd proj && 起 TUI` 的手感不变**
-- 连不上 server：打印「没找到 Cinba 服务，请先启动 cinba.cmd」后退出。**不自动拉起**——
+- 连不上 server：打印「没找到 Cinba 服务，请先启动 cinba-web.cmd」后退出。**不自动拉起**——
   自动拉起会带来「谁关它、日志打哪、Ctrl+C 之后 GUI 的对话是不是也没了」三个问题
 
 ### Task 9：TUI 补齐 → 验证：手工
@@ -368,7 +368,7 @@ model's reply: "I attempted to run `ls`, but the tool call was denied, so I coul
 
 ```
 Cannot reach the Cinba service at ws://127.0.0.1:4517/ws.
-Start it first: double-click cinba.cmd in the repository root.
+Start it first: double-click cinba-web.cmd in the repository root.
 --- exit code: 1 ---
 ```
 

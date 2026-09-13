@@ -208,7 +208,7 @@ TUI 改为连接常驻 Core 后，本机的自然入口应当是：先 `cd` 到�
 TUI 启动逻辑。npm link 也不复制仓库文件，所以 checkout 更新后全局命令自动使用新代码；仓库移动
 后重新执行 `npm link` 即可。卸载使用 `npm unlink --global cinba`。
 
-仓库根目录已有同名 `cinba.cmd`，历史职责是双击启动 Web/Core。传统 `cmd.exe` 会优先搜索当前
-目录，因此仅当它正停在仓库根目录时，该文件会遮住全局 TUI 命令；PowerShell 不会隐式执行当前
-目录的脚本，不存在这个歧义。本次保留已有双击工作流，不为解决一个 legacy shell 的单目录特例而
-改变 `cinba.cmd` 的产品含义。
+原有的 Web/Core 双击入口从 `cinba.cmd` 明确改名为 `cinba-web.cmd`；开发入口继续是
+`cinba-dev.cmd`，支持拖拽项目目录的 TUI 入口继续是 `cinba-tui.cmd`。因此 `cinba` 在 PowerShell
+和传统 `cmd.exe` 的任意目录中都只表示全局 TUI 命令，同时三个 `.cmd` 文件仍保留各自清楚的双击
+用途。
