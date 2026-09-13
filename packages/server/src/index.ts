@@ -36,6 +36,7 @@ import {
 } from "./drain.ts";
 import { createHealthHandler, isSafeToRestart, normalizeRevision } from "./health.ts";
 import { createServerRuntime } from "./server-runtime.ts";
+import { SERVICE_IDLE_TIMEOUT_MS, assessServiceIdle, readCoreLifetime } from "./service-idle.ts";
 import { type LiveSession, createSessionRegistry } from "./session-registry.ts";
 import { createStaticFileHandler } from "./static-files.ts";
 import { isAllowedWebSocketOrigin } from "./websocket-origin.ts";
@@ -52,6 +53,7 @@ const HOST = "127.0.0.1";
  */
 const PORT = Number(process.env.CINBA_PORT) || 4517;
 const REVISION = normalizeRevision(process.env.CINBA_REVISION);
+const CORE_LIFETIME = readCoreLifetime(process.env.CINBA_CORE_LIFETIME);
 
 /** Where the built UI lives. Located relative to the repo layout, not through package resolution. */
 const WEB_DIST = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
@@ -68,6 +70,7 @@ const viewing = new Map<WebSocket, string>();
 
 const clients = new Set<WebSocket>();
 let drain: DrainController | undefined;
+let serviceIdleSince = CORE_LIFETIME === "on-demand" ? Date.now() : undefined;
 
 // ---- Sending ----
 
@@ -512,6 +515,7 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
 
 function onConnection(socket: WebSocket): void {
   clients.add(socket);
+  serviceIdleSince = undefined;
 
   // Before anything else: which machine the client has reached.
   sendTo(socket, { type: "core_identity", name: config.get().coreName });
@@ -535,6 +539,9 @@ function onConnection(socket: WebSocket): void {
   });
   socket.on("close", () => {
     clients.delete(socket);
+    if (clients.size === 0) {
+      serviceIdleSince = Date.now();
+    }
     const previousSessionId = viewing.get(socket);
     viewing.delete(socket);
     if (previousSessionId && ![...viewing.values()].includes(previousSessionId)) {
@@ -561,6 +568,20 @@ const runtime = createServerRuntime({
     sweepIdle();
     // Retry conversations that were mid-turn when credentials changed.
     void recycleStale();
+    const serviceIdle = assessServiceIdle(
+      CORE_LIFETIME,
+      {
+        clientCount: clients.size,
+        safeToStop: safeToRestart(),
+        idleSince: serviceIdleSince,
+      },
+      Date.now(),
+    );
+    serviceIdleSince = serviceIdle.idleSince;
+    if (serviceIdle.stop && drain?.draining !== true) {
+      console.log("[cinba] no clients remain; stopping the idle on-demand Core");
+      drain?.request();
+    }
   },
 });
 
@@ -611,6 +632,11 @@ export function startService(): void {
       console.log(
         `[cinba] idle conversations release their process after ${IDLE_TIMEOUT_MS / 60_000} minutes`,
       );
+      if (CORE_LIFETIME === "on-demand") {
+        console.log(
+          `[cinba] on-demand Core stops after ${SERVICE_IDLE_TIMEOUT_MS / 60_000} client-free minutes`,
+        );
+      }
       if (currentConfig.model) {
         console.log(`[cinba] model ${currentConfig.model.provider}/${currentConfig.model.id}`);
       }
