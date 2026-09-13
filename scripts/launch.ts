@@ -200,7 +200,7 @@ async function startDevelopment(): Promise<void> {
 
 async function startTui(workingDirectory: string | undefined): Promise<void> {
   if (!(await isPortOpen(CORE_PORT))) {
-    throw new Error("the Cinba core service is not running; start cinba.cmd first");
+    throw new Error("the Cinba core service is not running; start the core service first");
   }
 
   const cwd = workingDirectory ? join(workingDirectory) : process.cwd();
