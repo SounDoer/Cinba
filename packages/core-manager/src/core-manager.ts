@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   closeSync,
   mkdirSync,
@@ -8,7 +9,13 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { type CoreHealth, probeCoreHealth } from "@cinba/core-client";
+import {
+  type CoreHealth,
+  type LocalCoreControlStatus,
+  probeCoreHealth,
+  requestLocalCoreStatus,
+  requestLocalCoreStop,
+} from "@cinba/core-client";
 import { type LocalCoreConfig, createLocalCoreConfig } from "./config.ts";
 import { acquireStartLock } from "./start-lock.ts";
 
@@ -18,10 +25,20 @@ type RuntimeRecord = {
   startedAt: string;
 };
 
+type ControlRecord = {
+  pid: number;
+  repositoryRoot: string;
+  token: string;
+};
+
 export type LocalCoreStatus = {
+  state: "stopped" | "running" | "draining";
   running: boolean;
   managed: boolean;
   pid?: number;
+  lifetime?: "on-demand" | "external";
+  clientCount?: number;
+  safeToStop?: boolean;
   health?: CoreHealth;
 };
 
@@ -30,8 +47,18 @@ export type EnsureLocalCoreOptions = {
   readyTimeoutMs?: number;
   pollIntervalMs?: number;
   probe?: (baseUrl: string) => Promise<CoreHealth | undefined>;
-  spawnCore?: (config: LocalCoreConfig) => ChildProcess;
+  spawnCore?: (config: LocalCoreConfig, controlToken: string) => ChildProcess;
   acquireLock?: (path: string) => Promise<() => void>;
+  delay?: (milliseconds: number) => Promise<void>;
+};
+
+export type StopLocalCoreOptions = {
+  config?: LocalCoreConfig;
+  waitTimeoutMs?: number;
+  pollIntervalMs?: number;
+  probe?: (baseUrl: string) => Promise<CoreHealth | undefined>;
+  requestStatus?: (baseUrl: string, token: string) => Promise<LocalCoreControlStatus | undefined>;
+  requestStop?: (baseUrl: string, token: string) => Promise<boolean>;
   delay?: (milliseconds: number) => Promise<void>;
 };
 
@@ -60,10 +87,30 @@ function readRuntime(path: string): RuntimeRecord | undefined {
   }
 }
 
+function readControl(path: string): ControlRecord | undefined {
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<ControlRecord>;
+    return Number.isInteger(parsed.pid) &&
+      typeof parsed.repositoryRoot === "string" &&
+      typeof parsed.token === "string" &&
+      parsed.token.length > 0
+      ? (parsed as ControlRecord)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function writeRuntime(config: LocalCoreConfig, record: RuntimeRecord): void {
   const temporary = `${config.runtimePath}.${process.pid}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
   renameSync(temporary, config.runtimePath);
+}
+
+function writeControl(config: LocalCoreConfig, record: ControlRecord): void {
+  const temporary = `${config.controlPath}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
+  renameSync(temporary, config.controlPath);
 }
 
 function removeRuntime(config: LocalCoreConfig, pid: number): void {
@@ -79,7 +126,20 @@ function removeRuntime(config: LocalCoreConfig, pid: number): void {
   }
 }
 
-function defaultSpawnCore(config: LocalCoreConfig): ChildProcess {
+function removeControl(config: LocalCoreConfig, pid: number): void {
+  if (readControl(config.controlPath)?.pid !== pid) {
+    return;
+  }
+  try {
+    unlinkSync(config.controlPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+  }
+}
+
+function defaultSpawnCore(config: LocalCoreConfig, controlToken: string): ChildProcess {
   mkdirSync(config.stateDirectory, { recursive: true });
   const log = openSync(config.logPath, "a", 0o600);
   try {
@@ -89,6 +149,7 @@ function defaultSpawnCore(config: LocalCoreConfig): ChildProcess {
       env: {
         ...process.env,
         CINBA_CORE_LIFETIME: "on-demand",
+        CINBA_LOCAL_CONTROL_TOKEN: controlToken,
         CINBA_PORT: "4517",
       },
       stdio: ["ignore", log, log],
@@ -104,20 +165,36 @@ function defaultSpawnCore(config: LocalCoreConfig): ChildProcess {
 export async function inspectLocalCore(
   config = createLocalCoreConfig(),
   probe: (baseUrl: string) => Promise<CoreHealth | undefined> = probeCoreHealth,
+  requestStatus: (
+    baseUrl: string,
+    token: string,
+  ) => Promise<LocalCoreControlStatus | undefined> = requestLocalCoreStatus,
 ): Promise<LocalCoreStatus> {
   const health = await probe(config.baseUrl);
   if (!health) {
-    return { running: false, managed: false };
+    return { state: "stopped", running: false, managed: false };
   }
 
   const runtime = readRuntime(config.runtimePath);
-  const managed = Boolean(
-    runtime && runtime.repositoryRoot === config.repositoryRoot && processIsAlive(runtime.pid),
+  const control = readControl(config.controlPath);
+  const ownsRecords = Boolean(
+    runtime &&
+    control &&
+    runtime.pid === control.pid &&
+    runtime.repositoryRoot === config.repositoryRoot &&
+    control.repositoryRoot === config.repositoryRoot &&
+    processIsAlive(runtime.pid),
   );
+  const detail = ownsRecords ? await requestStatus(config.baseUrl, control!.token) : undefined;
+  const managed = Boolean(detail && detail.pid === runtime!.pid);
   return {
+    state: detail?.draining ? "draining" : "running",
     running: true,
     managed,
     pid: managed ? runtime?.pid : undefined,
+    lifetime: managed ? "on-demand" : "external",
+    clientCount: detail?.clientCount,
+    safeToStop: detail?.safeToStop ?? health.safeToRestart,
     health,
   };
 }
@@ -141,16 +218,25 @@ export async function ensureLocalCore(
     }
 
     mkdirSync(config.stateDirectory, { recursive: true });
-    const child = (options.spawnCore ?? defaultSpawnCore)(config);
+    const controlToken = randomUUID();
+    const child = (options.spawnCore ?? defaultSpawnCore)(config, controlToken);
     if (child.pid === undefined) {
       throw new Error("The Cinba Core process did not report a PID");
     }
     const pid = child.pid;
-    writeRuntime(config, {
-      pid,
-      repositoryRoot: config.repositoryRoot,
-      startedAt: new Date().toISOString(),
-    });
+    try {
+      writeRuntime(config, {
+        pid,
+        repositoryRoot: config.repositoryRoot,
+        startedAt: new Date().toISOString(),
+      });
+      writeControl(config, { pid, repositoryRoot: config.repositoryRoot, token: controlToken });
+    } catch (error) {
+      child.kill();
+      removeRuntime(config, pid);
+      removeControl(config, pid);
+      throw error;
+    }
 
     let processError: Error | undefined;
     child.once("error", (error) => {
@@ -165,10 +251,19 @@ export async function ensureLocalCore(
     while (Date.now() < deadline) {
       const health = await probe(config.baseUrl);
       if (health) {
-        return { running: true, managed: true, pid, health };
+        return {
+          state: "running",
+          running: true,
+          managed: true,
+          pid,
+          lifetime: "on-demand",
+          safeToStop: health.safeToRestart,
+          health,
+        };
       }
       if (processError || child.exitCode !== null || child.signalCode !== null) {
         removeRuntime(config, pid);
+        removeControl(config, pid);
         throw new Error(
           `The Cinba Core process exited before becoming ready${processError ? `: ${processError.message}` : ""}; see ${config.logPath}`,
         );
@@ -177,10 +272,45 @@ export async function ensureLocalCore(
     }
 
     removeRuntime(config, pid);
+    removeControl(config, pid);
     throw new Error(
       `The Cinba Core did not become ready within ${readyTimeoutMs} milliseconds; see ${config.logPath}`,
     );
   } finally {
     release();
   }
+}
+
+/** Ask a manager-owned Core to drain, waiting briefly for an immediately safe stop. */
+export async function stopLocalCore(options: StopLocalCoreOptions = {}): Promise<LocalCoreStatus> {
+  const config = options.config ?? createLocalCoreConfig();
+  const probe = options.probe ?? probeCoreHealth;
+  const statusRequest = options.requestStatus ?? requestLocalCoreStatus;
+  const current = await inspectLocalCore(config, probe, statusRequest);
+  if (!current.running) {
+    return current;
+  }
+
+  const control = readControl(config.controlPath);
+  if (!current.managed || !control || current.pid !== control.pid) {
+    throw new Error("The running Cinba Core is external and cannot be stopped by this manager");
+  }
+  if (!(await (options.requestStop ?? requestLocalCoreStop)(config.baseUrl, control.token))) {
+    throw new Error("The running Cinba Core refused the stop request");
+  }
+
+  const delay =
+    options.delay ??
+    ((milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  const deadline = Date.now() + (options.waitTimeoutMs ?? 3_000);
+  while (Date.now() < deadline) {
+    if (!(await probe(config.baseUrl))) {
+      removeRuntime(config, control.pid);
+      removeControl(config, control.pid);
+      return { state: "stopped", running: false, managed: false };
+    }
+    await delay(options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS);
+  }
+
+  return await inspectLocalCore(config, probe, statusRequest);
 }

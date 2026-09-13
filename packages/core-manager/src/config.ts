@@ -9,6 +9,7 @@ export type LocalCoreConfig = {
   stateDirectory: string;
   startLockPath: string;
   runtimePath: string;
+  controlPath: string;
   logPath: string;
 };
 
@@ -32,6 +33,7 @@ export function createLocalCoreConfig(
     stateDirectory,
     startLockPath: join(stateDirectory, "core-start.lock"),
     runtimePath: join(stateDirectory, "core-runtime.json"),
+    controlPath: join(stateDirectory, "core-control.json"),
     logPath: join(stateDirectory, "core.log"),
   };
 }

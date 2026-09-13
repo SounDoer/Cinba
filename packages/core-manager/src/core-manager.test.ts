@@ -7,7 +7,7 @@ import { test } from "node:test";
 import type { ChildProcess } from "node:child_process";
 import type { CoreHealth } from "@cinba/core-client";
 import { createLocalCoreConfig } from "./config.ts";
-import { ensureLocalCore } from "./core-manager.ts";
+import { ensureLocalCore, stopLocalCore } from "./core-manager.ts";
 
 const HEALTH: CoreHealth = { status: "ok", revision: "unknown", safeToRestart: true };
 
@@ -69,12 +69,16 @@ test("starts one managed Core and records its runtime", async () => {
     });
 
     assert.deepEqual(status, {
+      state: "running",
       running: true,
       managed: true,
       pid: 4242,
+      lifetime: "on-demand",
+      safeToStop: true,
       health: HEALTH,
     });
     assert.equal(JSON.parse(readFileSync(config.runtimePath, "utf8")).pid, 4242);
+    assert.equal(JSON.parse(readFileSync(config.controlPath, "utf8")).pid, 4242);
     assert.equal(releases, 1);
   } finally {
     rmSync(home, { recursive: true, force: true });
@@ -129,6 +133,60 @@ test("concurrent callers produce only one Core process", async () => {
     assert.equal(first.running, true);
     assert.equal(second.running, true);
     assert.equal(spawns, 1);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("a managed Core is asked to stop gracefully", async () => {
+  const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
+  const config = createLocalCoreConfig({ homeDirectory: home });
+  let running = false;
+  let stopRequests = 0;
+  try {
+    await ensureLocalCore({
+      config,
+      probe: async () => (running ? HEALTH : undefined),
+      spawnCore: () => {
+        running = true;
+        return fakeChild(process.pid);
+      },
+      delay: async () => {},
+    });
+
+    const status = await stopLocalCore({
+      config,
+      probe: async () => (running ? HEALTH : undefined),
+      requestStatus: async () => ({
+        status: "ok",
+        lifetime: "on-demand",
+        pid: process.pid,
+        clientCount: 0,
+        safeToStop: true,
+        draining: false,
+      }),
+      requestStop: async () => {
+        stopRequests += 1;
+        running = false;
+        return true;
+      },
+      delay: async () => {},
+    });
+
+    assert.deepEqual(status, { state: "stopped", running: false, managed: false });
+    assert.equal(stopRequests, 1);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("an external Core cannot be stopped through stale or missing local records", async () => {
+  const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
+  const config = createLocalCoreConfig({ homeDirectory: home });
+  try {
+    await assert.rejects(stopLocalCore({ config, probe: async () => HEALTH }), {
+      message: "The running Cinba Core is external and cannot be stopped by this manager",
+    });
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
