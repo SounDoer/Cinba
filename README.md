@@ -93,6 +93,20 @@ foreground development stack; stop the ordinary local Core before starting it if
 already occupied. Setting `CINBA_SERVER` for the TUI selects an explicitly managed remote Core and
 does not start the local one.
 
+The same global command exposes the local Core lifecycle without opening a client:
+
+```powershell
+cinba core status
+cinba core start
+cinba core stop
+```
+
+`status` reports whether the Core is stopped, running, or draining, plus its managed PID, lifecycle,
+connected client count, and stop safety when available. `stop` uses the Core's protected local
+control channel and existing drain behavior; it never kills a PID directly. A Core started outside
+the manager, such as the foreground development Core, is reported as `external` and is not stopped
+by this command.
+
 ### VPS terminal command
 
 The deployed Linux release includes a small `cinba` command for the service user. Install it once
@@ -141,7 +155,7 @@ master ──► prod ──► deploy ──► releases/current ──► syst
 | --- | --- |
 | `@cinba/contract` | Browser-safe protocol, ledger, commands, and shared labels |
 | `@cinba/core-client` | Shared Core connection used by every client |
-| `@cinba/core-manager` | Starts and inspects the one shared Core on the local computer |
+| `@cinba/core-manager` | Starts, inspects, and safely stops the shared Core on the local computer |
 | `@cinba/server` | HTTP, WebSocket, sessions, credentials, draining, and health |
 | `@cinba/agent` | Pi process lifecycle, RPC transport, events, and stored sessions |
 | `@cinba/extensions` | Pi extensions, including the mandatory permission gate |
