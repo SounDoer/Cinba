@@ -148,8 +148,8 @@ iPhone Safari
 - 三个既有公网 Caddy 站点在升级、reload 和 Cinba 接入后保持原有行为；
 - 没有给 Cinba 新增云防火墙端口，没有使用 webhook，也没有让 GitHub 主动登录 VPS。
 
-尚待产品级验收的是：在 VPS 配置一个真实 provider 后发送消息，并从远程页面完成一次权限确认。
-这需要用户自行提供凭据，因此不属于基础设施 bootstrap，也不会把任何凭据写入本文或 Git。
+产品级验收随后也已完成，结果见第 12 节。真实凭据仅由用户在 Cinba 界面中输入，没有进入本文、
+终端输出或 Git。
 
 ## 11. 候选检查失败保护实测
 
@@ -159,3 +159,20 @@ iPhone Safari
 同一 revision 随后在同一台 VPS 的隔离 worktree 中单独重跑 5 个 E2E，全部通过，失败项恢复为
 亚秒级完成，因此没有根据一次瞬时抖动放宽超时或跳过门禁。诊断 worktree 已在核对路径与 revision
 后移除。下一次普通向前提交会提供新的部署目标，失败 revision 本身仍不被 timer 重复尝试。
+
+## 12. 产品链路与修复发布验收
+
+2026-09-14 在真实 VPS、真实 provider、iPhone Safari 与 VPS TUI 上完成最后一轮验收：
+
+- TUI 能接收终端的 bracketed paste，凭据输入只显示掩码，保存后 provider 可用；
+- 选择模型后能完成普通对话；
+- `pwd` 这类只读命令按策略直接执行；
+- `sudo` 这类提权命令会触发权限确认，允许与拒绝两条路径均已验证；
+- 手机 Web 与 VPS TUI 查看同一会话时，消息和工具结果会实时同步；
+- 没有模型时发送 prompt 会明确提示先配置 provider，并恢复 idle，不再留下假的 answering 状态；
+- 自动部署在旧版残留假忙状态下完成候选检查并等待 draining；经一次明确授权的受控停止后切换成功，
+  `current`、`/healthz` 与 `/deployment-status` 均指向目标 revision，HTTPS 返回 `200`；
+- `master` 与 `prod` 最终指向同一 revision，update timer 回到等待状态。
+
+至此，首次 bootstrap、Tailscale-only HTTPS、主动拉取部署、故障隔离、断线恢复、凭据配置、权限门
+和跨客户端共享会话均已在真实环境中验证。形态 C 第 3 步没有剩余的部署阻塞项。
