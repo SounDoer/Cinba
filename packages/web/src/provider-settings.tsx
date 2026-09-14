@@ -9,10 +9,8 @@
 //     in a screen recording
 //   - the draft is cleared the moment it is sent
 //
-// The core refuses these changes from anything but a local connection, so this
-// panel is inert for a viewer connecting from elsewhere. That is deliberate:
-// reading a conversation and changing which key the machine bills to are not
-// the same kind of act.
+// Access control belongs at the Core's trusted network boundary. Once a client
+// is allowed to use this Core, local and remote clients have the same controls.
 
 import { useState } from "react";
 import type { ProviderStatus } from "@cinba/contract";
@@ -52,10 +50,7 @@ export function ProviderSettings({
 
   return (
     <PickerShell label="provider settings" onClose={onClose}>
-      <div className="picker-path">
-        A key is stored by the core and never sent back here. Changes are only accepted from this
-        machine.
-      </div>
+      <div className="picker-path">A key is stored by the core and never sent back here.</div>
 
       <div className="picker-list">
         {providers === undefined ? <div className="picker-item">Loading...</div> : null}
