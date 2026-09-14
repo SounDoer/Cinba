@@ -376,19 +376,32 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     if (!managed) {
       return;
     }
-    emitManaged(managed, [{ type: "busy_changed", busy: true }]);
-    void managed.pi.prompt(message).catch((error: unknown) => {
-      if (findManaged(managed) !== managed) {
-        return;
-      }
+    if (!managed.model) {
       emitManaged(managed, [
-        {
-          type: "notice",
-          text: `prompt failed: ${error instanceof Error ? error.message : String(error)}`,
-        },
-        { type: "busy_changed", busy: false },
+        { type: "notice", text: "No model configured. Add a provider key first." },
       ]);
-    });
+      return;
+    }
+    emitManaged(managed, [{ type: "busy_changed", busy: true }]);
+    void managed.pi
+      .prompt(message)
+      .then((response) => {
+        if (!response.success) {
+          throw new Error(String(response.error ?? "unknown error"));
+        }
+      })
+      .catch((error: unknown) => {
+        if (findManaged(managed) !== managed) {
+          return;
+        }
+        emitManaged(managed, [
+          {
+            type: "notice",
+            text: `prompt failed: ${error instanceof Error ? error.message : String(error)}`,
+          },
+          { type: "busy_changed", busy: false },
+        ]);
+      });
   }
 
   function abort(session: LiveSession): void {
@@ -396,8 +409,33 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     if (!managed) {
       return;
     }
-    void managed.pi.abort().catch(() => {});
-    emitManaged(managed, [{ type: "notice", text: "aborted" }]);
+    void managed.pi
+      .abort()
+      .then((response) => {
+        if (findManaged(managed) !== managed) {
+          return;
+        }
+        if (!response.success) {
+          emitManaged(managed, [
+            { type: "notice", text: `abort failed: ${String(response.error ?? "unknown error")}` },
+          ]);
+          return;
+        }
+        emitManaged(managed, [
+          { type: "notice", text: "aborted" },
+          { type: "busy_changed", busy: false },
+        ]);
+      })
+      .catch((error: unknown) => {
+        if (findManaged(managed) === managed) {
+          emitManaged(managed, [
+            {
+              type: "notice",
+              text: `abort failed: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ]);
+        }
+      });
   }
 
   async function editMessage(

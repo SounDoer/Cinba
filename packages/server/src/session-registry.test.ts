@@ -13,6 +13,8 @@ class FakeTransport implements Transport {
   commands: Array<Record<string, unknown>> = [];
   entries: Array<Record<string, unknown>> = [];
   leafId: string | null = null;
+  model: { provider: string; id: string } | undefined = { provider: "test", id: "model-1" };
+  responses = new Map<string, { success: boolean; error?: unknown }>();
 
   send(line: string): void {
     const command = JSON.parse(line) as {
@@ -33,19 +35,21 @@ class FakeTransport implements Transport {
     const entries = sinceIndex >= 0 ? this.entries.slice(sinceIndex + 1) : this.entries;
     let data: unknown;
     if (command.type === "get_state") {
-      data = { sessionId: "session-1", model: { provider: "test", id: "model-1" } };
+      data = { sessionId: "session-1", ...(this.model ? { model: this.model } : {}) };
     } else if (command.type === "get_entries") {
       data = { entries, leafId: this.leafId };
     } else if (command.type === "get_available_models") {
       data = { models: [{ provider: "test", id: "model-2" }] };
     }
     queueMicrotask(() => {
+      const response = this.responses.get(command.type);
       this.#onLine(
         JSON.stringify({
           type: "response",
           command: command.type,
           id: command.id,
-          success: true,
+          success: response?.success ?? true,
+          ...(response?.error === undefined ? {} : { error: response.error }),
           data,
         }),
       );
@@ -213,6 +217,98 @@ test("public session commands hide the Pi transport from callers", async () => {
       ["prompt", "abort", "get_available_models", "set_model", "set_session_name"],
     );
     assert.equal(opened.model?.id, "model-2");
+  } finally {
+    registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("a refused prompt explains the failure and clears busy", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  const transport = new FakeTransport();
+  transport.responses.set("prompt", { success: false, error: "No model configured" });
+  const registry = createSessionRegistry({
+    defaultModel: () => undefined,
+    onActions: () => {},
+    onSnapshot: () => {},
+    launchPi: () => ({
+      pi: new PiClient(transport),
+      failed: new Promise<undefined>(() => {}),
+    }),
+  });
+
+  try {
+    const opened = await registry.open({ cwd });
+    assert(opened);
+    registry.prompt(opened, "hello");
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const snapshot = opened.ledger.snapshot();
+    assert.equal(snapshot.busy, false);
+    assert.deepEqual(snapshot.entries, [
+      { kind: "notice", text: "prompt failed: No model configured" },
+    ]);
+  } finally {
+    registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("a session without a model explains what is missing without becoming busy", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  const transport = new FakeTransport();
+  transport.model = undefined;
+  const registry = createSessionRegistry({
+    defaultModel: () => undefined,
+    onActions: () => {},
+    onSnapshot: () => {},
+    launchPi: () => ({
+      pi: new PiClient(transport),
+      failed: new Promise<undefined>(() => {}),
+    }),
+  });
+
+  try {
+    const opened = await registry.open({ cwd });
+    assert(opened);
+    transport.commands = [];
+    registry.prompt(opened, "hello");
+
+    const snapshot = opened.ledger.snapshot();
+    assert.equal(snapshot.busy, false);
+    assert.deepEqual(snapshot.entries, [
+      { kind: "notice", text: "No model configured. Add a provider key first." },
+    ]);
+    assert.deepEqual(transport.commands, []);
+  } finally {
+    registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("a successful abort clears busy even when Pi sends no settled event", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  const transport = new FakeTransport();
+  const registry = createSessionRegistry({
+    defaultModel: () => undefined,
+    onActions: () => {},
+    onSnapshot: () => {},
+    launchPi: () => ({
+      pi: new PiClient(transport),
+      failed: new Promise<undefined>(() => {}),
+    }),
+  });
+
+  try {
+    const opened = await registry.open({ cwd });
+    assert(opened);
+    registry.prompt(opened, "hello");
+    registry.abort(opened);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const snapshot = opened.ledger.snapshot();
+    assert.equal(snapshot.busy, false);
+    assert.deepEqual(snapshot.entries, [{ kind: "notice", text: "aborted" }]);
   } finally {
     registry.closeAll();
     rmSync(cwd, { recursive: true, force: true });
