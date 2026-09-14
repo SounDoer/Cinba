@@ -7,7 +7,7 @@ import { test } from "node:test";
 import type { ChildProcess } from "node:child_process";
 import type { CoreHealth } from "@cinba/core-client";
 import { createLocalCoreConfig } from "./config.ts";
-import { ensureLocalCore, stopLocalCore } from "./core-manager.ts";
+import { createCoreProcessEnvironment, ensureLocalCore, stopLocalCore } from "./core-manager.ts";
 
 const HEALTH: CoreHealth = { status: "ok", revision: "unknown", safeToRestart: true };
 
@@ -20,6 +20,16 @@ function fakeChild(pid: number): ChildProcess {
   });
   return child;
 }
+
+test("a Core spawned by Electron runs as Node", () => {
+  const environment = createCoreProcessEnvironment("secret", { PATH: "C:\\Windows" });
+
+  assert.equal(environment.ELECTRON_RUN_AS_NODE, "1");
+  assert.equal(environment.CINBA_CORE_LIFETIME, "on-demand");
+  assert.equal(environment.CINBA_LOCAL_CONTROL_TOKEN, "secret");
+  assert.equal(environment.CINBA_PORT, "4517");
+  assert.equal(environment.PATH, "C:\\Windows");
+});
 
 test("reuses a Core that is already healthy", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
