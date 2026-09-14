@@ -10,9 +10,9 @@ rather than hidden behind a framework.
 
 ## Current status
 
-Cinba is personal, experimental software. The local Windows workflow is usable today. The guarded
-VPS deployment machinery is implemented and tested locally, while the first real deployment with
-Tailscale, Caddy, and systemd is still in progress.
+Cinba is personal, experimental software. The local Windows workflow and the private VPS workflow
+are both usable today. The first real deployment through Tailscale, Caddy, and systemd has been
+completed and verified from an iPhone and the VPS terminal.
 
 Available now:
 
@@ -23,9 +23,10 @@ Available now:
 - an always-on permission gate for tool execution;
 - Core identity display and automatic Web reconnection;
 - development and production-style launchers;
-- guarded `master` to `prod` promotion and rollback-capable VPS deployment logic.
+- guarded `master` to `prod` promotion and rollback-capable VPS deployment logic;
+- Tailscale-only VPS access through Caddy HTTPS, with no public Cinba port.
 
-Cinba is not designed to be exposed directly to the public internet. The planned remote shape keeps
+Cinba is not designed to be exposed directly to the public internet. The deployed remote shape keeps
 the Core on loopback and places Tailscale access control and a Caddy HTTPS proxy in front of it.
 
 ## Requirements
@@ -220,9 +221,9 @@ they were made:
 
 The current sequence is:
 
-1. complete and verify the first VPS deployment through Tailscale and Caddy;
-2. adapt the Web interface for phones;
-3. consider a Core switcher only after two real Cores are in regular use;
+1. ~~complete and verify the first VPS deployment through Tailscale and Caddy~~ — completed;
+2. adapt the Web interface for phones — next;
+3. consider a Core switcher only after switching between two real Cores becomes a recurring need;
 4. continue UI and conversation-tree refinement.
 
 ## License

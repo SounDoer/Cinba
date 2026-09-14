@@ -1,7 +1,7 @@
 # 形态 C 第 3 步：VPS + Tailscale 远程接入设计
 
 日期：2026-09-12
-状态：实现中；本地部署机制已完成，VPS 现状、系统配置与首次部署仍待实操核对
+状态：已完成；2026-09-14 通过真实 VPS、Tailscale、Caddy、systemd、iPhone 与 TUI 验收
 前置：本机 Core + Web + TUI、多会话、模型切换、凭据管理、权限确认、消息编辑、
 Core 身份、正式／开发启动器与质量检查基线均已完成并完成人工回归
 
@@ -456,8 +456,9 @@ deployment-lock / locked-deployment  flock 单实例入口
 run-deployment / deployment-cli      完整流程编排与命令行入口
 ```
 
-这些模块已经通过本地单元测试和仓库完整质量检查，但尚未替代真实 VPS 验证。systemd unit、Caddy
-站点和 Tailscale Grant 仍必须根据机器现状生成并现场验证。
+这些模块先通过本地单元测试和仓库完整质量检查，随后已在真实 VPS 上完成首次 bootstrap、候选
+检查、原子切换、健康验证与失败 revision 隔离。systemd unit、Caddy 站点和 Tailscale Grant 均由
+现场盘点结果生成并验证；实际值只保留在 VPS 和 Tailscale 管理面，不写入公开仓库。
 
 ## 15. 健康与版本接口
 
@@ -477,7 +478,7 @@ GET /healthz
 }
 ```
 
-部署状态还需提供不含敏感信息的目标 revision、阶段与精简结果，让 `npm run promote` 和未来的
+部署状态同时提供不含敏感信息的目标 revision、阶段与精简结果，让 `npm run promote` 和未来的
 Release Skill 能区分“尚未发现”“正在构建”“等待 draining”“成功”“已回滚”和“失败”。完整
 命令输出只进入本机日志，不通过健康接口返回。
 
@@ -523,17 +524,20 @@ Git `HEAD`，校验为 40 位 commit 后再设置 `CINBA_REVISION`，避免部�
 最后一条不是取消这些能力。3b-2 现在建立 HTTPS，是为了让后续第 4 步可以在正确的基础上实现
 移动端与浏览器高级能力。
 
-## 17. 剩余工作与实操前确认
+## 17. 实操清单与完成情况
 
-1. VPS 的 Linux 发行版、Node.js、Git、Tailscale 与 Caddy 版本。
-2. 现有 Linux 用户、Caddyfile、站点、listener 和防火墙布局。
-3. Caddy 是否已有读取 Tailscale 证书的权限；若没有，按官方方式配置
+以下项目已于 2026-09-13 至 2026-09-14 逐项完成：
+
+1. 核对 VPS 的 Linux 发行版、Node.js、Git、Tailscale 与 Caddy 版本。
+2. 核对现有 Linux 用户、Caddyfile、站点、listener 和防火墙布局。
+3. 核对并按官方方式配置 Caddy 读取 Tailscale 证书的权限：
    `TS_PERMIT_CERT_UID=caddy`。
-4. VPS 的 Tailscale IP、MagicDNS 完整域名，以及机器名是否适合进入公开证书日志。
-5. tailnet 现有 Grants／ACL，避免新增规则与旧的宽泛规则叠加后意外放大权限。
-6. 在真实远程 HTTPS 入口复核 Origin 校验；本机正式模式、Vite 开发模式和无 Origin 客户端已有
-   自动测试。
-7. 编写并安装匹配真实 VPS 的 systemd user units，完成首次 bootstrap 与异常重启验证。
-8. 用真实 Caddy、Tailscale、HTTP、WebSocket、部署状态接口和自动回滚完成端到端部署演练。
+4. 核对 VPS 的 Tailscale IP、MagicDNS 完整域名，以及机器名进入公开证书日志的影响。
+5. 清理默认宽泛规则并建立精确 Tailscale Grant，避免规则叠加后放大权限。
+6. 在真实远程 HTTPS 入口复核 Origin、HTTP 与 WebSocket；本机正式模式、Vite 开发模式和无
+   Origin 客户端继续由自动测试覆盖。
+7. 编写并安装匹配真实 VPS 的 systemd user units，完成首次 bootstrap、定时拉取与异常重启验证。
+8. 验证 Caddy、Tailscale、健康接口、部署状态、候选检查失败隔离和后续成功切换。
 
-以上实操信息没有核实前，不编造 Caddyfile、systemd unit 或 Tailscale Grant 的最终内容。
+没有为了演示而故意制造一次线上 Core 启动失败；启动失败后的自动回滚继续由单元测试和 E2E
+覆盖。完整环境事实与产品验收结果见 `docs/notes/2026-09-13-vps-environment-audit.md`。
