@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { lstat, mkdir, readlink, symlink } from "node:fs/promises";
 import { posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +29,14 @@ export function userLauncherPaths(homeDirectory: string): LauncherPaths {
     commandPath: posix.join(home, ".local", "bin", "cinba"),
     targetPath: posix.join(home, "current", "packages", "deploy", "bin", "cinba"),
   };
+}
+
+export function isDirectExecution(
+  modulePath: string,
+  argumentPath: string,
+  canonicalize: (path: string) => string = realpathSync.native,
+): boolean {
+  return canonicalize(modulePath) === canonicalize(resolve(argumentPath));
 }
 
 const DEFAULT_DEPENDENCIES: InstallDependencies = {
@@ -85,7 +94,7 @@ async function main(): Promise<void> {
   console.log(`[launcher] ${result}: ${userLauncherPaths(home).commandPath}`);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+if (process.argv[1] && isDirectExecution(fileURLToPath(import.meta.url), process.argv[1])) {
   main().catch((error: unknown) => {
     console.error(`[launcher] ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;

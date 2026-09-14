@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { installUserLauncher, userLauncherPaths } from "./install-user-launcher.ts";
+import {
+  installUserLauncher,
+  isDirectExecution,
+  userLauncherPaths,
+} from "./install-user-launcher.ts";
 
 test("the VPS launcher enters the product CLI with its platform default", async () => {
   const launcherPath = fileURLToPath(new URL("../bin/cinba", import.meta.url));
@@ -20,6 +25,20 @@ test("launcher paths follow current instead of pinning one release", () => {
     commandPath: "/home/cinba/.local/bin/cinba",
     targetPath: "/home/cinba/current/packages/deploy/bin/cinba",
   });
+});
+
+test("installer entry follows current before deciding whether it is directly executed", () => {
+  const modulePath = resolve("releases/revision/packages/deploy/src/install-user-launcher.ts");
+  const argumentPath = resolve("current/packages/deploy/src/install-user-launcher.ts");
+  const canonicalPaths = new Map([
+    [modulePath, modulePath],
+    [argumentPath, modulePath],
+  ]);
+
+  assert.equal(
+    isDirectExecution(modulePath, argumentPath, (path) => canonicalPaths.get(path) ?? path),
+    true,
+  );
 });
 
 test("install creates the user bin directory and managed symlink", async () => {
