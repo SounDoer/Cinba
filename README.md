@@ -129,8 +129,8 @@ or opening Cinba through Desktop makes the shared Stable Core persistent so it r
 available until the user stops it. The controller reports stopped, running, draining, and external
 Core states; offers graceful start and stop controls; and can open the local Core log. Closing the
 window leaves both Desktop and Core available. `Quit Desktop` exits only the controller, while
-`Stop Core and Quit Desktop` drains the Core first. The legacy Windows-only `cinba tray` command
-and `cinba-tray.cmd` launcher remain available without opening a window initially.
+`Stop Core and Quit Desktop` drains the Core first. Double-click `cinba-desktop.cmd` on Windows or
+`cinba-desktop.command` on macOS for the same Desktop entry without typing a Terminal command.
 
 For command guidance and read-only environment diagnosis:
 

@@ -81,13 +81,11 @@ test("help aliases and doctor projects are parsed before the project shorthand",
   assert.match(formatHelp(), /cinba core <status\|start\|stop>/);
 });
 
-test("Desktop has a cross-platform entry and keeps the Windows tray alias", () => {
+test("Desktop has one cross-platform product entry", () => {
   assert.deepEqual(parseCinbaCommand(["desktop"], "example"), { type: "desktop" });
-  assert.deepEqual(parseCinbaCommand(["tray"], "example"), { type: "tray" });
   assert.match(formatHelp(), /cinba desktop/);
   assert.match(formatHelp(), /Windows or macOS Desktop controller/);
-  assert.match(formatHelp(), /cinba tray/);
-  assert.match(formatHelp(), /legacy Windows tray-only entry/);
+  assert.doesNotMatch(formatHelp(), /cinba tray/);
 });
 
 test("Core status is concise but includes management details when available", () => {

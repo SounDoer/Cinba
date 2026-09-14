@@ -6,16 +6,13 @@ import { type SystemTrayController, createSystemTrayController } from "./tray.ts
 import { createDesktopWindowController } from "./window.ts";
 
 let tray: SystemTrayController | undefined;
-let openWhenReady = !process.argv.includes("--tray-only");
+let openWhenReady = true;
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   app.quit();
 } else {
-  app.on("second-instance", (_event, arguments_) => {
-    if (arguments_.includes("--tray-only")) {
-      return;
-    }
+  app.on("second-instance", () => {
     openWhenReady = true;
     void tray?.openWindow();
   });

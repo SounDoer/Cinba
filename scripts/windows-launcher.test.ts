@@ -42,13 +42,13 @@ test(
 );
 
 test(
-  "the tray batch launcher enters the product CLI",
+  "the Windows double-click launcher enters the Desktop product command",
   { skip: process.platform !== "win32" },
   () => {
     const temporary = mkdtempSync(join(tmpdir(), "cinba-cmd-"));
     const fakeBin = join(temporary, "fake bin");
     const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-    const launcher = join(repositoryRoot, "cinba-tray.cmd");
+    const launcher = join(repositoryRoot, "cinba-desktop.cmd");
     try {
       mkdirSync(fakeBin);
       writeFileSync(
@@ -65,7 +65,7 @@ test(
 
       assert.equal(result.status, 0, result.stderr);
       assert.match(result.stdout, /ARG1=\[.*scripts\\cinba\.ts\]/i);
-      assert.match(result.stdout, /ARG2=\[tray\]/i);
+      assert.match(result.stdout, /ARG2=\[desktop\]/i);
       assert.doesNotMatch(result.stdout, /npm <command>/i);
     } finally {
       rmSync(temporary, { recursive: true, force: true });

@@ -62,8 +62,8 @@ core-manager 启动进程时记录真实 lifetime；本机 token 控制面同时
 
 ```text
 cinba desktop  → Windows/macOS，启动 Desktop 并打开窗口
-cinba tray     → 保留 Windows 兼容入口，启动控制器但不打开窗口
 npm run desktop → 开发仓库中的 Desktop 入口
+cinba-desktop.cmd / cinba-desktop.command → Windows/macOS 双击入口
 ```
 
 macOS 在应用就绪后隐藏 Dock 图标，以 Menu Bar 为主要入口。Electron 官方建议 macOS Tray 使用

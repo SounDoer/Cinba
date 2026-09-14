@@ -16,11 +16,12 @@
 产品入口新增：
 
 ```text
-cinba tray
+cinba desktop
 ```
 
 该命令先构建 Web UI，再确保托盘进程存在；它不自动启动 Core，也不自动打开窗口。根目录的
-`cinba-tray.cmd` 提供同一入口的双击方式。直接运行 Desktop 时继续打开窗口；点击托盘中的
+第一阶段的 `cinba-tray.cmd` 曾提供同一入口的双击方式；跨平台 Desktop 完成后已统一改名为
+`cinba-desktop.cmd`。直接运行 Desktop 时继续打开窗口；点击托盘中的
 `Open Cinba` 时调用 `ensureLocalCore()` 后创建窗口。
 
 ## 2. 职责与状态
@@ -56,7 +57,7 @@ starting 与 stopping 是托盘自身操作的短暂状态，不进入共享协�
 - `Quit Tray` 只退出托盘，不强制停止 Core；Core 自己完成空闲退出。
 - `Stop Core Gracefully` 只调用 `stopLocalCore()`，不按 PID 强杀。
 
-Electron 使用单实例锁。重复执行 `cinba tray` 是幂等操作；直接再次启动 Desktop 时让已有实例打开并
+Electron 使用单实例锁。重复执行 `cinba desktop` 是幂等操作；再次启动 Desktop 时让已有实例打开并
 聚焦窗口。
 
 ## 4. 第一版菜单
@@ -87,7 +88,7 @@ HTTP 健康检查，不建立 WebSocket，因此不会影响 Core 的客户端�
 
 ## 6. 验收
 
-- `cinba tray` 启动后命令行立即返回，且只存在一个托盘实例。
+- `cinba desktop` 启动后命令行立即返回，且只存在一个 Desktop 实例。
 - Core 未运行时显示 stopped，并可从菜单启动。
 - managed Core 显示 PID、客户端数，可 graceful stop。
 - external Core 可识别但不可停止。
