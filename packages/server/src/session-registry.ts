@@ -83,6 +83,7 @@ export type SessionRegistryOptions = {
   defaultModel: () => ModelRef | undefined;
   onActions: (sessionId: string, actions: ViewAction[]) => void;
   onSnapshot: (sessionId: string, snapshot: ServerMessage) => void;
+  onUnexpectedClose?: (session: LiveSession, error: Error) => void;
   hasViewers?: (sessionId: string) => boolean;
   launchPi?: (options: OpenSessionOptions) => PiLaunch;
   flushIntervalMs?: number;
@@ -97,8 +98,21 @@ function launchPiProcess(options: OpenSessionOptions): PiLaunch {
     sessionPath: options.sessionPath,
   });
 
+  let stderrTail = "";
   child.stderr?.setEncoding("utf8");
-  child.stderr?.on("data", (chunk: string) => console.error("[pi]", chunk.trimEnd()));
+  child.stderr?.on("data", (chunk: string) => {
+    stderrTail = `${stderrTail}${chunk}`.slice(-4_096);
+    console.error("[pi]", chunk.trimEnd());
+  });
+  child.once("close", (code, signal) => {
+    if (code === 0 || signal) {
+      return;
+    }
+    const detail = stderrTail.trim();
+    console.error(
+      `[cinba] Pi exited with code ${code ?? "unknown"} in ${options.cwd}${detail ? `; stderr tail:\n${detail}` : "; stderr was empty"}`,
+    );
+  });
 
   const failed = new Promise<undefined>((resolve) => {
     child.on("error", (error: Error) => {
@@ -339,7 +353,18 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
       session.ledger.apply(action);
     }
     live.set(session.id, session);
-    return session;
+    launch.pi.onClose((error) => {
+      if (!error || live.get(session.id) !== session) {
+        return;
+      }
+      if (session.flushTimer) {
+        clearTimeout(session.flushTimer);
+      }
+      denyAllConfirmations(session);
+      live.delete(session.id);
+      options.onUnexpectedClose?.(session, error);
+    });
+    return live.get(session.id) === session ? session : undefined;
   }
 
   function stop(id: string): void {

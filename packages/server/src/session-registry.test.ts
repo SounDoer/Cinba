@@ -68,6 +68,10 @@ class FakeTransport implements Transport {
     this.#onLine(JSON.stringify(event));
   }
 
+  fail(error: Error): void {
+    this.#onClose(error);
+  }
+
   async close(): Promise<void> {
     this.closed = true;
     this.#onClose();
@@ -98,6 +102,64 @@ test("open owns a live session and stop releases its Pi", async () => {
     assert.equal(registry.size, 0);
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(transport.closed, true);
+  } finally {
+    registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("an unexpectedly closed Pi is no longer returned as a live session", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  const transport = new FakeTransport();
+  const registry = createSessionRegistry({
+    defaultModel: () => undefined,
+    onActions: () => {},
+    onSnapshot: () => {},
+    launchPi: () => ({
+      pi: new PiClient(transport),
+      failed: new Promise<undefined>(() => {}),
+    }),
+  });
+
+  try {
+    const opened = await registry.open({ cwd });
+    assert(opened);
+
+    transport.fail(new Error("Pi process exited with code 1"));
+
+    assert.equal(registry.get(opened.id), undefined);
+    assert.equal(registry.size, 0);
+  } finally {
+    registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("an unexpectedly closed Pi reports the released session to its owner", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  const transport = new FakeTransport();
+  const failures: Array<{ sessionId: string; message: string }> = [];
+  const registry = createSessionRegistry({
+    defaultModel: () => undefined,
+    onActions: () => {},
+    onSnapshot: () => {},
+    onUnexpectedClose: (session, error) => {
+      failures.push({ sessionId: session.id, message: error.message });
+    },
+    launchPi: () => ({
+      pi: new PiClient(transport),
+      failed: new Promise<undefined>(() => {}),
+    }),
+  });
+
+  try {
+    await registry.open({ cwd });
+
+    transport.fail(new Error("Pi process exited with code 1"));
+
+    assert.deepEqual(failures, [
+      { sessionId: "session-1", message: "Pi process exited with code 1" },
+    ]);
   } finally {
     registry.closeAll();
     rmSync(cwd, { recursive: true, force: true });

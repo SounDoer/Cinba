@@ -14,6 +14,7 @@ export type CoreOptions = {
 export type SpawnPlan = {
   args: string[];
   env: Record<string, string | undefined>;
+  windowsHide: true;
 };
 
 const DEFAULT_PROVIDER = "deepseek";
@@ -43,6 +44,7 @@ export function buildSpawnPlan(
     args,
     // Electron's executable must behave as Node when it runs Pi's JS entrypoint.
     env: { ...baseEnv, ELECTRON_RUN_AS_NODE: "1" },
+    windowsHide: true,
   };
 }
 
@@ -60,5 +62,6 @@ export function startPi(options: CoreOptions = {}): ChildProcess {
     cwd: options.cwd ?? process.cwd(),
     stdio: ["pipe", "pipe", "pipe"],
     env: plan.env,
+    windowsHide: plan.windowsHide,
   });
 }

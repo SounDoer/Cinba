@@ -72,6 +72,7 @@ const viewing = new Map<WebSocket, string>();
 const clients = new Set<WebSocket>();
 let drain: DrainController | undefined;
 let serviceIdleSince = CORE_LIFETIME === "on-demand" ? Date.now() : undefined;
+const recoveries = new Map<string, Promise<LiveSession | undefined>>();
 
 // ---- Sending ----
 
@@ -97,16 +98,22 @@ const sessions = createSessionRegistry({
     drain?.check();
   },
   onSnapshot: toViewers,
+  onUnexpectedClose: (session, error) => {
+    void recoverUnexpectedClose(session, error);
+  },
 });
 
 const credentials = createCredentialService({ onChanged: markCredentialsStale });
 
 function safeToRestart(): boolean {
-  return isSafeToRestart(
-    sessions.values().map((session) => ({
-      busy: session.ledger.snapshot().busy,
-      awaitingConfirmation: session.pendingConfirms.size > 0,
-    })),
+  return (
+    recoveries.size === 0 &&
+    isSafeToRestart(
+      sessions.values().map((session) => ({
+        busy: session.ledger.snapshot().busy,
+        awaitingConfirmation: session.pendingConfirms.size > 0,
+      })),
+    )
   );
 }
 
@@ -165,6 +172,10 @@ async function resolveDefaultSession(): Promise<LiveSession | undefined> {
     if (existing) {
       return existing;
     }
+    const recovering = recoveries.get(lastSessionId);
+    if (recovering) {
+      return await recovering;
+    }
     const stored = await findSession(lastSessionId);
     if (stored) {
       return await sessions.open({ sessionPath: stored.path, cwd: stored.cwd || cwd });
@@ -184,6 +195,73 @@ async function resolveDefaultSession(): Promise<LiveSession | undefined> {
   }
 
   return await sessions.open({ cwd });
+}
+
+async function recoverUnexpectedClose(session: LiveSession, error: Error): Promise<void> {
+  console.error(`[cinba] Pi stopped unexpectedly for ${session.id}: ${error.message}`);
+  toViewers(session.id, {
+    type: "actions",
+    actions: [
+      { type: "busy_changed", busy: false },
+      { type: "notice", text: "Pi stopped unexpectedly; restarting the conversation..." },
+    ],
+  });
+
+  if (
+    drain?.draining ||
+    ![...viewing.values()].includes(session.id) ||
+    recoveries.has(session.id)
+  ) {
+    return;
+  }
+
+  const recovery = (async () => {
+    const stored = await findSession(session.id);
+    return stored
+      ? await sessions.open({
+          sessionPath: stored.path,
+          cwd: stored.cwd || session.cwd,
+          model: session.model,
+        })
+      : await sessions.open({ cwd: session.cwd, model: session.model });
+  })();
+  recoveries.set(session.id, recovery);
+
+  try {
+    const reopened = await recovery;
+    const watchers = [...viewing.entries()]
+      .filter(([, id]) => id === session.id)
+      .map(([socket]) => socket);
+    if (!reopened) {
+      for (const socket of watchers) {
+        sendTo(socket, {
+          type: "actions",
+          actions: [{ type: "notice", text: "Pi could not restart. Reopen the conversation." }],
+        });
+      }
+      return;
+    }
+    if (watchers.length === 0) {
+      sessions.stop(reopened.id);
+      return;
+    }
+    for (const socket of watchers) {
+      show(socket, reopened);
+    }
+    sessions.emit(reopened, [{ type: "notice", text: "Pi restarted. Retry the last message." }]);
+  } catch (recoveryError) {
+    console.error(
+      `[cinba] could not restart ${session.id}:`,
+      recoveryError instanceof Error ? recoveryError.message : String(recoveryError),
+    );
+    toViewers(session.id, {
+      type: "actions",
+      actions: [{ type: "notice", text: "Pi could not restart. Reopen the conversation." }],
+    });
+  } finally {
+    recoveries.delete(session.id);
+    drain?.check();
+  }
 }
 
 /** Point a client at a conversation and hand it the full picture. */
@@ -458,6 +536,14 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
       const already = sessions.get(message.sessionId);
       if (already) {
         show(socket, already);
+        return;
+      }
+      const recovering = recoveries.get(message.sessionId);
+      if (recovering) {
+        const reopened = await recovering;
+        if (reopened && viewing.get(socket) !== reopened.id) {
+          show(socket, reopened);
+        }
         return;
       }
       const stored = await findSession(message.sessionId);

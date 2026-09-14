@@ -53,6 +53,12 @@ test("the environment must carry ELECTRON_RUN_AS_NODE", () => {
   assert.equal(plan.env.PATH, "/usr/bin", "the existing environment must be preserved");
 });
 
+test("Pi never opens its own Windows terminal window", () => {
+  const plan = buildSpawnPlan("/entry.js", GATE, {}, {});
+
+  assert.equal(plan.windowsHide, true);
+});
+
 test("a session path is passed through so a stored conversation can be resumed", () => {
   const plan = buildSpawnPlan("entry.js", "gate.ts", {
     sessionPath: "C:/sessions/a.jsonl",

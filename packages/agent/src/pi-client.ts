@@ -43,9 +43,12 @@ export class PiClient {
     }
   >();
   #eventListeners: Array<(event: CoreEvent) => void> = [];
+  #closeListeners: Array<(error?: Error) => void> = [];
   #uiHandler: UiRequestHandler | undefined;
   #nextId = 0;
   #closedError: Error | undefined;
+  #closed = false;
+  #transportCloseError: Error | undefined;
   #requestTimeoutMs: number;
 
   constructor(transport: Transport, requestTimeoutMs = 30_000) {
@@ -53,7 +56,13 @@ export class PiClient {
     this.#requestTimeoutMs = requestTimeoutMs;
     this.#transport.onLine((line) => this.#handleLine(line));
     this.#transport.onClose((error) => {
+      this.#closed = true;
+      this.#transportCloseError = error;
       this.#failPending(error ?? new Error("Pi transport closed"));
+      for (const listener of this.#closeListeners) {
+        listener(error);
+      }
+      this.#closeListeners = [];
     });
   }
 
@@ -64,6 +73,21 @@ export class PiClient {
       const index = this.#eventListeners.indexOf(listener);
       if (index >= 0) {
         this.#eventListeners.splice(index, 1);
+      }
+    };
+  }
+
+  /** Subscribe to transport loss. Late subscribers are notified immediately. */
+  onClose(listener: (error?: Error) => void): () => void {
+    if (this.#closed) {
+      listener(this.#transportCloseError);
+      return () => {};
+    }
+    this.#closeListeners.push(listener);
+    return () => {
+      const index = this.#closeListeners.indexOf(listener);
+      if (index >= 0) {
+        this.#closeListeners.splice(index, 1);
       }
     };
   }
