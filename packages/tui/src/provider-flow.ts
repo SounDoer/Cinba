@@ -10,6 +10,9 @@ import { BOLD, DIM, GREEN, MAGENTA, RESET, SELECT_THEME, YELLOW } from "./theme.
 
 type ProviderIntent = "list" | "login" | "logout";
 
+const BRACKETED_PASTE_START = "\x1b[200~";
+const BRACKETED_PASTE_END = "\x1b[201~";
+
 export type ProviderClient = {
   listProviders(): boolean;
   setApiKey(providerId: string, apiKey: string): boolean;
@@ -86,6 +89,7 @@ class ProviderPicker implements Component {
 class ApiKeyInput implements Component, Focusable {
   #value = "";
   #providerId: string;
+  #receivingPaste = false;
   focused = false;
   onAnswer?: (apiKey: string | undefined) => void;
 
@@ -94,6 +98,29 @@ class ApiKeyInput implements Component, Focusable {
   }
 
   handleInput(data: string): void {
+    if (this.#receivingPaste) {
+      const end = data.indexOf(BRACKETED_PASTE_END);
+      if (end === -1) {
+        this.#appendPrintable(data);
+        return;
+      }
+      this.#appendPrintable(data.slice(0, end));
+      this.#receivingPaste = false;
+      const remaining = data.slice(end + BRACKETED_PASTE_END.length);
+      if (remaining !== "") {
+        this.handleInput(remaining);
+      }
+      return;
+    }
+
+    const pasteStart = data.indexOf(BRACKETED_PASTE_START);
+    if (pasteStart !== -1) {
+      this.#appendPrintable(data.slice(0, pasteStart));
+      this.#receivingPaste = true;
+      this.handleInput(data.slice(pasteStart + BRACKETED_PASTE_START.length));
+      return;
+    }
+
     if (matchesKey(data, "escape")) {
       this.onAnswer?.(undefined);
       return;
@@ -109,6 +136,12 @@ class ApiKeyInput implements Component, Focusable {
     if (data.length > 0 && !data.startsWith("\x1b") && data >= " ") {
       this.#value += data;
     }
+  }
+
+  #appendPrintable(data: string): void {
+    this.#value += [...data]
+      .filter((character) => character >= " " && character !== "\x7f")
+      .join("");
   }
 
   invalidate(): void {}

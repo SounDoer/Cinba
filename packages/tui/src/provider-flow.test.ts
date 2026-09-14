@@ -99,6 +99,20 @@ test("login owns provider selection and secret collection", () => {
   assert.equal(state.promptCount, 2);
 });
 
+test("login accepts a bracketed terminal paste without storing its control sequences", () => {
+  const state = setup();
+  state.flow.login();
+  state.flow.onListing([{ id: "deepseek", name: "DeepSeek", configured: false }]);
+  send(state.interaction, "\r");
+
+  send(state.interaction, "\x1b[200~  pasted-key  \x1b[201~");
+  assert.match(state.interaction?.render(80).join("\n") ?? "", /> \*+/);
+  assert.doesNotMatch(state.interaction?.render(80).join("\n") ?? "", /pasted-key/);
+  send(state.interaction, "\r");
+
+  assert.deepEqual(state.calls.set, [["deepseek", "pasted-key"]]);
+});
+
 test("logout only offers configured providers", () => {
   const state = setup();
   state.flow.logout();
