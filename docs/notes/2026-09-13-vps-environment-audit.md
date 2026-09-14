@@ -150,3 +150,12 @@ iPhone Safari
 
 尚待产品级验收的是：在 VPS 配置一个真实 provider 后发送消息，并从远程页面完成一次权限确认。
 这需要用户自行提供凭据，因此不属于基础设施 bootstrap，也不会把任何凭据写入本文或 Git。
+
+## 11. 候选检查失败保护实测
+
+一次后续发布在候选 release 的 `test:e2e` 阶段遇到 Pi 子进程启动超时。部署器将目标记为
+`failure: checks` 并隔离该 revision；`current`、运行中的 Core 和上一成功 release 均未改变。
+
+同一 revision 随后在同一台 VPS 的隔离 worktree 中单独重跑 5 个 E2E，全部通过，失败项恢复为
+亚秒级完成，因此没有根据一次瞬时抖动放宽超时或跳过门禁。诊断 worktree 已在核对路径与 revision
+后移除。下一次普通向前提交会提供新的部署目标，失败 revision 本身仍不被 timer 重复尝试。
