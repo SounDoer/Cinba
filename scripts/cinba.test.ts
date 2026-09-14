@@ -81,6 +81,12 @@ test("help aliases and doctor projects are parsed before the project shorthand",
   assert.match(formatHelp(), /cinba core <status\|start\|stop>/);
 });
 
+test("the tray command has a dedicated product entry", () => {
+  assert.deepEqual(parseCinbaCommand(["tray"], "example"), { type: "tray" });
+  assert.match(formatHelp(), /cinba tray/);
+  assert.match(formatHelp(), /Windows system tray controller/);
+});
+
 test("Core status is concise but includes management details when available", () => {
   assert.equal(
     formatCoreStatus({ state: "stopped", running: false, managed: false }),

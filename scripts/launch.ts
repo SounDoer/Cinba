@@ -4,6 +4,7 @@
 //   node scripts/launch.ts start
 //   node scripts/launch.ts dev
 //   node scripts/launch.ts tui [working-directory]
+//   node scripts/launch.ts tray
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { connect } from "node:net";
@@ -15,7 +16,9 @@ const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const CORE_ENTRY = join(REPOSITORY_ROOT, "packages", "server", "src", "index.ts");
 const TUI_ENTRY = join(REPOSITORY_ROOT, "packages", "tui", "src", "index.ts");
 const WEB_ROOT = join(REPOSITORY_ROOT, "packages", "web");
+const DESKTOP_ROOT = join(REPOSITORY_ROOT, "packages", "desktop");
 const VITE_ENTRY = join(REPOSITORY_ROOT, "node_modules", "vite", "bin", "vite.js");
+const ELECTRON_CLI = join(REPOSITORY_ROOT, "node_modules", "electron", "cli.js");
 
 const CORE_PORT = 4517;
 const WEB_PORT = 5173;
@@ -23,7 +26,7 @@ const CORE_URL = `http://127.0.0.1:${CORE_PORT}/`;
 const DEV_URL = `http://127.0.0.1:${WEB_PORT}/`;
 const READY_TIMEOUT_MS = 30_000;
 
-type Mode = "start" | "dev" | "tui";
+type Mode = "start" | "dev" | "tui" | "tray";
 
 const children = new Set<ChildProcess>();
 let stopping = false;
@@ -220,11 +223,30 @@ export async function launchTui(workingDirectory: string | undefined): Promise<v
   });
 }
 
+export async function launchTray(): Promise<void> {
+  if (process.platform !== "win32") {
+    throw new Error("the Cinba system tray is available only on Windows");
+  }
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(process.execPath, [ELECTRON_CLI, DESKTOP_ROOT, "--tray-only"], {
+      cwd: REPOSITORY_ROOT,
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    child.once("error", reject);
+    child.once("spawn", () => {
+      child.unref();
+      resolve();
+    });
+  });
+}
+
 function readMode(value: string | undefined): Mode {
-  if (value === "start" || value === "dev" || value === "tui") {
+  if (value === "start" || value === "dev" || value === "tui" || value === "tray") {
     return value;
   }
-  throw new Error("usage: node scripts/launch.ts <start|dev|tui> [working-directory]");
+  throw new Error("usage: node scripts/launch.ts <start|dev|tui|tray> [working-directory]");
 }
 
 async function main(): Promise<void> {
@@ -238,6 +260,9 @@ async function main(): Promise<void> {
   }
   if (mode === "tui") {
     await launchTui(process.argv[3]);
+  }
+  if (mode === "tray") {
+    await launchTray();
   }
 }
 

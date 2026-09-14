@@ -22,6 +22,7 @@ Available now:
 - streamed text, reasoning, tool cards, token usage, and cost;
 - an always-on permission gate for tool execution;
 - Core identity display and automatic Web reconnection;
+- a Windows system tray for local Core status and controls;
 - development and production-style launchers;
 - guarded `master` to `prod` promotion and rollback-capable VPS deployment logic;
 - Tailscale-only VPS access through Caddy HTTPS, with no public Cinba port.
@@ -112,6 +113,18 @@ control channel and existing drain behavior; it never kills a PID directly. A Co
 the manager, such as the foreground development Core, is reported as `external` and is not stopped
 by this command.
 
+On Windows, the same manager is available from a system tray controller:
+
+```powershell
+cinba tray
+```
+
+The command returns after starting one background tray instance. It does not start the Core until
+you choose `Start Core` or `Open Cinba`. The tray reports stopped, running, draining, and external
+Core states; offers graceful start and stop controls; and can open the local Core log. Closing the
+Desktop window releases its Core connection while leaving the tray available. `Quit Tray` exits
+only the controller, so the Core keeps its existing safe idle-shutdown behavior.
+
 For command guidance and read-only environment diagnosis:
 
 ```powershell
@@ -180,7 +193,7 @@ master ──► prod ──► deploy ──► releases/current ──► syst
 | `@cinba/extensions` | Pi extensions, including the mandatory permission gate |
 | `@cinba/web` | React Web interface |
 | `@cinba/tui` | Terminal interface built with `pi-tui` |
-| `@cinba/desktop` | Electron host for the shared Web interface |
+| `@cinba/desktop` | Electron host and Windows tray controller for the shared Web interface |
 | `@cinba/deploy` | Safe release preparation, activation, verification, and rollback |
 
 Runtime configuration and Pi data live outside the repository in `~/.cinba` and `~/.pi`. A release
