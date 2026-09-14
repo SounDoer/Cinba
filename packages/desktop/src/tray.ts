@@ -26,6 +26,44 @@ export type SystemTrayController = {
   dispose(): void;
 };
 
+const ICON_COLORS: Record<TrayIconTone, readonly [red: number, green: number, blue: number]> = {
+  stopped: [125, 133, 144],
+  running: [45, 164, 78],
+  busy: [191, 135, 0],
+  error: [207, 34, 46],
+};
+
+/** Build a Windows BGRA bitmap: a status-coloured disc with a white C. */
+export function createTrayBitmap(tone: TrayIconTone, size = 16): Buffer {
+  const bitmap = Buffer.alloc(size * size * 4);
+  const center = size / 2;
+  const outerRadius = size * 0.47;
+  const letterOuterRadius = size * 0.3;
+  const letterInnerRadius = size * 0.18;
+  const [red, green, blue] = ICON_COLORS[tone];
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const distance = Math.hypot(x + 0.5 - center, y + 0.5 - center);
+      if (distance > outerRadius) {
+        continue;
+      }
+
+      const offset = (y * size + x) * 4;
+      const isLetter =
+        distance >= letterInnerRadius &&
+        distance <= letterOuterRadius &&
+        !(x + 0.5 > center && Math.abs(y + 0.5 - center) < size * 0.15);
+      bitmap[offset] = isLetter ? 255 : blue;
+      bitmap[offset + 1] = isLetter ? 255 : green;
+      bitmap[offset + 2] = isLetter ? 255 : red;
+      bitmap[offset + 3] = 255;
+    }
+  }
+
+  return bitmap;
+}
+
 export function createTrayViewModel(
   status: LocalCoreStatus,
   operation?: TrayOperation,
@@ -105,16 +143,15 @@ export async function createSystemTrayController(options: {
   let refreshInFlight = false;
 
   function createTrayIcon(tone: TrayIconTone) {
-    const colors: Record<TrayIconTone, string> = {
-      stopped: "#7d8590",
-      running: "#2da44e",
-      busy: "#bf8700",
-      error: "#cf222e",
-    };
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="8" fill="${colors[tone]}"/><path d="M11.9 5.7a4.4 4.4 0 1 0 0 6.6" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>`;
-    return nativeImage.createFromDataURL(
-      `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
-    );
+    const icon = nativeImage.createFromBitmap(createTrayBitmap(tone), {
+      width: 16,
+      height: 16,
+      scaleFactor: 1,
+    });
+    if (icon.isEmpty()) {
+      throw new Error("Failed to create the Cinba tray icon bitmap");
+    }
+    return icon;
   }
 
   const tray = new Tray(createTrayIcon("stopped"));

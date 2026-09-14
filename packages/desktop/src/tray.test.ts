@@ -1,6 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createTrayViewModel } from "./tray.ts";
+import { createTrayBitmap, createTrayViewModel } from "./tray.ts";
+
+test("tray icons are non-empty BGRA bitmaps with transparent corners", () => {
+  for (const tone of ["stopped", "running", "busy", "error"] as const) {
+    const bitmap = createTrayBitmap(tone);
+    assert.equal(bitmap.length, 16 * 16 * 4);
+    assert.equal(bitmap[3], 0);
+    assert.ok(
+      Array.from({ length: 16 * 16 }, (_, index) => bitmap[index * 4 + 3]).some(
+        (alpha) => alpha === 255,
+      ),
+    );
+  }
+});
 
 test("a stopped Core can be started", () => {
   assert.deepEqual(createTrayViewModel({ state: "stopped", running: false, managed: false }), {
