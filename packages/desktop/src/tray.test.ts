@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createTrayViewModel } from "./tray-state.ts";
+import { createTrayViewModel } from "./tray.ts";
 
 test("a stopped Core can be started", () => {
   assert.deepEqual(createTrayViewModel({ state: "stopped", running: false, managed: false }), {

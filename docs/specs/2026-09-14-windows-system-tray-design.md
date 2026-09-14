@@ -20,12 +20,14 @@ cinba tray
 
 ## 2. 职责与状态
 
-托盘位于现有 `@cinba/desktop` Electron 主进程中，所有 Core 操作继续经过
-`@cinba/core-manager`：
+托盘位于现有 `@cinba/desktop`，所有 Core 操作继续经过 `@cinba/core-manager`。Desktop 原生层按
+职责拆成三个模块：`main.ts` 只负责 Electron 启动与单实例，`tray.ts` 负责托盘和 Core 控制，
+`window.ts` 负责 BrowserWindow 的创建、聚焦和销毁：
 
 ```text
-cinba tray ──► Electron tray ──► @cinba/core-manager ──► @cinba/core-client ──► Core
-                              └─► BrowserWindow ───────────────────────────────► Web UI
+main.ts ──► tray.ts ──► @cinba/core-manager ──► @cinba/core-client ──► Core
+   │          │
+   └──────────┴──────► window.ts ──► BrowserWindow ─────────────────► Web UI
 ```
 
 托盘定期调用 `inspectLocalCore()`，映射下列状态：
