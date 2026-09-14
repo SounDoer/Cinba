@@ -1,5 +1,7 @@
 # CLI help 与只读诊断
 
+状态：已实施并通过真实命令验证；完整仓库检查见对应提交记录
+
 ## 目标
 
 在统一产品入口 `scripts/cinba.ts` 增加两项基础能力：
@@ -33,3 +35,9 @@
 - push 前运行完整 `npm run check`。
 
 本次不改变 Core 生命周期，不安装依赖，不部署 VPS，也不修改 prod、Caddy 或 Tailscale。
+
+## 实施结果
+
+`scripts/cinba.ts` 已支持 `help`、`--help`、`-h` 与 `doctor [project]`。诊断逻辑位于
+`scripts/doctor.ts`，本机 stopped Core 返回 `INFO` 且整体 ready；真实缺失项目返回 `FAIL` 和退出码
+1。Windows 全局 npm shim 已验证能直接使用这两个命令。

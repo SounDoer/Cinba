@@ -111,6 +111,19 @@ control channel and existing drain behavior; it never kills a PID directly. A Co
 the manager, such as the foreground development Core, is reported as `external` and is not stopped
 by this command.
 
+For command guidance and read-only environment diagnosis:
+
+```powershell
+cinba help
+cinba doctor
+cinba doctor C:\path\to\project
+```
+
+`doctor` checks the Node.js runtime, linked checkout, project directory, and effective Core. A
+stopped local Core is informational because clients start it on demand. A missing project,
+unsupported runtime, incomplete checkout, or unreachable Core selected through `CINBA_SERVER`
+produces a failed result and a non-zero exit code; the command never attempts a repair.
+
 ### VPS terminal command
 
 The deployed Linux release includes a small `cinba` command for the service user. Install it once
@@ -132,7 +145,8 @@ cinba
 
 For the `cinba` user, the command always uses `/home/cinba/.local/node/bin/node`, loads the TUI from
 `/home/cinba/current`, and defaults the project to `/home/cinba/Cinba`. An optional first argument
-selects another project directory.
+in the form `cinba /path/to/project` selects another project directory. Product subcommands such as
+`cinba help` and `cinba doctor` go through the same entry.
 
 ## Architecture
 
