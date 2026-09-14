@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import test from "node:test";
-import { formatCoreStatus, isDirectExecution, parseCinbaCommand, runCoreCommand } from "./cinba.ts";
+import {
+  formatCoreStatus,
+  formatHelp,
+  isDirectExecution,
+  parseCinbaCommand,
+  runCoreCommand,
+} from "./cinba.ts";
 
 test("the npm junction path is recognized as direct command execution", () => {
   const paths = new Map([
@@ -52,11 +58,27 @@ test("Core subcommands are parsed independently of TUI commands", () => {
     action: "stop",
   });
   assert.throws(() => parseCinbaCommand(["core"], "example"), {
-    message: "usage: cinba [tui] [project] | cinba core <status|start|stop>",
+    message: "run 'cinba help' for usage",
   });
   assert.throws(() => parseCinbaCommand(["tui", "one", "two"], "example"), {
-    message: "usage: cinba [tui] [project] | cinba core <status|start|stop>",
+    message: "run 'cinba help' for usage",
   });
+});
+
+test("help aliases and doctor projects are parsed before the project shorthand", () => {
+  for (const argument of ["help", "--help", "-h"]) {
+    assert.deepEqual(parseCinbaCommand([argument], "example"), { type: "help" });
+  }
+  assert.deepEqual(parseCinbaCommand(["doctor"], "example"), {
+    type: "doctor",
+    workingDirectory: resolve("example"),
+  });
+  assert.deepEqual(parseCinbaCommand(["doctor", "other"], "example"), {
+    type: "doctor",
+    workingDirectory: resolve("other"),
+  });
+  assert.match(formatHelp(), /cinba doctor \[project\]/);
+  assert.match(formatHelp(), /cinba core <status\|start\|stop>/);
 });
 
 test("Core status is concise but includes management details when available", () => {

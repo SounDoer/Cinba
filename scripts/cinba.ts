@@ -10,15 +10,53 @@ import {
   stopLocalCore,
 } from "@cinba/core-manager";
 import { launchTui } from "./launch.ts";
+import { formatDoctorReport, runDoctor } from "./doctor.ts";
 
 const COMMAND_PATH = fileURLToPath(import.meta.url);
 
 export type CinbaCommand =
-  { type: "tui"; workingDirectory: string } | { type: "core"; action: "status" | "start" | "stop" };
+  | { type: "tui"; workingDirectory: string }
+  | { type: "core"; action: "status" | "start" | "stop" }
+  | { type: "doctor"; workingDirectory: string }
+  | { type: "help" };
+
+const HELP = `Cinba
+
+Usage:
+  cinba [project]
+  cinba tui [project]
+  cinba core <status|start|stop>
+  cinba doctor [project]
+  cinba help
+
+Commands:
+  tui       Open the terminal client; defaults to the current project
+  core      Inspect, start, or gracefully stop the shared local Core
+  doctor    Check the runtime, checkout, project, and effective Core
+  help      Show this help
+
+Options:
+  -h, --help  Show this help`;
+
+export function formatHelp(): string {
+  return HELP;
+}
 
 export function parseCinbaCommand(arguments_: string[], workingDirectory: string): CinbaCommand {
   if (arguments_.length === 0) {
     return { type: "tui", workingDirectory: resolve(workingDirectory) };
+  }
+  if (
+    arguments_.length === 1 &&
+    (arguments_[0] === "help" || arguments_[0] === "--help" || arguments_[0] === "-h")
+  ) {
+    return { type: "help" };
+  }
+  if (arguments_[0] === "doctor" && arguments_.length <= 2) {
+    return {
+      type: "doctor",
+      workingDirectory: resolve(arguments_[1] ?? workingDirectory),
+    };
   }
   if (arguments_[0] === "tui" && arguments_.length <= 2) {
     return {
@@ -33,10 +71,10 @@ export function parseCinbaCommand(arguments_: string[], workingDirectory: string
   ) {
     return { type: "core", action: arguments_[1] };
   }
-  if (arguments_.length === 1 && arguments_[0] !== "core") {
+  if (arguments_.length === 1 && arguments_[0] !== "core" && arguments_[0] !== "doctor") {
     return { type: "tui", workingDirectory: resolve(arguments_[0]) };
   }
-  throw new Error("usage: cinba [tui] [project] | cinba core <status|start|stop>");
+  throw new Error("run 'cinba help' for usage");
 }
 
 export function isDirectExecution(
@@ -90,6 +128,21 @@ async function main(): Promise<void> {
   );
   if (command.type === "tui") {
     await launchTui(command.workingDirectory);
+    return;
+  }
+  if (command.type === "help") {
+    console.log(formatHelp());
+    return;
+  }
+  if (command.type === "doctor") {
+    const report = await runDoctor({
+      projectDirectory: command.workingDirectory,
+      serverUrl: process.env.CINBA_SERVER,
+    });
+    console.log(formatDoctorReport(report));
+    if (!report.healthy) {
+      process.exitCode = 1;
+    }
     return;
   }
 
