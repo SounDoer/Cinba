@@ -12,7 +12,7 @@ export function createDesktopWindowController(): DesktopWindowController {
   let window: BrowserWindow | undefined;
 
   async function open(): Promise<LocalCoreStatus> {
-    const status = await ensureLocalCore();
+    const status = await ensureLocalCore({ lifetime: "persistent" });
     if (window && !window.isDestroyed()) {
       if (window.isMinimized()) {
         window.restore();

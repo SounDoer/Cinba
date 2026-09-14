@@ -76,6 +76,13 @@ export function createTrayViewModel(
   if (status.clientCount !== undefined) {
     detailLabels.push(`Clients: ${status.clientCount}`);
   }
+  if (status.managed && status.lifetime) {
+    detailLabels.push(
+      status.lifetime === "persistent"
+        ? "Availability: until you stop the Core"
+        : "Availability: stops after 10 idle minutes",
+    );
+  }
   if (status.running && status.safeToStop === false) {
     detailLabels.push("Core is busy; stopping will drain current work");
   }
@@ -132,7 +139,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Create the tray lazily so this module's pure state mapping stays Node-testable. */
+/** Create the platform tray/menu-bar entry lazily so state mapping stays Node-testable. */
 export async function createSystemTrayController(options: {
   openWindow: () => Promise<LocalCoreStatus>;
 }): Promise<SystemTrayController> {
@@ -150,6 +157,9 @@ export async function createSystemTrayController(options: {
     });
     if (icon.isEmpty()) {
       throw new Error("Failed to create the Cinba tray icon bitmap");
+    }
+    if (process.platform === "darwin") {
+      icon.setTemplateImage(true);
     }
     return icon;
   }
@@ -176,7 +186,12 @@ export async function createSystemTrayController(options: {
         { label: "Refresh Status", enabled: !operation, click: () => void refreshStatus() },
         { label: "Open Core Log", click: () => void openCoreLog() },
         { type: "separator" },
-        { label: "Quit Tray", click: () => app.quit() },
+        {
+          label: "Stop Core and Quit Desktop",
+          enabled: view.canStop && !operation,
+          click: () => void stopCoreAndQuit(),
+        },
+        { label: "Quit Desktop", click: () => app.quit() },
       ]),
     );
   }
@@ -218,11 +233,18 @@ export async function createSystemTrayController(options: {
   }
 
   async function startCore(): Promise<void> {
-    await runOperation("starting", ensureLocalCore);
+    await runOperation("starting", () => ensureLocalCore({ lifetime: "persistent" }));
   }
 
   async function stopCore(): Promise<void> {
     await runOperation("stopping", stopLocalCore);
+  }
+
+  async function stopCoreAndQuit(): Promise<void> {
+    await stopCore();
+    if (!recentError && !status.running) {
+      app.quit();
+    }
   }
 
   async function openCoreLog(): Promise<void> {

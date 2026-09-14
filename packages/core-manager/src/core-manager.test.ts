@@ -109,6 +109,78 @@ test("starts one managed Core and records its runtime", async () => {
   }
 });
 
+test("Desktop can start a persistent managed Core", async () => {
+  const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
+  const config = createLocalCoreConfig({ homeDirectory: home });
+  let spawnedLifetime: string | undefined;
+  let probes = 0;
+  try {
+    const status = await ensureLocalCore({
+      config,
+      lifetime: "persistent",
+      probe: async () => {
+        probes += 1;
+        return probes >= 3 ? HEALTH : undefined;
+      },
+      spawnCore: (_config, _token, lifetime) => {
+        spawnedLifetime = lifetime;
+        return fakeChild(4242);
+      },
+      acquireLock: async () => () => {},
+      delay: async () => {},
+    });
+
+    assert.equal(status.running, true);
+    assert.equal(status.managed, true);
+    assert.equal(status.lifetime, "persistent");
+    assert.equal(spawnedLifetime, "persistent");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("Desktop promotes an existing managed on-demand Core without replacing its PID", async () => {
+  const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
+  const config = createLocalCoreConfig({ homeDirectory: home });
+  let running = false;
+  let requestedLifetime: string | undefined;
+  try {
+    await ensureLocalCore({
+      config,
+      probe: async () => (running ? HEALTH : undefined),
+      spawnCore: () => {
+        running = true;
+        return fakeChild(process.pid);
+      },
+      delay: async () => {},
+    });
+
+    const status = await ensureLocalCore({
+      config,
+      lifetime: "persistent",
+      probe: async () => HEALTH,
+      requestStatus: async () => ({
+        status: "ok",
+        lifetime: "on-demand",
+        pid: process.pid,
+        clientCount: 1,
+        safeToStop: true,
+        draining: false,
+      }),
+      requestLifetime: async (_url, _token, lifetime) => {
+        requestedLifetime = lifetime;
+        return true;
+      },
+    });
+
+    assert.equal(requestedLifetime, "persistent");
+    assert.equal(status.pid, process.pid);
+    assert.equal(status.lifetime, "persistent");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("rechecks health after taking the lock", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
   const config = createLocalCoreConfig({ homeDirectory: home });
@@ -130,6 +202,53 @@ test("rechecks health after taking the lock", async () => {
 
     assert.equal(status.running, true);
     assert.equal(spawns, 0);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("Desktop promotes an on-demand Core discovered after taking the start lock", async () => {
+  const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
+  const config = createLocalCoreConfig({ homeDirectory: home });
+  try {
+    let running = false;
+    await ensureLocalCore({
+      config,
+      probe: async () => (running ? HEALTH : undefined),
+      spawnCore: () => {
+        running = true;
+        return fakeChild(process.pid);
+      },
+      delay: async () => {},
+    });
+
+    let probes = 0;
+    let promoted = false;
+    const status = await ensureLocalCore({
+      config,
+      lifetime: "persistent",
+      probe: async () => {
+        probes += 1;
+        return probes === 1 ? undefined : HEALTH;
+      },
+      requestStatus: async () => ({
+        status: "ok",
+        lifetime: "on-demand",
+        pid: process.pid,
+        clientCount: 0,
+        safeToStop: true,
+        draining: false,
+      }),
+      requestLifetime: async () => {
+        promoted = true;
+        return true;
+      },
+      acquireLock: async () => () => {},
+    });
+
+    assert.equal(promoted, true);
+    assert.equal(status.lifetime, "persistent");
+    assert.equal(status.pid, process.pid);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

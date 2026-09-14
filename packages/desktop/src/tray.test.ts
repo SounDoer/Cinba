@@ -42,9 +42,23 @@ test("a managed Core exposes its details and graceful stop", () => {
   assert.deepEqual(view.detailLabels, [
     "PID: 4517",
     "Clients: 2",
+    "Availability: stops after 10 idle minutes",
     "Core is busy; stopping will drain current work",
   ]);
   assert.equal(view.canStart, false);
+  assert.equal(view.canStop, true);
+});
+
+test("a persistent Core explains that only the user stops it", () => {
+  const view = createTrayViewModel({
+    state: "running",
+    running: true,
+    managed: true,
+    lifetime: "persistent",
+    safeToStop: true,
+  });
+
+  assert.deepEqual(view.detailLabels, ["Availability: until you stop the Core"]);
   assert.equal(view.canStop, true);
 });
 

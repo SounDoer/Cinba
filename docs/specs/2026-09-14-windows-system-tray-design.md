@@ -4,6 +4,10 @@
 
 状态：已实施；自动化检查与 Windows 真实进程生命周期验证通过
 
+> 后续演进：生命周期语义与跨平台入口已由
+> `2026-09-14-cross-platform-desktop-controller-design.md` 接续。本文保留为 Windows Tray
+> 第一阶段的设计记录。
+
 ## 1. 目标
 
 为本机共享 Core 提供一个常驻但轻量的 Windows 图形入口。托盘只展示和调用已有的本机生命周期

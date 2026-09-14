@@ -13,6 +13,7 @@ import {
   type CoreHealth,
   type LocalCoreControlStatus,
   probeCoreHealth,
+  requestLocalCoreLifetime,
   requestLocalCoreStatus,
   requestLocalCoreStop,
 } from "@cinba/core-client";
@@ -36,7 +37,7 @@ export type LocalCoreStatus = {
   running: boolean;
   managed: boolean;
   pid?: number;
-  lifetime?: "on-demand" | "external";
+  lifetime?: "persistent" | "on-demand" | "external";
   clientCount?: number;
   safeToStop?: boolean;
   health?: CoreHealth;
@@ -44,10 +45,21 @@ export type LocalCoreStatus = {
 
 export type EnsureLocalCoreOptions = {
   config?: LocalCoreConfig;
+  lifetime?: "persistent" | "on-demand";
   readyTimeoutMs?: number;
   pollIntervalMs?: number;
   probe?: (baseUrl: string) => Promise<CoreHealth | undefined>;
-  spawnCore?: (config: LocalCoreConfig, controlToken: string) => ChildProcess;
+  requestStatus?: (baseUrl: string, token: string) => Promise<LocalCoreControlStatus | undefined>;
+  spawnCore?: (
+    config: LocalCoreConfig,
+    controlToken: string,
+    lifetime: "persistent" | "on-demand",
+  ) => ChildProcess;
+  requestLifetime?: (
+    baseUrl: string,
+    token: string,
+    lifetime: "persistent" | "on-demand",
+  ) => Promise<boolean>;
   acquireLock?: (path: string) => Promise<() => void>;
   delay?: (milliseconds: number) => Promise<void>;
 };
@@ -69,6 +81,7 @@ export function createCoreProcessEnvironment(
   controlToken: string,
   environment: NodeJS.ProcessEnv = process.env,
   config = createLocalCoreConfig(),
+  lifetime: "persistent" | "on-demand" = "on-demand",
 ): NodeJS.ProcessEnv {
   const stableEnvironment = { ...environment };
   delete stableEnvironment.CINBA_DEFAULT_CORE_NAME;
@@ -77,7 +90,7 @@ export function createCoreProcessEnvironment(
     // process.execPath is electron.exe when Desktop calls the manager. Without
     // this, Electron loads serverEntry as an app and stays alive after Core stops.
     ELECTRON_RUN_AS_NODE: "1",
-    CINBA_CORE_LIFETIME: "on-demand",
+    CINBA_CORE_LIFETIME: lifetime,
     CINBA_LOCAL_CONTROL_TOKEN: controlToken,
     CINBA_PORT: "4517",
     CINBA_STATE_DIR: config.stateDirectory,
@@ -159,14 +172,18 @@ function removeControl(config: LocalCoreConfig, pid: number): void {
   }
 }
 
-function defaultSpawnCore(config: LocalCoreConfig, controlToken: string): ChildProcess {
+function defaultSpawnCore(
+  config: LocalCoreConfig,
+  controlToken: string,
+  lifetime: "persistent" | "on-demand" = "on-demand",
+): ChildProcess {
   mkdirSync(config.stateDirectory, { recursive: true });
   const log = openSync(config.logPath, "a", 0o600);
   try {
     const child = spawn(process.execPath, [config.serverEntry], {
       cwd: config.repositoryRoot,
       detached: true,
-      env: createCoreProcessEnvironment(controlToken, process.env, config),
+      env: createCoreProcessEnvironment(controlToken, process.env, config, lifetime),
       stdio: ["ignore", log, log],
       windowsHide: true,
     });
@@ -207,11 +224,34 @@ export async function inspectLocalCore(
     running: true,
     managed,
     pid: managed ? runtime?.pid : undefined,
-    lifetime: managed ? "on-demand" : "external",
+    lifetime: managed ? detail?.lifetime : "external",
     clientCount: detail?.clientCount,
     safeToStop: detail?.safeToStop ?? health.safeToRestart,
     health,
   };
+}
+
+async function ensureRequestedLifetime(
+  status: LocalCoreStatus,
+  lifetime: "persistent" | "on-demand",
+  config: LocalCoreConfig,
+  requestLifetime: NonNullable<EnsureLocalCoreOptions["requestLifetime"]>,
+): Promise<LocalCoreStatus> {
+  // Persistent dominates on-demand. A normal CLI client must not shorten a
+  // Desktop-managed Core's availability, while Desktop may promote one in place.
+  if (!status.managed || status.lifetime !== "on-demand" || lifetime !== "persistent") {
+    return status;
+  }
+
+  const control = readControl(config.controlPath);
+  if (
+    !control ||
+    control.pid !== status.pid ||
+    !(await requestLifetime(config.baseUrl, control.token, "persistent"))
+  ) {
+    throw new Error("The running Cinba Core could not be kept persistently available");
+  }
+  return { ...status, lifetime: "persistent" };
 }
 
 /** Ensure the one shared local Core is healthy, starting it in the background when absent. */
@@ -220,21 +260,24 @@ export async function ensureLocalCore(
 ): Promise<LocalCoreStatus> {
   const config = options.config ?? createLocalCoreConfig();
   const probe = options.probe ?? probeCoreHealth;
-  const existing = await inspectLocalCore(config, probe);
+  const statusRequest = options.requestStatus ?? requestLocalCoreStatus;
+  const lifetimeRequest = options.requestLifetime ?? requestLocalCoreLifetime;
+  const lifetime = options.lifetime ?? "on-demand";
+  const existing = await inspectLocalCore(config, probe, statusRequest);
   if (existing.running) {
-    return existing;
+    return await ensureRequestedLifetime(existing, lifetime, config, lifetimeRequest);
   }
 
   const release = await (options.acquireLock ?? acquireStartLock)(config.startLockPath);
   try {
-    const foundInsideLock = await inspectLocalCore(config, probe);
+    const foundInsideLock = await inspectLocalCore(config, probe, statusRequest);
     if (foundInsideLock.running) {
-      return foundInsideLock;
+      return await ensureRequestedLifetime(foundInsideLock, lifetime, config, lifetimeRequest);
     }
 
     mkdirSync(config.stateDirectory, { recursive: true });
     const controlToken = randomUUID();
-    const child = (options.spawnCore ?? defaultSpawnCore)(config, controlToken);
+    const child = (options.spawnCore ?? defaultSpawnCore)(config, controlToken, lifetime);
     if (child.pid === undefined) {
       throw new Error("The Cinba Core process did not report a PID");
     }
@@ -271,7 +314,7 @@ export async function ensureLocalCore(
           running: true,
           managed: true,
           pid,
-          lifetime: "on-demand",
+          lifetime,
           safeToStop: health.safeToRestart,
           health,
         };

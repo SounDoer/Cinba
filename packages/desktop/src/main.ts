@@ -24,6 +24,7 @@ if (!hasSingleInstanceLock) {
     .whenReady()
     .then(async () => {
       app.setAppUserModelId("Cinba");
+      app.dock?.hide();
       const window = createDesktopWindowController();
       tray = await createSystemTrayController({ openWindow: window.open });
       if (openWhenReady) {

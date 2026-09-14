@@ -4,7 +4,7 @@ import type { CoreLifetime } from "./service-idle.ts";
 
 export type LocalCoreControlSnapshot = {
   status: "ok";
-  lifetime: "on-demand";
+  lifetime: CoreLifetime;
   pid: number;
   clientCount: number;
   safeToStop: boolean;
@@ -34,20 +34,31 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown): 
     .end(JSON.stringify(body));
 }
 
-/** Local-only lifecycle controls, enabled solely for a token-bearing on-demand Core. */
+/** Local-only lifecycle controls, enabled solely for a manager token-bearing Core. */
 export function createLocalCoreControlHandler(options: {
-  lifetime: CoreLifetime;
+  lifetime: () => CoreLifetime;
   token: string | undefined;
   snapshot: () => Omit<LocalCoreControlSnapshot, "status" | "lifetime" | "pid">;
   requestStop: () => void;
+  setLifetime: (lifetime: CoreLifetime) => void;
   schedule?: (callback: () => void) => void;
 }): LocalCoreControlHandler {
-  const enabled = options.lifetime === "on-demand" && Boolean(options.token);
+  const enabled = Boolean(options.token);
   const schedule = options.schedule ?? setImmediate;
 
   return (request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
-    if (!enabled || (path !== "/local-core/status" && path !== "/local-core/stop")) {
+    const requestedLifetime = path.startsWith("/local-core/lifetime/")
+      ? path.slice("/local-core/lifetime/".length)
+      : undefined;
+    const lifetimeRequest =
+      requestedLifetime === "persistent" || requestedLifetime === "on-demand"
+        ? requestedLifetime
+        : undefined;
+    if (
+      !enabled ||
+      (path !== "/local-core/status" && path !== "/local-core/stop" && !lifetimeRequest)
+    ) {
       return false;
     }
     if (!tokenMatches(request.headers.authorization, options.token!)) {
@@ -62,7 +73,7 @@ export function createLocalCoreControlHandler(options: {
       }
       sendJson(response, 200, {
         status: "ok",
-        lifetime: "on-demand",
+        lifetime: options.lifetime(),
         pid: process.pid,
         ...options.snapshot(),
       } satisfies LocalCoreControlSnapshot);
@@ -71,6 +82,11 @@ export function createLocalCoreControlHandler(options: {
 
     if (request.method !== "POST") {
       response.writeHead(405, { allow: "POST" }).end();
+      return true;
+    }
+    if (lifetimeRequest) {
+      options.setLifetime(lifetimeRequest);
+      sendJson(response, 202, { status: "accepted", lifetime: lifetimeRequest });
       return true;
     }
     sendJson(response, 202, { status: "accepted" });

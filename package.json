@@ -24,6 +24,7 @@
   ],
   "scripts": {
     "start": "node scripts/launch.ts start",
+    "desktop": "node scripts/launch.ts desktop",
     "dev": "node scripts/launch.ts dev",
     "tui": "node scripts/launch.ts tui",
     "promote": "node scripts/promote.ts",

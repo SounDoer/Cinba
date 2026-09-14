@@ -4,7 +4,8 @@
 //   node scripts/launch.ts start
 //   node scripts/launch.ts dev
 //   node scripts/launch.ts tui [working-directory]
-//   node scripts/launch.ts tray
+//   node scripts/launch.ts desktop
+//   node scripts/launch.ts tray (Windows compatibility entry)
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { connect } from "node:net";
@@ -29,7 +30,7 @@ const DEV_CORE_URL = `http://127.0.0.1:${DEV_CORE_PORT}/`;
 const DEV_URL = `http://127.0.0.1:${WEB_PORT}/`;
 const READY_TIMEOUT_MS = 30_000;
 
-type Mode = "start" | "dev" | "tui" | "tray";
+type Mode = "start" | "desktop" | "dev" | "tui" | "tray";
 
 const children = new Set<ChildProcess>();
 let stopping = false;
@@ -270,21 +271,25 @@ export async function launchTui(workingDirectory: string | undefined): Promise<v
   });
 }
 
-export async function launchTray(): Promise<void> {
-  if (process.platform !== "win32") {
-    throw new Error("the Cinba system tray is available only on Windows");
+async function launchDesktopProcess(openWindow: boolean): Promise<void> {
+  if (process.platform !== "win32" && process.platform !== "darwin") {
+    throw new Error("Cinba Desktop is available only on Windows and macOS");
   }
   await withLaunchLifecycle(async () => {
     console.log("[launcher] Building the web application...");
     await runToCompletion([VITE_ENTRY, "build"], WEB_ROOT);
 
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(process.execPath, [ELECTRON_CLI, DESKTOP_ROOT, "--tray-only"], {
-        cwd: REPOSITORY_ROOT,
-        detached: true,
-        stdio: "ignore",
-        windowsHide: true,
-      });
+      const child = spawn(
+        process.execPath,
+        [ELECTRON_CLI, DESKTOP_ROOT, ...(openWindow ? [] : ["--tray-only"])],
+        {
+          cwd: REPOSITORY_ROOT,
+          detached: true,
+          stdio: "ignore",
+          windowsHide: true,
+        },
+      );
       child.once("error", reject);
       child.once("spawn", () => {
         child.unref();
@@ -294,11 +299,29 @@ export async function launchTray(): Promise<void> {
   });
 }
 
+export async function launchDesktop(): Promise<void> {
+  await launchDesktopProcess(true);
+}
+
+/** Preserve the existing Windows tray-only command and double-click launcher. */
+export async function launchTray(): Promise<void> {
+  if (process.platform !== "win32") {
+    throw new Error("the legacy tray-only entry is available only on Windows");
+  }
+  await launchDesktopProcess(false);
+}
+
 function readMode(value: string | undefined): Mode {
-  if (value === "start" || value === "dev" || value === "tui" || value === "tray") {
+  if (
+    value === "start" ||
+    value === "desktop" ||
+    value === "dev" ||
+    value === "tui" ||
+    value === "tray"
+  ) {
     return value;
   }
-  throw new Error("usage: node scripts/launch.ts <start|dev|tui|tray> [working-directory]");
+  throw new Error("usage: node scripts/launch.ts <start|desktop|dev|tui|tray> [working-directory]");
 }
 
 async function main(): Promise<void> {
@@ -306,6 +329,9 @@ async function main(): Promise<void> {
 
   if (mode === "start") {
     await launchWeb();
+  }
+  if (mode === "desktop") {
+    await launchDesktop();
   }
   if (mode === "dev") {
     await launchDevelopment();

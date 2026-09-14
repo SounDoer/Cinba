@@ -2,7 +2,7 @@ import { type HttpFetcher, requestJson } from "./http.ts";
 
 export type LocalCoreControlStatus = {
   status: "ok";
-  lifetime: "on-demand";
+  lifetime: "persistent" | "on-demand";
   pid: number;
   clientCount: number;
   safeToStop: boolean;
@@ -21,7 +21,7 @@ function isControlStatus(value: unknown): value is LocalCoreControlStatus {
   const candidate = value as Record<string, unknown>;
   return (
     candidate.status === "ok" &&
-    candidate.lifetime === "on-demand" &&
+    (candidate.lifetime === "on-demand" || candidate.lifetime === "persistent") &&
     Number.isInteger(candidate.pid) &&
     typeof candidate.clientCount === "number" &&
     typeof candidate.safeToStop === "boolean" &&
@@ -57,5 +57,24 @@ export async function requestLocalCoreStop(
   });
   return Boolean(
     body && typeof body === "object" && (body as Record<string, unknown>).status === "accepted",
+  );
+}
+
+export async function requestLocalCoreLifetime(
+  baseUrl: string,
+  token: string,
+  lifetime: "persistent" | "on-demand",
+  options: ControlOptions = {},
+): Promise<boolean> {
+  const body = await requestJson(baseUrl, `/local-core/lifetime/${lifetime}`, {
+    ...options,
+    method: "POST",
+    headers: authorization(token),
+  });
+  return Boolean(
+    body &&
+    typeof body === "object" &&
+    (body as Record<string, unknown>).status === "accepted" &&
+    (body as Record<string, unknown>).lifetime === lifetime,
   );
 }

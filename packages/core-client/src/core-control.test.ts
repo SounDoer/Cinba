@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { requestLocalCoreStatus, requestLocalCoreStop } from "./core-control.ts";
+import {
+  requestLocalCoreLifetime,
+  requestLocalCoreStatus,
+  requestLocalCoreStop,
+} from "./core-control.ts";
 import type { HttpFetcher, HttpRequestInit } from "./http.ts";
 
 const STATUS = {
@@ -39,6 +43,31 @@ test("requests a protected graceful stop", async () => {
   });
 
   assert.equal(accepted, true);
+  assert.equal(requestInit?.method, "POST");
+  assert.equal(requestInit?.headers?.authorization, "Bearer secret");
+});
+
+test("requests a protected Core lifetime change", async () => {
+  let requested = "";
+  let requestInit: HttpRequestInit | undefined;
+  const accepted = await requestLocalCoreLifetime(
+    "http://127.0.0.1:4517/",
+    "secret",
+    "persistent",
+    {
+      fetcher: async (input, init) => {
+        requested = input;
+        requestInit = init;
+        return {
+          ok: true,
+          json: async () => ({ status: "accepted", lifetime: "persistent" }),
+        };
+      },
+    },
+  );
+
+  assert.equal(accepted, true);
+  assert.equal(requested, "http://127.0.0.1:4517/local-core/lifetime/persistent");
   assert.equal(requestInit?.method, "POST");
   assert.equal(requestInit?.headers?.authorization, "Bearer secret");
 });

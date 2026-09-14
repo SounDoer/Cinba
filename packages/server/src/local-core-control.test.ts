@@ -5,15 +5,23 @@ import { createLocalCoreControlHandler } from "./local-core-control.ts";
 
 async function withControlServer(
   token: string | undefined,
-  run: (baseUrl: string, stopped: () => number) => Promise<void>,
+  run: (
+    baseUrl: string,
+    stopped: () => number,
+    lifetime: () => "persistent" | "on-demand",
+  ) => Promise<void>,
 ): Promise<void> {
   let stopRequests = 0;
+  let lifetime: "persistent" | "on-demand" = "on-demand";
   const control = createLocalCoreControlHandler({
-    lifetime: "on-demand",
+    lifetime: () => lifetime,
     token,
     snapshot: () => ({ clientCount: 2, safeToStop: false, draining: false }),
     requestStop: () => {
       stopRequests += 1;
+    },
+    setLifetime: (next) => {
+      lifetime = next;
     },
   });
   const server = createServer((request, response) => {
@@ -26,7 +34,11 @@ async function withControlServer(
   assert(address && typeof address === "object");
 
   try {
-    await run(`http://127.0.0.1:${address.port}`, () => stopRequests);
+    await run(
+      `http://127.0.0.1:${address.port}`,
+      () => stopRequests,
+      () => lifetime,
+    );
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -62,6 +74,23 @@ test("a graceful stop is accepted before drain starts", async () => {
     assert.deepEqual(await response.json(), { status: "accepted" });
     await new Promise<void>((resolve) => setImmediate(resolve));
     assert.equal(stopped(), 1);
+  });
+});
+
+test("an authorized manager can keep a Core persistently available", async () => {
+  await withControlServer("secret", async (baseUrl, _stopped, lifetime) => {
+    const response = await fetch(`${baseUrl}/local-core/lifetime/persistent`, {
+      method: "POST",
+      headers: { authorization: "Bearer secret" },
+    });
+    assert.equal(response.status, 202);
+    assert.deepEqual(await response.json(), { status: "accepted", lifetime: "persistent" });
+    assert.equal(lifetime(), "persistent");
+
+    const status = await fetch(`${baseUrl}/local-core/status`, {
+      headers: { authorization: "Bearer secret" },
+    });
+    assert.equal(((await status.json()) as { lifetime: string }).lifetime, "persistent");
   });
 });
 

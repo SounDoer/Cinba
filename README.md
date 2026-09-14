@@ -10,9 +10,9 @@ rather than hidden behind a framework.
 
 ## Current status
 
-Cinba is personal, experimental software. The local Windows workflow and the private VPS workflow
-are both usable today. The first real deployment through Tailscale, Caddy, and systemd has been
-completed and verified from an iPhone and the VPS terminal.
+Cinba is personal, experimental software. The local Windows and macOS workflows and the private
+VPS workflow are usable today. The first real deployment through Tailscale, Caddy, and systemd has
+been completed and verified from an iPhone and the VPS terminal.
 
 Available now:
 
@@ -22,7 +22,7 @@ Available now:
 - streamed text, reasoning, tool cards, token usage, and cost;
 - an always-on permission gate for tool execution;
 - Core identity display and automatic Web reconnection;
-- a Windows system tray for local Core status and controls;
+- a Windows System Tray or macOS Menu Bar controller for local Core status and controls;
 - development and production-style launchers;
 - guarded `master` to `prod` promotion and rollback-capable VPS deployment logic;
 - Tailscale-only VPS access through Caddy HTTPS, with no public Cinba port.
@@ -32,8 +32,7 @@ the Core on loopback and places Tailscale access control and a Caddy HTTPS proxy
 
 ## Requirements
 
-- Windows or macOS for the local Web, TUI, and development workflow;
-- Windows for the current system tray workflow;
+- Windows or macOS for the local Web, TUI, Desktop, and development workflow;
 - Node.js 24 or newer;
 - npm and Git;
 - an API key for a model provider supported by Pi.
@@ -118,18 +117,20 @@ control channel and existing drain behavior; it never kills a PID directly. A Co
 the manager, such as the foreground development Core, is reported as `external` and is not stopped
 by this command.
 
-On Windows, the same manager is available from a system tray controller:
+On Windows and macOS, the same manager is available from the Desktop controller:
 
 ```powershell
-cinba tray
+cinba desktop
 ```
 
-The command builds the Web UI, then returns after starting one background tray instance. It does
-not start the Core until you choose `Start Core` or `Open Cinba`. Double-clicking `cinba-tray.cmd`
-provides the same flow. The tray reports stopped, running, draining, and external Core states;
-offers graceful start and stop controls; and can open the local Core log. Closing the Desktop
-window releases its Core connection while leaving the tray available. `Quit Tray` exits only the
-controller, so the Core keeps its existing safe idle-shutdown behavior.
+The command builds the Web UI, returns after starting one background Desktop instance, and opens
+Cinba. Windows places the controller in the System Tray; macOS places it in the Menu Bar. Starting
+or opening Cinba through Desktop makes the shared Stable Core persistent so it remains remotely
+available until the user stops it. The controller reports stopped, running, draining, and external
+Core states; offers graceful start and stop controls; and can open the local Core log. Closing the
+window leaves both Desktop and Core available. `Quit Desktop` exits only the controller, while
+`Stop Core and Quit Desktop` drains the Core first. The legacy Windows-only `cinba tray` command
+and `cinba-tray.cmd` launcher remain available without opening a window initially.
 
 For command guidance and read-only environment diagnosis:
 
@@ -189,18 +190,18 @@ Web / TUI / Desktop                      │
 master ──► prod ──► deploy ──► releases/current ──► systemd service
 ```
 
-| Package | Responsibility |
-| --- | --- |
-| `@cinba/contract` | Browser-safe protocol, ledger, commands, and shared labels |
-| `@cinba/core-client` | Shared Core connection used by every client |
+| Package               | Responsibility                                                           |
+| --------------------- | ------------------------------------------------------------------------ |
+| `@cinba/contract`     | Browser-safe protocol, ledger, commands, and shared labels               |
+| `@cinba/core-client`  | Shared Core connection used by every client                              |
 | `@cinba/core-manager` | Starts, inspects, and safely stops the shared Core on the local computer |
-| `@cinba/server` | HTTP, WebSocket, sessions, credentials, draining, and health |
-| `@cinba/agent` | Pi process lifecycle, RPC transport, events, and stored sessions |
-| `@cinba/extensions` | Pi extensions, including the mandatory permission gate |
-| `@cinba/web` | React Web interface |
-| `@cinba/tui` | Terminal interface built with `pi-tui` |
-| `@cinba/desktop` | Electron host and Windows tray controller for the shared Web interface |
-| `@cinba/deploy` | Safe release preparation, activation, verification, and rollback |
+| `@cinba/server`       | HTTP, WebSocket, sessions, credentials, draining, and health             |
+| `@cinba/agent`        | Pi process lifecycle, RPC transport, events, and stored sessions         |
+| `@cinba/extensions`   | Pi extensions, including the mandatory permission gate                   |
+| `@cinba/web`          | React Web interface                                                      |
+| `@cinba/tui`          | Terminal interface built with `pi-tui`                                   |
+| `@cinba/desktop`      | Electron host and Windows System Tray or macOS Menu Bar controller       |
+| `@cinba/deploy`       | Safe release preparation, activation, verification, and rollback         |
 
 Stable runtime configuration and Pi data live outside the repository in `~/.cinba` and `~/.pi`.
 The local Dev Core keeps its isolated state below `~/.cinba/dev`. A release switch changes program

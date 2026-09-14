@@ -9,7 +9,7 @@ import {
   inspectLocalCore,
   stopLocalCore,
 } from "@cinba/core-manager";
-import { launchTray, launchTui } from "./launch.ts";
+import { launchDesktop, launchTray, launchTui } from "./launch.ts";
 import { formatDoctorReport, runDoctor } from "./doctor.ts";
 
 const COMMAND_PATH = fileURLToPath(import.meta.url);
@@ -18,6 +18,7 @@ export type CinbaCommand =
   | { type: "tui"; workingDirectory: string }
   | { type: "core"; action: "status" | "start" | "stop" }
   | { type: "doctor"; workingDirectory: string }
+  | { type: "desktop" }
   | { type: "tray" }
   | { type: "help" };
 
@@ -27,6 +28,7 @@ Usage:
   cinba [project]
   cinba tui [project]
   cinba core <status|start|stop>
+  cinba desktop
   cinba tray
   cinba doctor [project]
   cinba help
@@ -34,7 +36,8 @@ Usage:
 Commands:
   tui       Open the terminal client; defaults to the current project
   core      Inspect, start, or gracefully stop the shared local Core
-  tray      Run the Windows system tray controller
+  desktop   Run the Windows or macOS Desktop controller
+  tray      Run the legacy Windows tray-only entry
   doctor    Check the runtime, checkout, project, and effective Core
   help      Show this help
 
@@ -57,6 +60,9 @@ export function parseCinbaCommand(arguments_: string[], workingDirectory: string
   }
   if (arguments_.length === 1 && arguments_[0] === "tray") {
     return { type: "tray" };
+  }
+  if (arguments_.length === 1 && arguments_[0] === "desktop") {
+    return { type: "desktop" };
   }
   if (arguments_[0] === "doctor" && arguments_.length <= 2) {
     return {
@@ -154,6 +160,11 @@ async function main(): Promise<void> {
   if (command.type === "tray") {
     await launchTray();
     console.log("Cinba tray is running.");
+    return;
+  }
+  if (command.type === "desktop") {
+    await launchDesktop();
+    console.log("Cinba Desktop is running.");
     return;
   }
 

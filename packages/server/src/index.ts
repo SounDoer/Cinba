@@ -55,7 +55,7 @@ const HOST = "127.0.0.1";
  */
 const PORT = Number(process.env.CINBA_PORT) || 4517;
 const REVISION = normalizeRevision(process.env.CINBA_REVISION);
-const CORE_LIFETIME = readCoreLifetime(process.env.CINBA_CORE_LIFETIME);
+let coreLifetime = readCoreLifetime(process.env.CINBA_CORE_LIFETIME);
 const STATE_DIRECTORY = resolveCinbaStateDirectory();
 
 /** Where the built UI lives. Located relative to the repo layout, not through package resolution. */
@@ -73,7 +73,7 @@ const viewing = new Map<WebSocket, string>();
 
 const clients = new Set<WebSocket>();
 let drain: DrainController | undefined;
-let serviceIdleSince = CORE_LIFETIME === "on-demand" ? Date.now() : undefined;
+let serviceIdleSince = coreLifetime === "on-demand" ? Date.now() : undefined;
 const recoveries = new Map<string, Promise<LiveSession | undefined>>();
 
 // ---- Sending ----
@@ -127,7 +127,7 @@ const serveDeploymentStatus = createDeploymentStatusHandler({
   statusPath: join(STATE_DIRECTORY, "deployment.json"),
 });
 const serveLocalCoreControl = createLocalCoreControlHandler({
-  lifetime: CORE_LIFETIME,
+  lifetime: () => coreLifetime,
   token: process.env.CINBA_LOCAL_CONTROL_TOKEN,
   snapshot: () => ({
     clientCount: clients.size,
@@ -135,6 +135,11 @@ const serveLocalCoreControl = createLocalCoreControlHandler({
     draining: drain?.draining ?? false,
   }),
   requestStop: () => drain?.request(),
+  setLifetime: (lifetime) => {
+    coreLifetime = lifetime;
+    serviceIdleSince = lifetime === "on-demand" && clients.size === 0 ? Date.now() : undefined;
+    console.log(`[cinba] Core lifetime changed to ${lifetime}`);
+  },
 });
 
 async function serveHttp(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -671,7 +676,7 @@ const runtime = createServerRuntime({
     // Retry conversations that were mid-turn when credentials changed.
     void recycleStale();
     const serviceIdle = assessServiceIdle(
-      CORE_LIFETIME,
+      coreLifetime,
       {
         clientCount: clients.size,
         safeToStop: safeToRestart(),
@@ -734,7 +739,7 @@ export function startService(): void {
       console.log(
         `[cinba] idle conversations release their process after ${IDLE_TIMEOUT_MS / 60_000} minutes`,
       );
-      if (CORE_LIFETIME === "on-demand") {
+      if (coreLifetime === "on-demand") {
         console.log(
           `[cinba] on-demand Core stops after ${SERVICE_IDLE_TIMEOUT_MS / 60_000} client-free minutes`,
         );
