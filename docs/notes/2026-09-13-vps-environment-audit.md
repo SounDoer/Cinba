@@ -2,7 +2,7 @@
 
 日期：2026-09-13
 
-状态：首轮无提权只读检查已完成；管理员权限、Tailscale 控制面与云防火墙仍待核对
+状态：真实 VPS bootstrap、Tailscale 私网接入与 Caddy HTTPS 验收已完成
 
 ## 1. 检查边界
 
@@ -25,19 +25,22 @@ MagicDNS 名称。连接信息继续留在仓库之外。
 
 ## 3. Tailscale
 
-VPS 当前没有可用的 Tailscale 客户端，也没有 `tailscaled.service`。因此本轮无法获得：
+首轮检查时 VPS 尚未安装 Tailscale。后续已完成以下实际配置：
 
-- VPS 的 Tailscale IPv4 地址；
-- MagicDNS 完整名称；
-- 节点在线与登录状态；
-- Tailscale HTTPS 证书权限状态。
+- 安装 Tailscale 1.102.4，并以不含个人信息的机器名加入独立 tailnet；
+- 节点使用生产服务 tag，Tailscale SSH 保持关闭；
+- MagicDNS 与 Tailscale HTTPS Certificates 已启用；
+- 删除 tailnet 初始的全开放规则和默认 Tailscale SSH 规则；
+- Grant 只允许指定 owner 身份访问生产服务 tag 的 `tcp:443`；
+- iPhone 作为第一个受信客户端加入同一 tailnet；
+- `tailscaled` 仅授权 `caddy` 用户请求 Tailscale 证书，没有向 Cinba 用户授予额外系统权限。
 
-Grants／ACL 是 tailnet 控制面策略，不能从这台尚未加入 tailnet 的 VPS 上完整读取。安装前还需
-在 Tailscale 管理后台核对现有策略，避免新规则与已有宽泛规则叠加后扩大访问范围。
+真实 Tailscale IP、完整 MagicDNS 名称、登录身份和一次性认证链接不进入公开仓库。HTTPS 证书会让
+机器域名出现在公开证书透明度日志中，这一点已在启用前确认接受。
 
 ## 4. Caddy 与既有应用
 
-- Caddy 版本为 2.6.2。
+- 首轮检查时 Caddy 版本为 Ubuntu 提供的 2.6.2；实操中升级为 Caddy 官方 stable 仓库的 2.11.4。
 - `caddy.service` 正在运行并已启用开机启动。
 - unit 来自系统级路径 `/usr/lib/systemd/system/caddy.service`。
 - 主配置为 root 所有、普通用户可读的 `/etc/caddy/Caddyfile`。
@@ -46,48 +49,58 @@ Grants／ACL 是 tailnet 控制面策略，不能从这台尚未加入 tailnet �
 - Caddy 管理接口监听 `127.0.0.1:2019`。
 - Caddy 当前在所有网卡监听 `80/tcp`、`443/tcp`，并监听 `443/udp`。
 
-现有 Caddy listener 与“Cinba 站点只绑定 Tailscale IP”的目标存在配置层面的相互影响。首次
-部署不能直接追加未经验证的站点块；必须保留三个既有站点，并在真实 Tailscale IP 已知后使用
-`caddy adapt`、配置验证和 listener 检查确认最终形状。
+最终配置完整保留三个既有站点，并新增只绑定 Tailscale IPv4 的 Cinba HTTPS 站点，反向代理到
+`127.0.0.1:4517`。公网 listener 保持原样；Cinba 的 listener 只启用 HTTP/1.1 与 HTTP/2，公网
+listener 继续使用 HTTP/3。
+
+实操发现，仅给新站点增加 `bind` 会让新旧 listener 同时尝试占用 `443/udp`，导致 reload 失败。
+最终使用 Caddy 的 listener-specific `servers` 配置关闭 Tailscale listener 的 HTTP/3，避开
+wildcard UDP listener 冲突。候选配置先以 `caddy validate` 验证，再安装和 reload；原配置另有
+root 所有的现场备份。升级和最终 reload 后，三个既有站点均通过回归检查。
 
 ## 5. 防火墙与端口
 
-- UFW 已安装且 service 状态为 active。
-- 普通用户无权读取 UFW 的具体规则，本轮没有绕过该限制或使用 `sudo`。
+- UFW 已安装，但实际运行状态为 inactive。首轮仅根据 systemd unit 状态写下的 active 判断不准确，
+  后续管理员只读检查已经纠正。
+- IPv4 INPUT 默认策略为 ACCEPT；Tailscale 自己的链允许 `tailscale0` 和直连 UDP 端口，并拒绝从
+  非 Tailscale 网卡伪造的 CGNAT 源地址。
+- 云厂商注入的链是恶意来源地址拒绝列表，不是端口 allowlist。
 - 当前对外监听包括 `22/tcp`、`80/tcp`、`443/tcp` 和 `443/udp`。
 - `3000/tcp`、`8080/tcp` 和 `2019/tcp` 只监听 loopback。
-- Cinba 的 `4517/tcp` 当前没有 listener，符合尚未部署的状态。
-- 云厂商安全组无法仅从 VPS 内部可靠确认，仍需在云控制台单独核对。
+- Cinba 的 `4517/tcp` 只监听 `127.0.0.1`。
+- 云防火墙允许既有公网 Web、SSH 与 ICMP 流量，没有为 Cinba 新增公网端口；Tailscale 可在不能
+  直连时使用 DERP relay。
 
-后续使用管理员权限时需要只读检查 UFW／nftables 的实际规则。无论现状如何，本阶段都不给
-Cinba 新开公网端口。
+断开手机 Tailscale 后，同一 Cinba URL 无法访问；重新连接后恢复。这项实测确认 Cinba 没有因
+现有公网 `80/443` listener 而意外公开。
 
 ## 6. systemd user service 条件
 
 - systemd user manager 可以正常运行。
-- 当前 SSH 用户的 user manager 在登录期间为 running，但没有启用 linger。
-- `cinba` 用户尚不存在，因此也没有 `/run/user/<uid>`、user manager 或 linger 状态。
+- 首轮检查时当前 SSH 用户的 user manager 仅在登录期间运行，`cinba` 用户尚不存在。
+- 现已创建无 sudo、无密码登录能力的独立 `cinba` 普通用户，并启用 linger。
+- `cinba.service`、`cinba-update.service` 与 `cinba-update.timer` 均以 systemd user unit 安装。
 
-采用设计中的 systemd user service 可行。首次安装仍需要管理员创建 `cinba` 普通用户，并执行
-`loginctl enable-linger cinba`，这样退出管理 SSH 后，Cinba 服务和更新 timer 才能继续运行。
+采用 systemd user service 的设计已在退出管理 SSH 后验证：Core 持续运行，timer 能独立完成
+无更新检查，日常部署不需要 sudo、webhook 或人工 SSH。
 
 ## 7. 用户与 `/home` 布局
 
-- 系统目前有四个带真实 home 和交互 shell 的普通用户。
+- 首轮检查时系统有四个带真实 home 和交互 shell 的普通用户。
 - 其中两个既有用户属于 `sudo` 组；当前用于盘点的部署用户不属于 `sudo` 组。
 - `/home` 下已有四个互相独立、权限为 `0750` 的用户目录。
-- `/home/cinba` 尚不存在。
+- `/home/cinba` 后续由管理员创建，Cinba 的程序、release、运行数据与 SSH 管理入口均与既有用户
+  隔离。
 
-因此首次 bootstrap 不能由当前部署用户直接完成。需要先恢复一个现有管理员账号的 key／sudo
-访问，或通过云厂商控制台进入 root／救援通道，再创建独立的 `cinba` 普通用户。不能为了省事让
-Cinba 使用现有管理员账号或 root 运行。
+首次 bootstrap 最终通过已有管理员入口逐项完成；Cinba 没有使用管理员账号或 root 运行。
 
-## 8. 下一步待确认
+## 8. 管理操作边界
 
-1. 找到可用的管理员登录方式，并只读检查其 sudo 能力。
-2. 使用管理员权限读取 UFW／nftables 规则和 Caddy systemd 环境，但暂不修改。
-3. 在 Tailscale 管理后台核对 tailnet、MagicDNS、HTTPS 与现有 Grants／ACL。
-4. 根据真实管理员入口设计并逐项执行首次 bootstrap；所有 sudo 动作执行前单独解释和确认。
+本次实操先以普通用户完成只读盘点；需要创建用户、安装系统包、修改 `/etc` 或 reload 系统服务时，
+均先说明影响，再由管理员明确执行。没有读取或打印密码、私钥、API key 等敏感内容。
+
+SSH 仅用于首次安装、验收和故障处理。正常发布由 VPS timer 主动拉取 `prod`，Tailscale SSH 保持
+关闭，Cinba 用户也没有 sudo 权限。
 
 ## 9. 首次 bootstrap 进展
 
@@ -111,5 +124,29 @@ Cinba 使用现有管理员账号或 root 运行。
 首次没有 `/home/cinba/current` 时，由长期 checkout 中的部署器完成第一次 release 准备与切换；
 成功以后，update service 从 `current` 中运行。这个接棒流程已经在真实 VPS 上验证。
 
-尚未完成的安全边界仍是 Tailscale 安装与控制面策略、UFW／云安全组复核，以及不影响既有应用的
-Caddy Tailscale-only listener 配置。
+Tailscale、云防火墙和 Caddy 的安全边界随后已完成，结果见下一节。
+
+## 10. 远程接入验收结果
+
+最终链路为：
+
+```text
+iPhone Safari
+→ Tailscale Grant
+→ Caddy 的 Tailscale-only HTTPS listener
+→ 127.0.0.1:4517 上的 Cinba Core
+```
+
+现场验收结果：
+
+- Tailscale MagicDNS HTTPS 返回有效证书，`GET /healthz` 返回 `200`、准确 revision 与
+  `safeToRestart`；
+- Caddy 只在 Tailscale IPv4 上为 Cinba 接收 `tcp:443`，Core 继续只监听 loopback；
+- 手机能加载 Web UI，并通过 WebSocket 获取 Core 身份与 provider 列表；
+- 手机断开 Tailscale 后入口不可达，重新连接后入口恢复；
+- 已加载页面在 Tailscale 短暂断开再恢复时，无需刷新即可自动重连；
+- 三个既有公网 Caddy 站点在升级、reload 和 Cinba 接入后保持原有行为；
+- 没有给 Cinba 新增云防火墙端口，没有使用 webhook，也没有让 GitHub 主动登录 VPS。
+
+尚待产品级验收的是：在 VPS 配置一个真实 provider 后发送消息，并从远程页面完成一次权限确认。
+这需要用户自行提供凭据，因此不属于基础设施 bootstrap，也不会把任何凭据写入本文或 Git。
