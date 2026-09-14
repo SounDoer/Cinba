@@ -41,6 +41,38 @@ test(
   },
 );
 
+test(
+  "the tray batch launcher enters the product CLI",
+  { skip: process.platform !== "win32" },
+  () => {
+    const temporary = mkdtempSync(join(tmpdir(), "cinba-cmd-"));
+    const fakeBin = join(temporary, "fake bin");
+    const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+    const launcher = join(repositoryRoot, "cinba-tray.cmd");
+    try {
+      mkdirSync(fakeBin);
+      writeFileSync(
+        join(fakeBin, "node.cmd"),
+        "@echo off\r\necho ARG1=[%~1]\r\necho ARG2=[%~2]\r\n",
+      );
+      writeFileSync(join(temporary, "run.cmd"), `@echo off\r\ncall "${launcher}"\r\n`);
+
+      const result = spawnSync("cmd.exe", ["/d", "/c", "run.cmd"], {
+        cwd: temporary,
+        encoding: "utf8",
+        env: { ...process.env, PATH: `${fakeBin};${process.env.PATH ?? ""}` },
+      });
+
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /ARG1=\[.*scripts\\cinba\.ts\]/i);
+      assert.match(result.stdout, /ARG2=\[tray\]/i);
+      assert.doesNotMatch(result.stdout, /npm <command>/i);
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

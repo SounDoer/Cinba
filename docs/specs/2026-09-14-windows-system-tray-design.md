@@ -15,8 +15,9 @@
 cinba tray
 ```
 
-该命令只确保托盘进程存在，不自动启动 Core，也不自动打开窗口。直接运行 Desktop 时继续打开窗口；
-点击托盘中的 `Open Cinba` 时调用 `ensureLocalCore()` 后创建窗口。
+该命令先构建 Web UI，再确保托盘进程存在；它不自动启动 Core，也不自动打开窗口。根目录的
+`cinba-tray.cmd` 提供同一入口的双击方式。直接运行 Desktop 时继续打开窗口；点击托盘中的
+`Open Cinba` 时调用 `ensureLocalCore()` 后创建窗口。
 
 ## 2. 职责与状态
 

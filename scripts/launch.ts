@@ -227,17 +227,22 @@ export async function launchTray(): Promise<void> {
   if (process.platform !== "win32") {
     throw new Error("the Cinba system tray is available only on Windows");
   }
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(process.execPath, [ELECTRON_CLI, DESKTOP_ROOT, "--tray-only"], {
-      cwd: REPOSITORY_ROOT,
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-    });
-    child.once("error", reject);
-    child.once("spawn", () => {
-      child.unref();
-      resolve();
+  await withLaunchLifecycle(async () => {
+    console.log("[launcher] Building the web application...");
+    await runToCompletion([VITE_ENTRY, "build"], WEB_ROOT);
+
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(process.execPath, [ELECTRON_CLI, DESKTOP_ROOT, "--tray-only"], {
+        cwd: REPOSITORY_ROOT,
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      child.once("error", reject);
+      child.once("spawn", () => {
+        child.unref();
+        resolve();
+      });
     });
   });
 }

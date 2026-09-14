@@ -119,11 +119,12 @@ On Windows, the same manager is available from a system tray controller:
 cinba tray
 ```
 
-The command returns after starting one background tray instance. It does not start the Core until
-you choose `Start Core` or `Open Cinba`. The tray reports stopped, running, draining, and external
-Core states; offers graceful start and stop controls; and can open the local Core log. Closing the
-Desktop window releases its Core connection while leaving the tray available. `Quit Tray` exits
-only the controller, so the Core keeps its existing safe idle-shutdown behavior.
+The command builds the Web UI, then returns after starting one background tray instance. It does
+not start the Core until you choose `Start Core` or `Open Cinba`. Double-clicking `cinba-tray.cmd`
+provides the same flow. The tray reports stopped, running, draining, and external Core states;
+offers graceful start and stop controls; and can open the local Core log. Closing the Desktop
+window releases its Core connection while leaving the tray available. `Quit Tray` exits only the
+controller, so the Core keeps its existing safe idle-shutdown behavior.
 
 For command guidance and read-only environment diagnosis:
 
