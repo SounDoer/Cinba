@@ -32,7 +32,8 @@ the Core on loopback and places Tailscale access control and a Caddy HTTPS proxy
 
 ## Requirements
 
-- Windows for the current local launcher workflow;
+- Windows or macOS for the local Web, TUI, and development workflow;
+- Windows for the current system tray workflow;
 - Node.js 24 or newer;
 - npm and Git;
 - an API key for a model provider supported by Pi.
@@ -51,13 +52,17 @@ opens it in the browser. The launcher can then exit: the Core stays in the backg
 client is connected and stops safely after ten client-free minutes. On Windows, `cinba-web.cmd`
 provides the same flow as a double-click launcher.
 
-For development with Core watch mode and Vite hot reload:
+For development with an isolated Core, Core watch mode, and Vite hot reload:
 
 ```powershell
 npm run dev
 ```
 
-The development UI opens on `127.0.0.1:5173`. The equivalent Windows launcher is `cinba-dev.cmd`.
+The development UI opens on `127.0.0.1:5173`. Its Dev Core listens on
+`127.0.0.1:4518` and keeps its Cinba state, Pi credentials, and Pi sessions under
+`~/.cinba/dev`, separate from the ordinary Core on port 4517. This lets both Core instances run at
+the same time without development work touching everyday data. The equivalent Windows launcher is
+`cinba-dev.cmd`.
 
 To open the terminal client:
 
@@ -95,9 +100,9 @@ without relinking. Remove it with `npm unlink --global cinba`. The Web launcher 
 `cinba-web.cmd`, so the global `cinba` command remains unambiguous in both PowerShell and `cmd.exe`.
 
 The local Core log is appended to `%USERPROFILE%\.cinba\core.log`. `npm run dev` remains a
-foreground development stack; stop the ordinary local Core before starting it if port 4517 is
-already occupied. Setting `CINBA_SERVER` for the TUI selects an explicitly managed remote Core and
-does not start the local one.
+foreground development stack, but its isolated port and data mean the ordinary local Core can stay
+running. Setting `CINBA_SERVER` for the TUI selects an explicitly managed remote Core and does not
+start the local one.
 
 The same global command exposes the local Core lifecycle without opening a client:
 
@@ -197,9 +202,9 @@ master ──► prod ──► deploy ──► releases/current ──► syst
 | `@cinba/desktop` | Electron host and Windows tray controller for the shared Web interface |
 | `@cinba/deploy` | Safe release preparation, activation, verification, and rollback |
 
-Runtime configuration and Pi data live outside the repository in `~/.cinba` and `~/.pi`. A release
-switch changes program files without replacing conversations, configuration, credentials, or user
-projects.
+Stable runtime configuration and Pi data live outside the repository in `~/.cinba` and `~/.pi`.
+The local Dev Core keeps its isolated state below `~/.cinba/dev`. A release switch changes program
+files without replacing conversations, configuration, credentials, or user projects.
 
 ## Quality checks
 

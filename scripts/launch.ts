@@ -8,6 +8,7 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { connect } from "node:net";
+import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureLocalCore } from "@cinba/core-manager";
@@ -20,9 +21,11 @@ const DESKTOP_ROOT = join(REPOSITORY_ROOT, "packages", "desktop");
 const VITE_ENTRY = join(REPOSITORY_ROOT, "node_modules", "vite", "bin", "vite.js");
 const ELECTRON_CLI = join(REPOSITORY_ROOT, "node_modules", "electron", "cli.js");
 
-const CORE_PORT = 4517;
+const STABLE_CORE_PORT = 4517;
+const DEV_CORE_PORT = 4518;
 const WEB_PORT = 5173;
-const CORE_URL = `http://127.0.0.1:${CORE_PORT}/`;
+const STABLE_CORE_URL = `http://127.0.0.1:${STABLE_CORE_PORT}/`;
+const DEV_CORE_URL = `http://127.0.0.1:${DEV_CORE_PORT}/`;
 const DEV_URL = `http://127.0.0.1:${WEB_PORT}/`;
 const READY_TIMEOUT_MS = 30_000;
 
@@ -31,9 +34,13 @@ type Mode = "start" | "dev" | "tui" | "tray";
 const children = new Set<ChildProcess>();
 let stopping = false;
 
-function run(args: string[], options: { cwd?: string; managed?: boolean } = {}): ChildProcess {
+function run(
+  args: string[],
+  options: { cwd?: string; env?: NodeJS.ProcessEnv; managed?: boolean } = {},
+): ChildProcess {
   const child = spawn(process.execPath, args, {
     cwd: options.cwd ?? REPOSITORY_ROOT,
+    env: options.env,
     stdio: "inherit",
     windowsHide: true,
   });
@@ -116,17 +123,53 @@ async function waitUntilReachable(url: string, processName: string): Promise<voi
   throw new Error(`${processName} did not become reachable within 30 seconds`);
 }
 
-function openBrowser(url: string): void {
+export function browserOpenCommand(
+  url: string,
+  platform: NodeJS.Platform = process.platform,
+): { command: string; args: string[] } {
+  if (platform === "win32") {
+    return { command: "rundll32.exe", args: ["url.dll,FileProtocolHandler", url] };
+  }
+  if (platform === "darwin") {
+    return { command: "open", args: [url] };
+  }
+  return { command: "xdg-open", args: [url] };
+}
+
+export function createDevelopmentEnvironment(
+  homeDirectory = homedir(),
+  machineName = hostname(),
+  environment: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const stateDirectory = join(homeDirectory, ".cinba", "dev");
+  return {
+    ...environment,
+    CINBA_CORE_LIFETIME: "persistent",
+    CINBA_DEFAULT_CORE_NAME: `${machineName} Dev`,
+    CINBA_PORT: String(DEV_CORE_PORT),
+    CINBA_STATE_DIR: stateDirectory,
+    PI_CODING_AGENT_DIR: join(stateDirectory, "pi-agent"),
+  };
+}
+
+async function openBrowser(url: string): Promise<void> {
   if (process.env.CINBA_NO_BROWSER === "1") {
     return;
   }
 
-  const opener = spawn("rundll32.exe", ["url.dll,FileProtocolHandler", url], {
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true,
+  const plan = browserOpenCommand(url);
+  await new Promise<void>((resolve, reject) => {
+    const opener = spawn(plan.command, plan.args, {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    opener.once("error", reject);
+    opener.once("spawn", () => {
+      opener.unref();
+      resolve();
+    });
   });
-  opener.unref();
 }
 
 async function stopChildren(): Promise<void> {
@@ -175,25 +218,29 @@ export async function launchWeb(): Promise<void> {
 
     console.log("[launcher] Ensuring the shared local Core is running...");
     await ensureLocalCore();
-    openBrowser(CORE_URL);
-    console.log(`[launcher] Cinba is ready at ${CORE_URL}`);
+    await openBrowser(STABLE_CORE_URL);
+    console.log(`[launcher] Cinba is ready at ${STABLE_CORE_URL}`);
   });
 }
 
 export async function launchDevelopment(): Promise<void> {
   await withLaunchLifecycle(async () => {
-    await requireFreePort(CORE_PORT, "Cinba core service");
+    await requireFreePort(DEV_CORE_PORT, "Cinba development core service");
     await requireFreePort(WEB_PORT, "Vite development server");
 
-    console.log("[launcher] Starting Core watch mode and Vite hot reload...");
-    const core = run(["--watch", CORE_ENTRY]);
-    const web = run([VITE_ENTRY, "--host", "127.0.0.1"], { cwd: WEB_ROOT });
+    console.log("[launcher] Starting isolated Dev Core watch mode and Vite hot reload...");
+    const environment = createDevelopmentEnvironment();
+    const core = run(["--watch", CORE_ENTRY], { env: environment });
+    const web = run([VITE_ENTRY, "--host", "127.0.0.1"], {
+      cwd: WEB_ROOT,
+      env: environment,
+    });
 
     await Promise.all([
-      waitUntilReachable(CORE_URL, "Cinba core service"),
+      waitUntilReachable(DEV_CORE_URL, "Cinba development core service"),
       waitUntilReachable(DEV_URL, "Vite development server"),
     ]);
-    openBrowser(DEV_URL);
+    await openBrowser(DEV_URL);
     console.log(`[launcher] Development mode is ready at ${DEV_URL}`);
     console.log("[launcher] Press Ctrl+C once to stop Core and Vite.");
 

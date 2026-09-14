@@ -7,6 +7,7 @@ export type LocalCoreConfig = {
   repositoryRoot: string;
   serverEntry: string;
   stateDirectory: string;
+  piAgentDirectory: string;
   startLockPath: string;
   runtimePath: string;
   controlPath: string;
@@ -24,13 +25,15 @@ export function createLocalCoreConfig(
 ): LocalCoreConfig {
   const packageRoot = options.packageRoot ?? PACKAGE_ROOT;
   const repositoryRoot = resolve(packageRoot, "..", "..");
-  const stateDirectory = join(options.homeDirectory ?? homedir(), ".cinba");
+  const homeDirectory = options.homeDirectory ?? homedir();
+  const stateDirectory = join(homeDirectory, ".cinba");
 
   return {
     baseUrl: options.baseUrl ?? "http://127.0.0.1:4517/",
     repositoryRoot,
     serverEntry: join(repositoryRoot, "packages", "server", "src", "index.ts"),
     stateDirectory,
+    piAgentDirectory: join(homeDirectory, ".pi", "agent"),
     startLockPath: join(stateDirectory, "core-start.lock"),
     runtimePath: join(stateDirectory, "core-runtime.json"),
     controlPath: join(stateDirectory, "core-control.json"),

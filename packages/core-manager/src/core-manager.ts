@@ -68,15 +68,20 @@ const DEFAULT_POLL_INTERVAL_MS = 100;
 export function createCoreProcessEnvironment(
   controlToken: string,
   environment: NodeJS.ProcessEnv = process.env,
+  config = createLocalCoreConfig(),
 ): NodeJS.ProcessEnv {
+  const stableEnvironment = { ...environment };
+  delete stableEnvironment.CINBA_DEFAULT_CORE_NAME;
   return {
-    ...environment,
+    ...stableEnvironment,
     // process.execPath is electron.exe when Desktop calls the manager. Without
     // this, Electron loads serverEntry as an app and stays alive after Core stops.
     ELECTRON_RUN_AS_NODE: "1",
     CINBA_CORE_LIFETIME: "on-demand",
     CINBA_LOCAL_CONTROL_TOKEN: controlToken,
     CINBA_PORT: "4517",
+    CINBA_STATE_DIR: config.stateDirectory,
+    PI_CODING_AGENT_DIR: config.piAgentDirectory,
   };
 }
 
@@ -161,7 +166,7 @@ function defaultSpawnCore(config: LocalCoreConfig, controlToken: string): ChildP
     const child = spawn(process.execPath, [config.serverEntry], {
       cwd: config.repositoryRoot,
       detached: true,
-      env: createCoreProcessEnvironment(controlToken),
+      env: createCoreProcessEnvironment(controlToken, process.env, config),
       stdio: ["ignore", log, log],
       windowsHide: true,
     });

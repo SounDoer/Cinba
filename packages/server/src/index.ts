@@ -36,6 +36,7 @@ import {
 } from "./drain.ts";
 import { createHealthHandler, isSafeToRestart, normalizeRevision } from "./health.ts";
 import { createLocalCoreControlHandler } from "./local-core-control.ts";
+import { resolveCinbaStateDirectory } from "./runtime-paths.ts";
 import { createServerRuntime } from "./server-runtime.ts";
 import { SERVICE_IDLE_TIMEOUT_MS, assessServiceIdle, readCoreLifetime } from "./service-idle.ts";
 import { type LiveSession, createSessionRegistry } from "./session-registry.ts";
@@ -55,13 +56,14 @@ const HOST = "127.0.0.1";
 const PORT = Number(process.env.CINBA_PORT) || 4517;
 const REVISION = normalizeRevision(process.env.CINBA_REVISION);
 const CORE_LIFETIME = readCoreLifetime(process.env.CINBA_CORE_LIFETIME);
+const STATE_DIRECTORY = resolveCinbaStateDirectory();
 
 /** Where the built UI lives. Located relative to the repo layout, not through package resolution. */
 const WEB_DIST = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
 const serveStatic = createStaticFileHandler(WEB_DIST);
-const config = createConfigStore(join(homedir(), ".cinba", "config.json"), {
+const config = createConfigStore(join(STATE_DIRECTORY, "config.json"), {
   cwd: homedir(),
-  coreName: hostname(),
+  coreName: process.env.CINBA_DEFAULT_CORE_NAME?.trim() || hostname(),
 });
 
 // ---- State ----
@@ -122,7 +124,7 @@ const serveHealth = createHealthHandler({
   safeToRestart,
 });
 const serveDeploymentStatus = createDeploymentStatusHandler({
-  statusPath: join(homedir(), ".cinba", "deployment.json"),
+  statusPath: join(STATE_DIRECTORY, "deployment.json"),
 });
 const serveLocalCoreControl = createLocalCoreControlHandler({
   lifetime: CORE_LIFETIME,

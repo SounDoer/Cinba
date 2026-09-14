@@ -22,12 +22,26 @@ function fakeChild(pid: number): ChildProcess {
 }
 
 test("a Core spawned by Electron runs as Node", () => {
-  const environment = createCoreProcessEnvironment("secret", { PATH: "C:\\Windows" });
+  const home = join(tmpdir(), "cinba-manager-home");
+  const config = createLocalCoreConfig({ homeDirectory: home });
+  const environment = createCoreProcessEnvironment(
+    "secret",
+    {
+      PATH: "C:\\Windows",
+      CINBA_DEFAULT_CORE_NAME: "Development",
+      CINBA_STATE_DIR: "C:\\wrong-state",
+      PI_CODING_AGENT_DIR: "C:\\wrong-pi",
+    },
+    config,
+  );
 
   assert.equal(environment.ELECTRON_RUN_AS_NODE, "1");
   assert.equal(environment.CINBA_CORE_LIFETIME, "on-demand");
   assert.equal(environment.CINBA_LOCAL_CONTROL_TOKEN, "secret");
   assert.equal(environment.CINBA_PORT, "4517");
+  assert.equal(environment.CINBA_STATE_DIR, config.stateDirectory);
+  assert.equal(environment.PI_CODING_AGENT_DIR, config.piAgentDirectory);
+  assert.equal(environment.CINBA_DEFAULT_CORE_NAME, undefined);
   assert.equal(environment.PATH, "C:\\Windows");
 });
 
