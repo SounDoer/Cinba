@@ -1,8 +1,8 @@
 import { statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { probeCoreHealth, type CoreHealth } from "@cinba/core-client";
-import { inspectLocalCore, type LocalCoreStatus } from "@cinba/core-manager";
+import { type CoreHealth, probeCoreHealth } from "@cinba/core-client";
+import { type LocalCoreStatus, inspectLocalCore } from "@cinba/core-manager";
 
 const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const MINIMUM_NODE_MAJOR = 24;
