@@ -5,11 +5,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ModelRef } from "@cinba/contract";
 
+export type WebSearchPrimary = "auto" | "exa" | "brave";
+
 export type CinbaConfig = {
   cwd: string;
   model: ModelRef | undefined;
   lastSessionId: string | undefined;
   coreName: string;
+  webSearchPrimary: WebSearchPrimary;
 };
 
 export type ConfigStore = {
@@ -28,6 +31,7 @@ export function createConfigStore(path: string, defaults: ConfigDefaults): Confi
     model: undefined,
     lastSessionId: undefined,
     coreName: defaults.coreName,
+    webSearchPrimary: "auto",
   };
 
   try {
@@ -43,6 +47,13 @@ export function createConfigStore(path: string, defaults: ConfigDefaults): Confi
     }
     if (typeof parsed.coreName === "string" && parsed.coreName.trim() !== "") {
       state.coreName = parsed.coreName.trim();
+    }
+    if (
+      parsed.webSearchPrimary === "auto" ||
+      parsed.webSearchPrimary === "exa" ||
+      parsed.webSearchPrimary === "brave"
+    ) {
+      state.webSearchPrimary = parsed.webSearchPrimary;
     }
   } catch {
     // First start, an unreadable file, and malformed JSON all fall back safely.
@@ -65,6 +76,9 @@ export function createConfigStore(path: string, defaults: ConfigDefaults): Confi
     if (changes.coreName !== undefined) {
       state.coreName = changes.coreName;
     }
+    if (changes.webSearchPrimary !== undefined) {
+      state.webSearchPrimary = changes.webSearchPrimary;
+    }
 
     try {
       mkdirSync(dirname(path), { recursive: true });
@@ -74,6 +88,7 @@ export function createConfigStore(path: string, defaults: ConfigDefaults): Confi
         modelId: state.model?.id,
         lastSessionId: state.lastSessionId,
         coreName: state.coreName,
+        webSearchPrimary: state.webSearchPrimary,
       };
       writeFileSync(path, JSON.stringify(body, null, 2), "utf8");
     } catch {

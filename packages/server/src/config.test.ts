@@ -35,6 +35,7 @@ test("a missing file starts with the supplied defaults", () => {
       model: undefined,
       lastSessionId: undefined,
       coreName: "test-machine",
+      webSearchPrimary: "auto",
     });
   } finally {
     files.close();
@@ -53,6 +54,7 @@ test("valid persisted values replace the defaults", () => {
         modelId: "deepseek-chat",
         lastSessionId: "session-1",
         coreName: "  studio  ",
+        webSearchPrimary: "brave",
       }),
     );
 
@@ -66,6 +68,7 @@ test("valid persisted values replace the defaults", () => {
       model: { provider: "deepseek", id: "deepseek-chat" },
       lastSessionId: "session-1",
       coreName: "studio",
+      webSearchPrimary: "brave",
     });
   } finally {
     files.close();
@@ -96,6 +99,7 @@ test("invalid persisted fields leave their defaults intact", () => {
       model: undefined,
       lastSessionId: undefined,
       coreName: "test-machine",
+      webSearchPrimary: "auto",
     });
   } finally {
     files.close();
@@ -113,6 +117,7 @@ test("updating changes memory and persists the complete config", () => {
     store.update({
       model: { provider: "openai", id: "gpt-test" },
       lastSessionId: "session-2",
+      webSearchPrimary: "brave",
     });
 
     assert.deepEqual(store.get(), {
@@ -120,6 +125,7 @@ test("updating changes memory and persists the complete config", () => {
       model: { provider: "openai", id: "gpt-test" },
       lastSessionId: "session-2",
       coreName: "test-machine",
+      webSearchPrimary: "brave",
     });
     assert.deepEqual(JSON.parse(readFileSync(files.configPath, "utf8")), {
       cwd: files.projectPath,
@@ -127,6 +133,7 @@ test("updating changes memory and persists the complete config", () => {
       modelId: "gpt-test",
       lastSessionId: "session-2",
       coreName: "test-machine",
+      webSearchPrimary: "brave",
     });
   } finally {
     files.close();

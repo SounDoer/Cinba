@@ -7,6 +7,13 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.85.1"
+    "@earendil-works/pi-coding-agent": "^0.85.1",
+    "@mozilla/readability": "^0.6.0",
+    "jsdom": "^28.1.0",
+    "turndown": "^7.2.4"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^28.0.3",
+    "@types/turndown": "^5.0.6"
   }
 }

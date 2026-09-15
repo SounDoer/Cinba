@@ -16,6 +16,18 @@ test("the Dev Core receives an isolated port, state directory, and Pi agent dire
   assert.equal(environment.PATH, "/usr/bin");
 });
 
+test("the Dev Core does not inherit stable web search credentials", () => {
+  const environment = createDevelopmentEnvironment("example-home", "workstation", {
+    EXA_API_KEY: "stable-exa-key",
+    BRAVE_SEARCH_API_KEY: "stable-brave-key",
+    PATH: "/usr/bin",
+  });
+
+  assert.equal(environment.EXA_API_KEY, undefined);
+  assert.equal(environment.BRAVE_SEARCH_API_KEY, undefined);
+  assert.equal(environment.PATH, "/usr/bin");
+});
+
 test("each desktop platform uses its native URL opener", () => {
   const url = "http://127.0.0.1:5173/";
   assert.deepEqual(browserOpenCommand(url, "win32"), {

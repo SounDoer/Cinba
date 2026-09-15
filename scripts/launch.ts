@@ -142,8 +142,13 @@ export function createDevelopmentEnvironment(
   environment: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
   const stateDirectory = join(homeDirectory, ".cinba", "dev");
+  const {
+    EXA_API_KEY: _exaApiKey,
+    BRAVE_SEARCH_API_KEY: _braveSearchApiKey,
+    ...devEnvironment
+  } = environment;
   return {
-    ...environment,
+    ...devEnvironment,
     CINBA_CORE_LIFETIME: "persistent",
     CINBA_DEFAULT_CORE_NAME: `${machineName} Dev`,
     CINBA_PORT: String(DEV_CORE_PORT),
