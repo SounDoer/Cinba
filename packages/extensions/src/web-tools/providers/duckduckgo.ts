@@ -1,9 +1,11 @@
 import type { WebSearchResult } from "../types.ts";
+import { readLimitedResponseText } from "./response.ts";
 
 export type DuckDuckGoSearchOptions = {
   query: string;
   maxResults: number;
   fetch?: typeof fetch;
+  maxResponseBytes?: number;
   signal?: AbortSignal;
 };
 
@@ -32,7 +34,9 @@ export async function searchDuckDuckGo(
   }
 
   const { JSDOM } = await import("jsdom");
-  const dom = new JSDOM(await response.text(), { url: response.url || url.href });
+  const dom = new JSDOM(await readLimitedResponseText(response, options.maxResponseBytes), {
+    url: response.url || url.href,
+  });
   try {
     const results: WebSearchResult[] = [];
     for (const container of dom.window.document.querySelectorAll(".result")) {

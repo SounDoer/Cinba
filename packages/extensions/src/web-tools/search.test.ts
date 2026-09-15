@@ -28,6 +28,55 @@ test("a technical Exa failure falls back to Brave with a redacted warning", asyn
   assert.equal(JSON.stringify(result).includes("secret-exa-key"), false);
 });
 
+test("a valid empty result does not call the next provider", async () => {
+  let braveCalls = 0;
+  const result = await searchWeb({
+    query: "nothing found",
+    primary: "exa",
+    apiKeys: { exa: "exa-key", brave: "brave-key" },
+    adapters: {
+      exa: async () => [],
+      brave: async () => {
+        braveCalls += 1;
+        return [{ title: "unexpected", url: "https://example.com", snippet: "" }];
+      },
+      duckduckgo: async () => [],
+    },
+  });
+
+  assert.equal(result.provider, "exa");
+  assert.deepEqual(result.results, []);
+  assert.equal(braveCalls, 0);
+});
+
+test("a caller abort ends the search without falling back", async () => {
+  const controller = new AbortController();
+  const reason = new Error("user cancelled search");
+  let braveCalls = 0;
+  const pending = searchWeb({
+    query: "cancel me",
+    primary: "exa",
+    apiKeys: { exa: "exa-key", brave: "brave-key" },
+    signal: controller.signal,
+    adapters: {
+      exa: ({ signal }) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+      brave: async () => {
+        braveCalls += 1;
+        return [];
+      },
+      duckduckgo: async () => [],
+    },
+  });
+
+  controller.abort(reason);
+
+  await assert.rejects(pending, (error) => error === reason);
+  assert.equal(braveCalls, 0);
+});
+
 test("a blank search query is rejected before provider routing", async () => {
   await assert.rejects(
     searchWeb({

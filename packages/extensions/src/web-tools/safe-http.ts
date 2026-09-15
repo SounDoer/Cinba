@@ -7,6 +7,7 @@ import {
 } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { BlockList, type LookupFunction, isIP } from "node:net";
+import { hostname as localHostname } from "node:os";
 import type { Readable } from "node:stream";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 
@@ -39,6 +40,7 @@ export type SafeRequestFunction = (
 const NON_PUBLIC_ADDRESSES = new BlockList();
 const DEFAULT_MAX_BODY_BYTES = 2 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 20_000;
+const LOCAL_HOSTNAME = localHostname().toLowerCase();
 
 for (const [network, prefix] of [
   ["0.0.0.0", 8],
@@ -63,8 +65,12 @@ for (const [network, prefix] of [
 for (const [network, prefix] of [
   ["::", 128],
   ["::1", 128],
+  ["64:ff9b::", 96],
+  ["64:ff9b:1::", 48],
   ["100::", 64],
+  ["2001::", 23],
   ["2001:db8::", 32],
+  ["2002::", 16],
   ["fc00::", 7],
   ["fe80::", 10],
   ["ff00::", 8],
@@ -172,9 +178,13 @@ async function fetchPublicUrlWithRedirects(
   options.signal?.throwIfAborted();
   const url = new URL(input);
   const literalAddress = url.hostname.startsWith("[") ? url.hostname.slice(1, -1) : url.hostname;
+  const normalizedHostname = literalAddress.toLowerCase();
   if (
     (url.protocol !== "http:" && url.protocol !== "https:") ||
-    isNonPublicAddress(literalAddress)
+    isNonPublicAddress(literalAddress) ||
+    normalizedHostname === "localhost" ||
+    normalizedHostname.endsWith(".localhost") ||
+    normalizedHostname === LOCAL_HOSTNAME
   ) {
     throw new Error("web_fetch requires a public HTTP or HTTPS URL");
   }

@@ -40,3 +40,16 @@ test("Brave Web Search sends its versioned request and normalizes results", asyn
     },
   ]);
 });
+
+test("Brave does not disguise malformed result entries as an empty search", async () => {
+  await assert.rejects(
+    searchBrave({
+      apiKey: "test-brave-key",
+      query: "malformed",
+      maxResults: 1,
+      fetch: async () =>
+        new Response(JSON.stringify({ web: { results: [{ description: "missing fields" }] } })),
+    }),
+    /invalid response/,
+  );
+});

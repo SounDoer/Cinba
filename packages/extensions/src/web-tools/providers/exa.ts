@@ -1,10 +1,12 @@
 import type { WebSearchResult } from "../types.ts";
+import { readLimitedJsonResponse } from "./response.ts";
 
 export type ExaSearchOptions = {
   apiKey: string;
   query: string;
   maxResults: number;
   fetch?: typeof fetch;
+  maxResponseBytes?: number;
   signal?: AbortSignal;
 };
 
@@ -27,27 +29,27 @@ export async function searchExa(options: ExaSearchOptions): Promise<WebSearchRes
     throw new Error(`Exa search failed with HTTP ${response.status}`);
   }
 
-  const payload = (await response.json()) as { results?: unknown };
+  const payload = (await readLimitedJsonResponse(response, options.maxResponseBytes)) as {
+    results?: unknown;
+  };
   if (!Array.isArray(payload.results)) {
     throw new Error("Exa search returned an invalid response");
   }
-  return payload.results.flatMap((value): WebSearchResult[] => {
+  return payload.results.map((value): WebSearchResult => {
     if (typeof value !== "object" || value === null) {
-      return [];
+      throw new Error("Exa search returned an invalid response");
     }
     const result = value as Record<string, unknown>;
     if (typeof result.title !== "string" || typeof result.url !== "string") {
-      return [];
+      throw new Error("Exa search returned an invalid response");
     }
     const highlights = Array.isArray(result.highlights)
       ? result.highlights.filter((highlight): highlight is string => typeof highlight === "string")
       : [];
-    return [
-      {
-        title: result.title,
-        url: result.url,
-        snippet: highlights.find((highlight) => highlight.trim() !== "")?.trim() ?? "",
-      },
-    ];
+    return {
+      title: result.title,
+      url: result.url,
+      snippet: highlights.find((highlight) => highlight.trim() !== "")?.trim() ?? "",
+    };
   });
 }

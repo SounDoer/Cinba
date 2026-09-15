@@ -40,3 +40,28 @@ test("Exa search requests highlights and normalizes results", async () => {
     },
   ]);
 });
+
+test("Exa rejects a response larger than the provider body limit", async () => {
+  await assert.rejects(
+    searchExa({
+      apiKey: "test-exa-key",
+      query: "large response",
+      maxResults: 1,
+      maxResponseBytes: 10,
+      fetch: async () => new Response(JSON.stringify({ results: [] })),
+    }),
+    /response exceeds 10 bytes/,
+  );
+});
+
+test("Exa does not disguise malformed result entries as an empty search", async () => {
+  await assert.rejects(
+    searchExa({
+      apiKey: "test-exa-key",
+      query: "malformed",
+      maxResults: 1,
+      fetch: async () => new Response(JSON.stringify({ results: [{ title: "missing URL" }] })),
+    }),
+    /invalid response/,
+  );
+});

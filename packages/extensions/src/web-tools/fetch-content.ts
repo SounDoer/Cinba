@@ -23,6 +23,15 @@ export type WebFetchContentOptions = {
 
 const DEFAULT_MAX_ELEMENTS = 50_000;
 
+function decodeBody(body: Uint8Array, contentType: string | undefined): string {
+  const charset = contentType?.match(/(?:^|;)\s*charset\s*=\s*["']?([^;"'\s]+)/iu)?.[1] ?? "utf-8";
+  try {
+    return new TextDecoder(charset).decode(body);
+  } catch (error) {
+    throw new Error(`web_fetch does not support charset: ${charset}`, { cause: error });
+  }
+}
+
 export async function fetchWebContent(
   requestedUrl: string,
   options: WebFetchContentOptions = {},
@@ -32,7 +41,7 @@ export async function fetchWebContent(
   });
   const contentType = response.contentType?.split(";", 1)[0]?.trim().toLowerCase();
   if (contentType === "text/plain") {
-    const truncated = truncateHead(new TextDecoder().decode(response.body), {
+    const truncated = truncateHead(decodeBody(response.body, response.contentType), {
       maxBytes: DEFAULT_MAX_BYTES,
       maxLines: DEFAULT_MAX_LINES,
     });
@@ -55,7 +64,9 @@ export async function fetchWebContent(
     import("jsdom"),
     import("turndown"),
   ]);
-  const dom = new JSDOM(new TextDecoder().decode(response.body), { url: response.finalUrl });
+  const dom = new JSDOM(decodeBody(response.body, response.contentType), {
+    url: response.finalUrl,
+  });
   try {
     const maxElements = options.maxElements ?? DEFAULT_MAX_ELEMENTS;
     if (dom.window.document.getElementsByTagName("*").length > maxElements) {

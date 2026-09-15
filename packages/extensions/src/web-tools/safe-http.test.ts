@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import type { LookupAddress } from "node:dns";
 import { createServer, request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
+import { hostname } from "node:os";
 import test from "node:test";
 import { gzipSync } from "node:zlib";
 import { type SafeRequestFunction, createPinnedLookup, fetchPublicUrl } from "./safe-http.ts";
@@ -45,6 +46,18 @@ test("hostnames resolving to a private address are rejected", async () => {
       resolveHostname: async () => [{ address: "10.0.0.8", family: 4 }],
     }),
     /resolved to a non-public address/,
+  );
+});
+
+test("the local machine name is rejected even if DNS reports a public address", async () => {
+  await assert.rejects(
+    fetchPublicUrl(`http://${hostname()}/`, {
+      resolveHostname: async () => [{ address: "1.1.1.1", family: 4 }],
+      request: () => {
+        throw new Error("a request must not be made");
+      },
+    }),
+    /public HTTP or HTTPS URL/,
   );
 });
 

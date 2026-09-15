@@ -1,10 +1,12 @@
 import type { WebSearchResult } from "../types.ts";
+import { readLimitedJsonResponse } from "./response.ts";
 
 export type BraveSearchOptions = {
   apiKey: string;
   query: string;
   maxResults: number;
   fetch?: typeof fetch;
+  maxResponseBytes?: number;
   signal?: AbortSignal;
 };
 
@@ -24,24 +26,24 @@ export async function searchBrave(options: BraveSearchOptions): Promise<WebSearc
     throw new Error(`Brave search failed with HTTP ${response.status}`);
   }
 
-  const payload = (await response.json()) as { web?: { results?: unknown } };
+  const payload = (await readLimitedJsonResponse(response, options.maxResponseBytes)) as {
+    web?: { results?: unknown };
+  };
   if (!Array.isArray(payload.web?.results)) {
     throw new Error("Brave search returned an invalid response");
   }
-  return payload.web.results.flatMap((value): WebSearchResult[] => {
+  return payload.web.results.map((value): WebSearchResult => {
     if (typeof value !== "object" || value === null) {
-      return [];
+      throw new Error("Brave search returned an invalid response");
     }
     const result = value as Record<string, unknown>;
     if (typeof result.title !== "string" || typeof result.url !== "string") {
-      return [];
+      throw new Error("Brave search returned an invalid response");
     }
-    return [
-      {
-        title: result.title,
-        url: result.url,
-        snippet: typeof result.description === "string" ? result.description.trim() : "",
-      },
-    ];
+    return {
+      title: result.title,
+      url: result.url,
+      snippet: typeof result.description === "string" ? result.description.trim() : "",
+    };
   });
 }

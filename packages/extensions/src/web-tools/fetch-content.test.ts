@@ -41,6 +41,33 @@ test("plain text bypasses HTML extraction", async () => {
   assert.equal(result.finalUrl, "https://cdn.example.com/readme.txt");
 });
 
+test("text is decoded with the response charset", async () => {
+  const result = await fetchWebContent("https://example.com/latin.txt", {
+    fetchUrl: async () => ({
+      finalUrl: "https://example.com/latin.txt",
+      contentType: "text/plain; charset=windows-1252",
+      body: Uint8Array.from([0x63, 0x61, 0x66, 0xe9]),
+      downloadTruncated: false,
+    }),
+  });
+
+  assert.equal(result.content, "café");
+});
+
+test("unsupported MIME types are rejected before content extraction", async () => {
+  await assert.rejects(
+    fetchWebContent("https://example.com/file.pdf", {
+      fetchUrl: async () => ({
+        finalUrl: "https://example.com/file.pdf",
+        contentType: "application/pdf",
+        body: new TextEncoder().encode("not really a PDF"),
+        downloadTruncated: false,
+      }),
+    }),
+    /does not support content type: application\/pdf/,
+  );
+});
+
 test("an overly complex DOM is rejected before readability analysis", async () => {
   const html = "<html><body><main><p>one</p><p>two</p></main></body></html>";
 
