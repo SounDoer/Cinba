@@ -46,8 +46,16 @@ export async function searchExa(options: ExaSearchOptions): Promise<WebSearchRes
     const highlights = Array.isArray(result.highlights)
       ? result.highlights.filter((highlight): highlight is string => typeof highlight === "string")
       : [];
+    let title = result.title;
+    if (title.trim() === "") {
+      try {
+        title = new URL(result.url).hostname;
+      } catch {
+        throw new Error("Exa search returned an invalid response");
+      }
+    }
     return {
-      title: result.title,
+      title,
       url: result.url,
       snippet: highlights.find((highlight) => highlight.trim() !== "")?.trim() ?? "",
     };

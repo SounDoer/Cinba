@@ -41,6 +41,34 @@ test("Exa search requests highlights and normalizes results", async () => {
   ]);
 });
 
+test("Exa search labels an untitled result with its hostname", async () => {
+  const results = await searchExa({
+    apiKey: "test-exa-key",
+    query: "untitled result",
+    maxResults: 1,
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          results: [
+            {
+              title: "   ",
+              url: "https://raw.githubusercontent.com/nodejs/node/master/README.md",
+              highlights: ["Node.js source repository."],
+            },
+          ],
+        }),
+      ),
+  });
+
+  assert.deepEqual(results, [
+    {
+      title: "raw.githubusercontent.com",
+      url: "https://raw.githubusercontent.com/nodejs/node/master/README.md",
+      snippet: "Node.js source repository.",
+    },
+  ]);
+});
+
 test("Exa rejects a response larger than the provider body limit", async () => {
   await assert.rejects(
     searchExa({
