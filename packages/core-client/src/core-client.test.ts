@@ -346,6 +346,7 @@ test("the conversation commands go out in protocol form", () => {
   client.clearQueue();
   client.editMessage("entry-1", "fixed hello");
   client.abort();
+  client.abortRetry();
   client.compact();
   client.respondConfirm("u1", false);
 
@@ -358,6 +359,7 @@ test("the conversation commands go out in protocol form", () => {
       { type: "clear_queue" },
       { type: "edit_message", entryId: "entry-1", text: "fixed hello" },
       { type: "abort" },
+      { type: "abort_retry" },
       { type: "compact" },
       { type: "respond_confirm", requestId: "u1", confirmed: false },
     ],
@@ -424,6 +426,7 @@ test("snapshots and actions reach their respective handlers", () => {
     totalCost: 0,
     busy: false,
     compacting: false,
+    retry: null,
     context: { tokens: null, contextWindow: null, percent: null, estimated: false },
     queue: { steering: [], followUp: [] },
   };
@@ -528,6 +531,7 @@ test("a snapshot carries the current model alongside the working directory", () 
       totalCost: 0,
       busy: false,
       compacting: false,
+      retry: null,
       context: { tokens: null, contextWindow: null, percent: null, estimated: false },
       queue: { steering: [], followUp: [] },
     },

@@ -8,6 +8,7 @@ test("the basic client messages are recognized", () => {
     text: "hello",
   });
   assert.deepEqual(parseClientMessage({ type: "abort" }), { type: "abort" });
+  assert.deepEqual(parseClientMessage({ type: "abort_retry" }), { type: "abort_retry" });
   assert.deepEqual(parseClientMessage({ type: "compact" }), { type: "compact" });
   assert.deepEqual(
     parseClientMessage({ type: "prompt", text: "change direction", streamingBehavior: "steer" }),
@@ -33,6 +34,7 @@ test("server messages are validated before reaching a client", () => {
       totalCost: 0,
       busy: false,
       compacting: false,
+      retry: null,
       context: { tokens: null, contextWindow: null, percent: null, estimated: false },
       queue: { steering: [], followUp: [] },
     },
@@ -109,6 +111,31 @@ test("malformed server messages are dropped", () => {
     undefined,
   );
   assert.equal(parseServerMessage({ type: "never_heard_of_this" }), undefined);
+});
+
+test("retry actions validate every field", () => {
+  const valid = {
+    type: "actions",
+    actions: [
+      {
+        type: "retry_changed",
+        retrying: true,
+        attempt: 1,
+        maxAttempts: 3,
+        delayMs: 2_000,
+        retryAt: 12_000,
+        errorMessage: "Service overloaded",
+      },
+    ],
+  };
+  assert.equal(parseServerMessage(valid), valid);
+  assert.equal(
+    parseServerMessage({
+      ...valid,
+      actions: [{ ...valid.actions[0], retryAt: "soon" }],
+    }),
+    undefined,
+  );
 });
 
 test("list_dir is recognized", () => {

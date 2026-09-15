@@ -4,6 +4,7 @@ import { type DrainStopMode, canProcessDuringDrain, createDrainController } from
 
 test("draining accepts only aborts and answers to existing confirmations", () => {
   assert.equal(canProcessDuringDrain("abort"), true);
+  assert.equal(canProcessDuringDrain("abort_retry"), true);
   assert.equal(canProcessDuringDrain("clear_queue"), true);
   assert.equal(canProcessDuringDrain("respond_confirm"), true);
   for (const type of ["prompt", "edit_message", "set_model", "create_session", "set_api_key"]) {

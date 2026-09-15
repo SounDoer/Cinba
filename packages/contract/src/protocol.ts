@@ -61,6 +61,7 @@ export type ClientMessage =
   | { type: "prompt"; text: string; streamingBehavior?: PromptStreamingBehavior }
   | { type: "clear_queue" }
   | { type: "compact" }
+  | { type: "abort_retry" }
   | { type: "edit_message"; entryId: string; text: string }
   | { type: "abort" }
   | { type: "respond_confirm"; requestId: string; confirmed: boolean }
@@ -126,6 +127,20 @@ type WebToolsClientMessage = Extract<
 >;
 
 type PromptClientMessage = Extract<ClientMessage, { type: "prompt" | "clear_queue" }>;
+type SimpleClientMessage = Extract<ClientMessage, { type: "abort" | "abort_retry" | "compact" }>;
+
+function parseSimpleClientMessage(
+  message: Record<string, unknown>,
+): SimpleClientMessage | undefined {
+  switch (message.type) {
+    case "abort":
+    case "abort_retry":
+    case "compact":
+      return hasOnlyKeys(message, ["type"]) ? { type: message.type } : undefined;
+    default:
+      return undefined;
+  }
+}
 
 function parsePromptClientMessage(
   message: Record<string, unknown>,
@@ -206,6 +221,10 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
   if (promptMessage) {
     return promptMessage;
   }
+  const simpleMessage = parseSimpleClientMessage(message);
+  if (simpleMessage) {
+    return simpleMessage;
+  }
   const webToolsMessage = parseWebToolsClientMessage(message);
   if (webToolsMessage) {
     return webToolsMessage;
@@ -226,12 +245,6 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
         entryId: message.entryId,
         text: message.text,
       };
-
-    case "abort":
-      return { type: "abort" };
-
-    case "compact":
-      return hasOnlyKeys(message, ["type"]) ? { type: "compact" } : undefined;
 
     case "respond_confirm":
       if (typeof message.requestId !== "string" || typeof message.confirmed !== "boolean") {
@@ -398,6 +411,22 @@ function isViewAction(value: unknown): value is ViewAction {
         (value.aborted === undefined || typeof value.aborted === "boolean") &&
         (value.error === undefined || typeof value.error === "string")
       );
+    case "retry_changed":
+      if (value.retrying === true) {
+        return (
+          typeof value.attempt === "number" &&
+          typeof value.maxAttempts === "number" &&
+          typeof value.delayMs === "number" &&
+          typeof value.retryAt === "number" &&
+          typeof value.errorMessage === "string"
+        );
+      }
+      return (
+        value.retrying === false &&
+        typeof value.success === "boolean" &&
+        typeof value.attempt === "number" &&
+        (value.finalError === undefined || typeof value.finalError === "string")
+      );
     case "busy_changed":
       return typeof value.busy === "boolean";
     case "queue_changed":
@@ -448,8 +477,21 @@ function isSnapshot(value: unknown): value is Snapshot {
     typeof value.totalCost === "number" &&
     typeof value.busy === "boolean" &&
     typeof value.compacting === "boolean" &&
+    (value.retry === null || isAutoRetry(value.retry)) &&
     isContextUsage(value.context) &&
     isPendingMessages(value.queue)
+  );
+}
+
+function isAutoRetry(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["attempt", "maxAttempts", "delayMs", "retryAt", "errorMessage"]) &&
+    typeof value.attempt === "number" &&
+    typeof value.maxAttempts === "number" &&
+    typeof value.delayMs === "number" &&
+    typeof value.retryAt === "number" &&
+    typeof value.errorMessage === "string"
   );
 }
 

@@ -12,7 +12,10 @@ export type DrainController = {
 
 export function canProcessDuringDrain(messageType: string): boolean {
   return (
-    messageType === "abort" || messageType === "clear_queue" || messageType === "respond_confirm"
+    messageType === "abort" ||
+    messageType === "abort_retry" ||
+    messageType === "clear_queue" ||
+    messageType === "respond_confirm"
   );
 }
 

@@ -307,7 +307,7 @@ test("public session commands hide the Pi transport from callers", async () => {
   }
 });
 
-test("opening disables auto-compaction and manual compaction updates context", async () => {
+test("opening sets Cinba's compaction and retry defaults and manual compaction updates context", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
   const transport = new FakeTransport();
   const registry = createSessionRegistry({
@@ -324,10 +324,11 @@ test("opening disables auto-compaction and manual compaction updates context", a
     const opened = await registry.open({ cwd });
     assert(opened);
     assert.deepEqual(
-      transport.commands.slice(0, 4).map(({ id: _id, ...command }) => command),
+      transport.commands.slice(0, 5).map(({ id: _id, ...command }) => command),
       [
         { type: "get_state" },
         { type: "set_auto_compaction", enabled: false },
+        { type: "set_auto_retry", enabled: true },
         { type: "get_entries" },
         { type: "get_session_stats" },
       ],
@@ -515,6 +516,51 @@ test("abort clears both queues before stopping and returns typed recovered draft
       { text: "change direction", behavior: "steer" },
       { text: "then test", behavior: "followUp" },
     ]);
+  } finally {
+    registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("stopping a retry preserves queued messages", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  const transport = new FakeTransport();
+  transport.queue = { steering: ["change direction"], followUp: ["then test"] };
+  const registry = createSessionRegistry({
+    defaultModel: () => undefined,
+    onActions: () => {},
+    onSnapshot: () => {},
+    launchPi: () => ({
+      pi: new PiClient(transport),
+      failed: new Promise<undefined>(() => {}),
+    }),
+  });
+
+  try {
+    const opened = await registry.open({ cwd });
+    assert(opened);
+    registry.emit(opened, [
+      {
+        type: "retry_changed",
+        retrying: true,
+        attempt: 1,
+        maxAttempts: 3,
+        delayMs: 2_000,
+        retryAt: Date.now() + 2_000,
+        errorMessage: "Network error",
+      },
+    ]);
+    transport.commands = [];
+
+    assert.equal(await registry.abortRetry(opened), true);
+    assert.deepEqual(
+      transport.commands.map((command) => command.type),
+      ["abort_retry"],
+    );
+    assert.deepEqual(transport.queue, {
+      steering: ["change direction"],
+      followUp: ["then test"],
+    });
   } finally {
     registry.closeAll();
     rmSync(cwd, { recursive: true, force: true });

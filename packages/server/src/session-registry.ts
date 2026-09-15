@@ -77,6 +77,7 @@ export type SessionRegistry = {
   prompt(session: LiveSession, text: string, streamingBehavior?: PromptStreamingBehavior): void;
   clearQueue(session: LiveSession): Promise<RecoveredDraft[]>;
   abort(session: LiveSession): Promise<RecoveredDraft[]>;
+  abortRetry(session: LiveSession): Promise<boolean>;
   compact(session: LiveSession): Promise<boolean>;
   editMessage(session: LiveSession, entryId: string, text: string): Promise<boolean>;
   denyPendingConfirmations(session: LiveSession): void;
@@ -346,6 +347,23 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
       return undefined;
     }
 
+    let autoRetry;
+    try {
+      autoRetry = await launch.pi.setAutoRetry(true);
+    } catch (error) {
+      console.error(
+        "[cinba] could not enable Pi auto-retry:",
+        error instanceof Error ? error.message : String(error),
+      );
+      void launch.pi.close();
+      return undefined;
+    }
+    if (!autoRetry.success) {
+      console.error("[cinba] could not enable Pi auto-retry; abandoning this start");
+      void launch.pi.close();
+      return undefined;
+    }
+
     const data = state.data as
       { sessionId?: unknown; model?: { provider?: unknown; id?: unknown } } | undefined;
     if (typeof data?.sessionId !== "string") {
@@ -599,6 +617,30 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     }
   }
 
+  async function abortRetry(session: LiveSession): Promise<boolean> {
+    const managed = findManaged(session);
+    if (!managed || !managed.ledger.snapshot().retry) {
+      return false;
+    }
+    try {
+      const response = await managed.pi.abortRetry();
+      if (!response.success) {
+        throw new Error(String(response.error ?? "unknown error"));
+      }
+      return true;
+    } catch (error) {
+      if (findManaged(managed) === managed) {
+        emitManaged(managed, [
+          {
+            type: "notice",
+            text: `retry stop failed: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ]);
+      }
+      return false;
+    }
+  }
+
   async function compact(session: LiveSession): Promise<boolean> {
     const managed = findManaged(session);
     if (!managed) {
@@ -795,6 +837,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     prompt,
     clearQueue,
     abort,
+    abortRetry,
     compact,
     editMessage,
     denyPendingConfirmations,

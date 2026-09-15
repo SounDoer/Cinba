@@ -7,7 +7,15 @@
 
 export { COMMANDS, commandArgument, isCommand, matchCommands } from "./commands.ts";
 export type { Command, CommandId } from "./commands.ts";
-export type { ContextUsage, PendingMessages, ToolStatus, ViewAction } from "./actions.ts";
+export type {
+  AutoRetry,
+  ContextUsage,
+  PendingMessages,
+  ToolStatus,
+  ViewAction,
+} from "./actions.ts";
+export { agentActivity } from "./activity.ts";
+export type { AgentActivity } from "./activity.ts";
 export {
   NAME_COLOURS,
   nameColourIndex,

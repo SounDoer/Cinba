@@ -11,7 +11,13 @@
 // conversation. Basis: VS Code's official webview guidance — the view is
 // stateless, the host owns the state.
 
-import type { ContextUsage, PendingMessages, ToolStatus, ViewAction } from "./actions.ts";
+import type {
+  AutoRetry,
+  ContextUsage,
+  PendingMessages,
+  ToolStatus,
+  ViewAction,
+} from "./actions.ts";
 
 export type MessageEntry = {
   kind: "message";
@@ -64,6 +70,7 @@ export type Snapshot = {
   totalCost: number;
   busy: boolean;
   compacting: boolean;
+  retry: AutoRetry | null;
   context: ContextUsage;
   queue: PendingMessages;
 };
@@ -85,6 +92,7 @@ export function createSession(initial?: Snapshot): Session {
   let totalCost = initial?.totalCost ?? 0;
   let busy = initial?.busy ?? false;
   let compacting = initial?.compacting ?? false;
+  let retry = initial?.retry ? { ...initial.retry } : null;
   let context: ContextUsage = {
     tokens: initial?.context.tokens ?? null,
     contextWindow: initial?.context.contextWindow ?? null,
@@ -239,6 +247,18 @@ export function createSession(initial?: Snapshot): Session {
           }
           return;
 
+        case "retry_changed":
+          retry = action.retrying
+            ? {
+                attempt: action.attempt,
+                maxAttempts: action.maxAttempts,
+                delayMs: action.delayMs,
+                retryAt: action.retryAt,
+                errorMessage: action.errorMessage,
+              }
+            : null;
+          return;
+
         case "queue_changed":
           queue = { steering: [...action.steering], followUp: [...action.followUp] };
           return;
@@ -252,6 +272,7 @@ export function createSession(initial?: Snapshot): Session {
         totalCost,
         busy,
         compacting,
+        retry: retry ? { ...retry } : null,
         context: { ...context },
         queue: { steering: [...queue.steering], followUp: [...queue.followUp] },
       };

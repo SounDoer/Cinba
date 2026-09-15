@@ -223,11 +223,13 @@ test("the session commands go out in the shape Pi expects", () => {
   assert.equal(commands[4].name, "refactor the parser");
 });
 
-test("compaction controls use Pi's dedicated RPC commands", () => {
+test("compaction and retry controls use Pi's dedicated RPC commands", () => {
   const fake = createFakeTransport();
   const client = new PiClient(fake.transport);
 
   void client.setAutoCompaction(false);
+  void client.setAutoRetry(true);
+  void client.abortRetry();
   void client.getSessionStats();
   void client.compact();
 
@@ -238,6 +240,8 @@ test("compaction controls use Pi's dedicated RPC commands", () => {
     }),
     [
       { type: "set_auto_compaction", enabled: false },
+      { type: "set_auto_retry", enabled: true },
+      { type: "abort_retry" },
       { type: "get_session_stats" },
       { type: "compact" },
     ],

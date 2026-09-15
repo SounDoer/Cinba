@@ -31,13 +31,81 @@ export function extractText(carrier: unknown): string {
     .join("");
 }
 
+function foldAutoRetry(event: CoreEvent, now: () => number): ViewAction[] {
+  if (event.type === "auto_retry_start") {
+    if (
+      typeof event.attempt !== "number" ||
+      typeof event.maxAttempts !== "number" ||
+      typeof event.delayMs !== "number" ||
+      typeof event.errorMessage !== "string"
+    ) {
+      return [];
+    }
+    return [
+      {
+        type: "retry_changed",
+        retrying: true,
+        attempt: event.attempt,
+        maxAttempts: event.maxAttempts,
+        delayMs: event.delayMs,
+        retryAt: now() + event.delayMs,
+        errorMessage: event.errorMessage,
+      },
+    ];
+  }
+
+  if (
+    typeof event.success !== "boolean" ||
+    typeof event.attempt !== "number" ||
+    (event.finalError !== undefined && typeof event.finalError !== "string")
+  ) {
+    return [];
+  }
+  const status: ViewAction = {
+    type: "retry_changed",
+    retrying: false,
+    success: event.success,
+    attempt: event.attempt,
+    ...(typeof event.finalError === "string" ? { finalError: event.finalError } : {}),
+  };
+  if (event.success) {
+    return [status];
+  }
+  if (event.finalError === "Retry cancelled") {
+    return [status, { type: "notice", text: "Automatic retry stopped." }];
+  }
+  return [
+    status,
+    {
+      type: "notice",
+      text: `Automatic retry failed after ${event.attempt} retries${event.finalError ? `: ${event.finalError}` : "."}`,
+    },
+  ];
+}
+
+function foldMessageUpdate(event: CoreEvent, currentMessageId: string): ViewAction[] {
+  const inner = event.assistantMessageEvent as { type?: string; delta?: unknown } | undefined;
+  if (currentMessageId === "" || typeof inner?.delta !== "string") {
+    return [];
+  }
+  if (inner.type === "text_delta") {
+    return [{ type: "text_appended", messageId: currentMessageId, text: inner.delta }];
+  }
+  if (inner.type === "thinking_delta") {
+    return [{ type: "thinking_appended", messageId: currentMessageId, text: inner.delta }];
+  }
+  return [];
+}
+
 /**
  * Make a folder. Call it once per raw event; it returns zero or more view actions.
  *
  * Keeping state is necessary: Pi's message_start carries no id, so we issue
  * message ids ourselves, and cost has to accumulate across events.
  */
-export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
+export function createEventFolder(
+  now: () => number = Date.now,
+): (event: CoreEvent) => ViewAction[] {
   let messageCount = 0;
   let currentMessageId = "";
   let totalTokens = 0;
@@ -71,17 +139,7 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
       }
 
       case "message_update": {
-        const inner = event.assistantMessageEvent as { type?: string; delta?: unknown } | undefined;
-        if (currentMessageId === "" || typeof inner?.delta !== "string") {
-          return [];
-        }
-        if (inner.type === "text_delta") {
-          return [{ type: "text_appended", messageId: currentMessageId, text: inner.delta }];
-        }
-        if (inner.type === "thinking_delta") {
-          return [{ type: "thinking_appended", messageId: currentMessageId, text: inner.delta }];
-        }
-        return [];
+        return foldMessageUpdate(event, currentMessageId);
       }
 
       case "message_end": {
@@ -219,6 +277,10 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
         }
         return [status, { type: "notice", text: "Context compacted." }];
       }
+
+      case "auto_retry_start":
+      case "auto_retry_end":
+        return foldAutoRetry(event, now);
 
       default:
         return [];

@@ -156,6 +156,10 @@ export class CoreClient {
     return this.#send({ type: "abort" });
   }
 
+  abortRetry(): boolean {
+    return this.#send({ type: "abort_retry" });
+  }
+
   compact(): boolean {
     return this.#send({ type: "compact" });
   }

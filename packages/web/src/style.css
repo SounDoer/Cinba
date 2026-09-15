@@ -50,15 +50,11 @@ header {
   background: var(--surface);
 }
 
-.context-usage {
-  white-space: nowrap;
-}
-
-header .context-warning {
+.context-warning {
   color: #a96a00;
 }
 
-header .context-critical {
+.context-critical {
   color: #c43d3d;
   font-weight: 600;
 }
@@ -138,9 +134,68 @@ footer {
   background: var(--surface);
 }
 
+.status-bar {
+  display: grid;
+  grid-template-columns: auto minmax(8rem, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  min-height: 2rem;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.status-resources,
+.status-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  white-space: nowrap;
+}
+
+.status-activity {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-activity:not(.idle) {
+  color: #d7a83e;
+  font-weight: 600;
+}
+
+.status-actions button {
+  padding: 0.25rem 0.6rem;
+  font-size: 12px;
+}
+
+.prompt-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 .composer-row {
   display: flex;
   gap: 0.5rem;
+}
+
+@media (max-width: 800px) {
+  .status-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.35rem 0.75rem;
+  }
+
+  .status-resources {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+  }
+
+  .status-activity {
+    text-align: left;
+  }
 }
 
 .message-queues {

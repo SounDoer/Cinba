@@ -114,6 +114,10 @@ export class PiClient {
     return this.#send({ type: "abort" });
   }
 
+  abortRetry(): Promise<CoreResponse> {
+    return this.#send({ type: "abort_retry" });
+  }
+
   compact(): Promise<CoreResponse> {
     // Summarization is a model call and can legitimately outlive ordinary RPCs.
     return this.#send({ type: "compact" }, 5 * 60_000);
@@ -121,6 +125,10 @@ export class PiClient {
 
   setAutoCompaction(enabled: boolean): Promise<CoreResponse> {
     return this.#send({ type: "set_auto_compaction", enabled });
+  }
+
+  setAutoRetry(enabled: boolean): Promise<CoreResponse> {
+    return this.#send({ type: "set_auto_retry", enabled });
   }
 
   getSessionStats(): Promise<CoreResponse> {

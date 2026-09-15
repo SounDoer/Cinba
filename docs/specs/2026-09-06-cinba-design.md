@@ -640,7 +640,7 @@ Bedrock 把它原样回显在错误里，**显示到了屏幕上**。当时代�
 
 **已完成**：对话（`prompt` / `abort`）、模型（列表 / 切换）、
 会话（新建 / 切换 / 删除 / 列表 / 改名 / 历史重建）、上下文压缩与占用显示、
-中途插话与排队。
+中途插话与排队、失败自动重试的可见性与中止。
 
 上下文压缩采用 Cinba 自己的产品默认值：每次启动 Pi 会话都通过
 `set_auto_compaction(false)` 关闭自动压缩；Web/Desktop 用 `Compact`，TUI 用
@@ -650,13 +650,21 @@ Pi 时的设置。三端的固定状态栏显示 `get_session_stats.contextUsage
 `estimatedTokensAfter`，并用 `~` 标明估算值。`compaction_start` / `compaction_end` 进入共享账本，
 所以压缩中的锁定状态和完成、失败、中止结果对所有界面都可见。
 
+Pi 的自动重试保持开启，并在每次启动会话时用 `set_auto_retry(true)` 明确 Cinba 的产品默认值。
+`auto_retry_start` / `auto_retry_end` 进入共享账本，固定状态栏显示当前次数、总次数、倒计时与
+失败摘要。Web/Desktop 的 `Stop retrying` 和 TUI 重试期间的 Escape 使用 `abort_retry`，只取消
+等待中的重试，不清空 steering / follow-up 队列；普通 Stop 仍使用 `abort`。
+
+三端使用同一套当前活动优先级：等待权限、压缩、重试、执行工具、回答、空闲。Web/Desktop
+在输入框上方显示固定状态栏，TUI 复用底部状态行；两者都先显示当前 context，再显示会话累计
+token 与价格，随后显示当前活动和对应操作。Web 顶部只保留 Core、会话、模型和配置入口。
+
 **该做，顺理成章**（纯 RPC 接线，加一条协议消息 + 画两遍）：
 
 | 功能 | Pi 的命令 |
 |---|---|
 | 思考强度 | `set_thinking_level` 等 3 条 |
 | 会话分叉 | `fork` / `clone` / `get_tree` / `get_fork_messages` |
-| 自动重试 | `set_auto_retry` / `abort_retry` |
 | 导出对话 | `export_html` |
 | 列出并调用 Pi 的自定义命令 | `get_commands` |
 

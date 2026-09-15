@@ -498,6 +498,12 @@ async function handlePromptControl(
     }
     return true;
   }
+  if (message.type === "abort_retry") {
+    if (current) {
+      await sessions.abortRetry(current);
+    }
+    return true;
+  }
   if (message.type === "compact") {
     if (current) {
       await sessions.compact(current);

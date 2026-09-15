@@ -30,6 +30,7 @@ const EMPTY: Snapshot = {
   totalCost: 0,
   busy: false,
   compacting: false,
+  retry: null,
   context: { tokens: null, contextWindow: null, percent: null, estimated: false },
   queue: { steering: [], followUp: [] },
 };
@@ -133,6 +134,7 @@ export function useCore(serverUrl: string) {
     [withClient],
   );
   const abort = useCallback(() => withClient((client) => client.abort()), [withClient]);
+  const abortRetry = useCallback(() => withClient((client) => client.abortRetry()), [withClient]);
   const compact = useCallback(() => withClient((client) => client.compact()), [withClient]);
   const respondConfirm = useCallback(
     (requestId: string, confirmed: boolean) =>
@@ -229,6 +231,7 @@ export function useCore(serverUrl: string) {
     dismissRecoveredDraft,
     editMessage,
     abort,
+    abortRetry,
     compact,
     respondConfirm,
     listDirectory,

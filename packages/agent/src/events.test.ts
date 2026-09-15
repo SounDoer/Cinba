@@ -244,6 +244,72 @@ test("compaction stays visible from start through its estimated result", () => {
   );
 });
 
+test("automatic retry exposes its backoff and only leaves a notice on failure", () => {
+  const fold = createEventFolder(() => 10_000);
+
+  assert.deepEqual(
+    fold({
+      type: "auto_retry_start",
+      attempt: 1,
+      maxAttempts: 3,
+      delayMs: 2_000,
+      errorMessage: "Service overloaded",
+    }),
+    [
+      {
+        type: "retry_changed",
+        retrying: true,
+        attempt: 1,
+        maxAttempts: 3,
+        delayMs: 2_000,
+        retryAt: 12_000,
+        errorMessage: "Service overloaded",
+      },
+    ],
+  );
+  assert.deepEqual(fold({ type: "auto_retry_end", success: true, attempt: 1 }), [
+    { type: "retry_changed", retrying: false, success: true, attempt: 1 },
+  ]);
+  assert.deepEqual(
+    fold({
+      type: "auto_retry_end",
+      success: false,
+      attempt: 3,
+      finalError: "Service unavailable",
+    }),
+    [
+      {
+        type: "retry_changed",
+        retrying: false,
+        success: false,
+        attempt: 3,
+        finalError: "Service unavailable",
+      },
+      {
+        type: "notice",
+        text: "Automatic retry failed after 3 retries: Service unavailable",
+      },
+    ],
+  );
+});
+
+test("cancelling automatic retry gets its own concise notice", () => {
+  const fold = createEventFolder();
+  assert.deepEqual(
+    fold({ type: "auto_retry_end", success: false, attempt: 1, finalError: "Retry cancelled" }),
+    [
+      {
+        type: "retry_changed",
+        retrying: false,
+        success: false,
+        attempt: 1,
+        finalError: "Retry cancelled",
+      },
+      { type: "notice", text: "Automatic retry stopped." },
+    ],
+  );
+});
+
 test("a confirm UI request becomes a confirm action; other kinds become nothing", () => {
   assert.deepEqual(
     foldUiRequest({

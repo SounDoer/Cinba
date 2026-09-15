@@ -21,6 +21,15 @@ export type ContextUsage = {
   estimated: boolean;
 };
 
+/** A scheduled retry of the model request that most recently failed. */
+export type AutoRetry = {
+  attempt: number;
+  maxAttempts: number;
+  delayMs: number;
+  retryAt: number;
+  errorMessage: string;
+};
+
 export type ViewAction =
   | {
       type: "message_added";
@@ -70,5 +79,14 @@ export type ViewAction =
       aborted?: boolean;
       error?: string;
     }
+  | ({ type: "retry_changed" } & (
+      | ({ retrying: true } & AutoRetry)
+      | {
+          retrying: false;
+          success: boolean;
+          attempt: number;
+          finalError?: string;
+        }
+    ))
   | { type: "queue_changed"; steering: string[]; followUp: string[] }
   | { type: "busy_changed"; busy: boolean };

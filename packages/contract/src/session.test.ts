@@ -11,6 +11,7 @@ test("a fresh session is empty and not busy", () => {
     totalCost: 0,
     busy: false,
     compacting: false,
+    retry: null,
     context: { tokens: null, contextWindow: null, percent: null, estimated: false },
     queue: { steering: [], followUp: [] },
   });
@@ -209,6 +210,32 @@ test("context usage and compaction progress are carried on the snapshot", () => 
     estimated: true,
   });
   assert.equal(session.snapshot().compacting, false);
+});
+
+test("retry progress survives snapshots and clears when retrying ends", () => {
+  const session = createSession();
+  session.apply({
+    type: "retry_changed",
+    retrying: true,
+    attempt: 2,
+    maxAttempts: 3,
+    delayMs: 4_000,
+    retryAt: 14_000,
+    errorMessage: "Rate limited",
+  });
+
+  const retrying = session.snapshot();
+  assert.deepEqual(retrying.retry, {
+    attempt: 2,
+    maxAttempts: 3,
+    delayMs: 4_000,
+    retryAt: 14_000,
+    errorMessage: "Rate limited",
+  });
+  assert.deepEqual(createSession(retrying).snapshot().retry, retrying.retry);
+
+  session.apply({ type: "retry_changed", retrying: false, success: true, attempt: 2 });
+  assert.equal(session.snapshot().retry, null);
 });
 
 test("queue updates replace pending messages and snapshots do not share their arrays", () => {

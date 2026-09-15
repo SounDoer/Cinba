@@ -28,6 +28,7 @@ import {
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import {
+  type AgentActivity,
   COMMANDS,
   type Command,
   type ContextUsage,
@@ -37,6 +38,7 @@ import {
   type SessionSummary,
   type Snapshot,
   type ViewAction,
+  agentActivity,
   commandArgument,
   createSession,
   isCommand,
@@ -76,8 +78,7 @@ const SERVER_URL = process.env.CINBA_SERVER || "ws://127.0.0.1:4517/ws";
 class StatusBar implements Component {
   totalTokens = 0;
   totalCost = 0;
-  busy = false;
-  compacting = false;
+  activity: AgentActivity = { type: "idle" };
   context: ContextUsage = {
     tokens: null,
     contextWindow: null,
@@ -93,27 +94,35 @@ class StatusBar implements Component {
   invalidate(): void {}
 
   render(width: number): string[] {
-    // First on the line, because "which machine am I on" outranks everything
-    // else here: both cores can run any command on their own.
     const where =
       this.core === ""
         ? ""
-        : `${CORE_COLOURS[nameColourIndex(this.core)]}${BOLD}● ${this.core}${RESET}  `;
+        : ` · ${CORE_COLOURS[nameColourIndex(this.core)]}${BOLD}● ${this.core}${RESET}`;
     const context = formatContextUsage(this.context);
-    const usage = `${DIM}${context} · ${this.totalTokens} tokens · $${this.totalCost.toFixed(4)}${RESET}`;
+    const usage = `${DIM}${context} · session ${this.totalTokens.toLocaleString("en-US")} tokens · $${this.totalCost.toFixed(4)}${RESET}`;
     // Highlight while busy: this line sits pinned at the bottom of a fast-scrolling screen, and all-dim means invisible.
     const pending = this.pendingCount > 0 ? ` · ${this.pendingCount} queued` : "";
     const recovered = this.recoveredCount > 0 ? ` · ${this.recoveredCount} drafts (Alt+Up)` : "";
     let hint = `${DIM}/ for commands · ^C exit${RESET}`;
-    if (this.busy) {
+    if (this.activity.type === "answering") {
       hint = `${YELLOW}${BOLD}⏳ answering${pending} - Enter steer · Alt+Enter follow-up · Esc stop${RESET}`;
     }
-    if (this.compacting) {
+    if (this.activity.type === "tool") {
+      hint = `${YELLOW}${BOLD}⏳ running ${this.activity.toolName}${pending} · Esc stop${RESET}`;
+    }
+    if (this.activity.type === "permission") {
+      hint = `${YELLOW}${BOLD}⏳ waiting for permission · ${this.activity.toolName}${RESET}`;
+    }
+    if (this.activity.type === "retrying") {
+      const seconds = Math.max(0, Math.ceil((this.activity.retryAt - Date.now()) / 1_000));
+      hint = `${YELLOW}${BOLD}⏳ retrying ${this.activity.attempt}/${this.activity.maxAttempts} in ${seconds}s · Esc stop retrying${RESET}`;
+    }
+    if (this.activity.type === "compacting") {
       hint = `${YELLOW}${BOLD}⏳ compacting context · Esc stop${RESET}`;
     }
     const model = this.model ? `${DIM} · ${this.model}${RESET}` : "";
     // Truncated by display columns as well; see the note in Transcript.render.
-    return [truncateToWidth(`${where}${usage}${model}${recovered}    ${hint}`, width)];
+    return [truncateToWidth(`${usage}${where}${model}${recovered}    ${hint}`, width)];
   }
 }
 
@@ -283,6 +292,18 @@ let sessionId = "";
 let statusModel = "";
 let exiting = false;
 let recoveredDrafts: RecoveredDraft[] = [];
+let retryRenderTimer: NodeJS.Timeout | undefined;
+
+function refreshActivity(snapshot: Snapshot): void {
+  statusBar.activity = agentActivity(snapshot);
+  if (statusBar.activity.type === "retrying" && !retryRenderTimer) {
+    retryRenderTimer = setInterval(() => tui.requestRender(), 250);
+    retryRenderTimer.unref();
+  } else if (statusBar.activity.type !== "retrying" && retryRenderTimer) {
+    clearInterval(retryRenderTimer);
+    retryRenderTimer = undefined;
+  }
+}
 
 /**
  * Redraw the whole transcript from the mirror, once the current burst of
@@ -367,7 +388,6 @@ function applyAction(action: ViewAction): void {
 
     case "busy_changed":
       busy = action.busy;
-      statusBar.busy = action.busy;
       // A finished turn is the moment the text stops growing, so this is when
       // it can be laid out as Markdown. Redrawing from the mirror also brings
       // the terminal back in step after the server corrects anything.
@@ -382,7 +402,6 @@ function applyAction(action: ViewAction): void {
 
     case "compaction_changed":
       compacting = action.compacting;
-      statusBar.compacting = action.compacting;
       break;
 
     case "queue_changed":
@@ -393,6 +412,7 @@ function applyAction(action: ViewAction): void {
     default:
       break;
   }
+  refreshActivity(mirror.snapshot());
   tui.requestRender();
 }
 
@@ -409,11 +429,10 @@ function drawSnapshot(snapshot: Snapshot): void {
   statusBar.totalCost = snapshot.totalCost;
   statusBar.model = statusModel;
   busy = snapshot.busy;
-  statusBar.busy = snapshot.busy;
   compacting = snapshot.compacting;
-  statusBar.compacting = snapshot.compacting;
   statusBar.context = snapshot.context;
   statusBar.pendingCount = snapshot.queue.steering.length + snapshot.queue.followUp.length;
+  refreshActivity(snapshot);
   tui.requestRender();
 }
 
@@ -733,7 +752,9 @@ function submitInput(value: string, delivery: "default" | "followUp" = "default"
   if (!busy && !compacting) {
     // Go busy immediately rather than waiting for the signal to come back over
     // the socket. The server sends the same thing; this only updates the hint at once.
-    applyAction({ type: "busy_changed", busy: true });
+    const action = { type: "busy_changed", busy: true } as const;
+    mirror.apply(action);
+    applyAction(action);
   }
 }
 
@@ -745,11 +766,18 @@ promptInput.input.onEscape = () => {
   if (!busy && !compacting) {
     return;
   }
-  coreClient.abort();
+  if (mirror.snapshot().retry) {
+    coreClient.abortRetry();
+  } else {
+    coreClient.abort();
+  }
 };
 
 function exit(): void {
   exiting = true;
+  if (retryRenderTimer) {
+    clearInterval(retryRenderTimer);
+  }
   tui.stop();
   coreClient.close();
   process.exit(0);

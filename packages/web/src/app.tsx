@@ -1,7 +1,7 @@
 // The web client's page composition and interaction state.
 
 import { useEffect, useRef, useState } from "react";
-import { type ContextUsage, nameColourIndex } from "@cinba/contract";
+import { nameColourIndex } from "@cinba/contract";
 import { Transcript } from "./transcript.tsx";
 import { PromptComposer } from "./prompt-composer.tsx";
 import { ProjectPicker } from "./project-picker.tsx";
@@ -9,19 +9,11 @@ import { ModelPicker } from "./model-picker.tsx";
 import { SessionPicker } from "./session-picker.tsx";
 import { ProviderSettings } from "./provider-settings.tsx";
 import { WebToolsSettings } from "./web-tools-settings.tsx";
+import { StatusBar } from "./status-bar.tsx";
 import { useCore } from "./use-core.ts";
 
 /** One web colour for each stable slot supplied by the shared naming rules. */
 const CORE_COLOURS = ["#3b6fd4", "#2e9166", "#b4642a", "#8b4bc4", "#b03a52", "#2b7f96"];
-
-function contextLabel(context: ContextUsage): string {
-  if (context.contextWindow === null) {
-    return "Context unavailable";
-  }
-  const used = context.tokens === null ? "—" : context.tokens.toLocaleString("en-US");
-  const percent = context.percent === null ? "—" : `${Math.round(context.percent)}%`;
-  return `Context ${context.estimated ? "~" : ""}${used}/${context.contextWindow.toLocaleString("en-US")} (${percent})`;
-}
 
 type ActiveOverlay = "project" | "model" | "session" | "provider" | "webtools" | null;
 type EditTarget = { sessionId: string; userMessageIndex: number; text: string };
@@ -46,13 +38,6 @@ export function App({ serverUrl }: { serverUrl: string }) {
     connectionLabel = core.coreName || "...";
   } else if (core.connectionState === "connecting") {
     connectionLabel = "Connecting...";
-  }
-  let contextClass = "context-usage";
-  if (core.snapshot.context.percent !== null && core.snapshot.context.percent >= 75) {
-    contextClass = "context-usage context-warning";
-  }
-  if (core.snapshot.context.percent !== null && core.snapshot.context.percent >= 90) {
-    contextClass = "context-usage context-critical";
   }
 
   // The snapshot is an intentional trigger: streaming output should keep the newest text visible.
@@ -110,17 +95,6 @@ export function App({ serverUrl }: { serverUrl: string }) {
         >
           Web tools
         </button>
-        <span>
-          {core.snapshot.totalTokens} tokens · ${core.snapshot.totalCost.toFixed(4)}
-        </span>
-        <button
-          title="Summarize older messages to free context space"
-          onClick={core.compact}
-          disabled={!core.connected || core.snapshot.busy || core.snapshot.compacting}
-        >
-          {core.snapshot.compacting ? "Compacting..." : "Compact"}
-        </button>
-        <span className={contextClass}>{contextLabel(core.snapshot.context)}</span>
       </header>
 
       <main id="transcript">
@@ -137,34 +111,43 @@ export function App({ serverUrl }: { serverUrl: string }) {
         <div ref={bottomRef} />
       </main>
 
-      <PromptComposer
-        key={
-          editTarget
-            ? `edit-${editTarget.sessionId}-${editTarget.userMessageIndex}-${editingEntryId ?? "preparing"}`
-            : "compose"
-        }
-        connected={core.connected}
-        busy={core.snapshot.busy || core.snapshot.compacting}
-        onSend={(text) => {
-          const sent = editTarget
-            ? editingEntryId !== undefined && core.editMessage(editingEntryId, text)
-            : core.prompt(text);
-          if (sent) {
-            setStoredEditTarget(undefined);
+      <footer>
+        <StatusBar
+          snapshot={core.snapshot}
+          connectionState={core.connectionState}
+          onCompact={core.compact}
+          onAbort={core.abort}
+          onAbortRetry={core.abortRetry}
+        />
+        <PromptComposer
+          key={
+            editTarget
+              ? `edit-${editTarget.sessionId}-${editTarget.userMessageIndex}-${editingEntryId ?? "preparing"}`
+              : "compose"
           }
-          return sent;
-        }}
-        onSteer={core.steer}
-        onFollowUp={core.followUp}
-        onClearQueue={core.clearQueue}
-        onAbort={core.abort}
-        editDraft={editTarget}
-        editReady={editTarget === undefined || editingEntryId !== undefined}
-        onCancelEdit={() => setStoredEditTarget(undefined)}
-        queue={core.snapshot.queue}
-        recoveredDrafts={core.recoveredDrafts}
-        onDismissRecoveredDraft={core.dismissRecoveredDraft}
-      />
+          connected={core.connected}
+          busy={core.snapshot.busy || core.snapshot.compacting}
+          onSend={(text) => {
+            const sent = editTarget
+              ? editingEntryId !== undefined && core.editMessage(editingEntryId, text)
+              : core.prompt(text);
+            if (sent) {
+              setStoredEditTarget(undefined);
+            }
+            return sent;
+          }}
+          onSteer={core.steer}
+          onFollowUp={core.followUp}
+          onClearQueue={core.clearQueue}
+          onAbort={core.snapshot.retry ? core.abortRetry : core.abort}
+          editDraft={editTarget}
+          editReady={editTarget === undefined || editingEntryId !== undefined}
+          onCancelEdit={() => setStoredEditTarget(undefined)}
+          queue={core.snapshot.queue}
+          recoveredDrafts={core.recoveredDrafts}
+          onDismissRecoveredDraft={core.dismissRecoveredDraft}
+        />
+      </footer>
 
       {activeOverlay === "provider" ? (
         <ProviderSettings

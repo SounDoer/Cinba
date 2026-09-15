@@ -87,7 +87,7 @@ export function PromptComposer({
   const hasQueue = queue.steering.length > 0 || queue.followUp.length > 0;
 
   return (
-    <footer>
+    <div className="prompt-composer">
       {hasQueue || recoveredDrafts.length > 0 ? (
         <div className="message-queues">
           {queue.steering.length > 0 ? (
@@ -146,13 +146,8 @@ export function PromptComposer({
           </button>
         ) : null}
         {editDraft !== undefined ? <button onClick={onCancelEdit}>Cancel edit</button> : null}
-        {busy ? (
-          <button onClick={onAbort} disabled={!connected}>
-            Stop
-          </button>
-        ) : null}
       </div>
-    </footer>
+    </div>
   );
 }
 
