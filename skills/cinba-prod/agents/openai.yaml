@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cinba Prod"
+  short_description: "Sync verified master commits and deploy Cinba safely"
+  default_prompt: "Use $cinba-prod to sync the completed master commits and deploy them to production."
