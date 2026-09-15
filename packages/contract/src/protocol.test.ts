@@ -8,6 +8,7 @@ test("the basic client messages are recognized", () => {
     text: "hello",
   });
   assert.deepEqual(parseClientMessage({ type: "abort" }), { type: "abort" });
+  assert.deepEqual(parseClientMessage({ type: "compact" }), { type: "compact" });
   assert.deepEqual(
     parseClientMessage({ type: "prompt", text: "change direction", streamingBehavior: "steer" }),
     { type: "prompt", text: "change direction", streamingBehavior: "steer" },
@@ -31,6 +32,8 @@ test("server messages are validated before reaching a client", () => {
       totalTokens: 0,
       totalCost: 0,
       busy: false,
+      compacting: false,
+      context: { tokens: null, contextWindow: null, percent: null, estimated: false },
       queue: { steering: [], followUp: [] },
     },
     cwd: "C:/work",

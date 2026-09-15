@@ -29,6 +29,8 @@ const EMPTY: Snapshot = {
   totalTokens: 0,
   totalCost: 0,
   busy: false,
+  compacting: false,
+  context: { tokens: null, contextWindow: null, percent: null, estimated: false },
   queue: { steering: [], followUp: [] },
 };
 
@@ -131,6 +133,7 @@ export function useCore(serverUrl: string) {
     [withClient],
   );
   const abort = useCallback(() => withClient((client) => client.abort()), [withClient]);
+  const compact = useCallback(() => withClient((client) => client.compact()), [withClient]);
   const respondConfirm = useCallback(
     (requestId: string, confirmed: boolean) =>
       withClient((client) => client.respondConfirm(requestId, confirmed)),
@@ -226,6 +229,7 @@ export function useCore(serverUrl: string) {
     dismissRecoveredDraft,
     editMessage,
     abort,
+    compact,
     respondConfirm,
     listDirectory,
     listModels,

@@ -11,7 +11,7 @@
 // conversation. Basis: VS Code's official webview guidance — the view is
 // stateless, the host owns the state.
 
-import type { PendingMessages, ToolStatus, ViewAction } from "./actions.ts";
+import type { ContextUsage, PendingMessages, ToolStatus, ViewAction } from "./actions.ts";
 
 export type MessageEntry = {
   kind: "message";
@@ -63,6 +63,8 @@ export type Snapshot = {
   totalTokens: number;
   totalCost: number;
   busy: boolean;
+  compacting: boolean;
+  context: ContextUsage;
   queue: PendingMessages;
 };
 
@@ -82,6 +84,13 @@ export function createSession(initial?: Snapshot): Session {
   let totalTokens = initial?.totalTokens ?? 0;
   let totalCost = initial?.totalCost ?? 0;
   let busy = initial?.busy ?? false;
+  let compacting = initial?.compacting ?? false;
+  let context: ContextUsage = {
+    tokens: initial?.context.tokens ?? null,
+    contextWindow: initial?.context.contextWindow ?? null,
+    percent: initial?.context.percent ?? null,
+    estimated: initial?.context.estimated ?? false,
+  };
   let queue: PendingMessages = {
     steering: [...(initial?.queue.steering ?? [])],
     followUp: [...(initial?.queue.followUp ?? [])],
@@ -210,6 +219,26 @@ export function createSession(initial?: Snapshot): Session {
           busy = action.busy;
           return;
 
+        case "context_changed":
+          context = { ...action.context };
+          return;
+
+        case "compaction_changed":
+          compacting = action.compacting;
+          if (
+            !action.compacting &&
+            action.estimatedTokensAfter !== undefined &&
+            context.contextWindow !== null
+          ) {
+            context = {
+              tokens: action.estimatedTokensAfter,
+              contextWindow: context.contextWindow,
+              percent: (action.estimatedTokensAfter / context.contextWindow) * 100,
+              estimated: true,
+            };
+          }
+          return;
+
         case "queue_changed":
           queue = { steering: [...action.steering], followUp: [...action.followUp] };
           return;
@@ -222,6 +251,8 @@ export function createSession(initial?: Snapshot): Session {
         totalTokens,
         totalCost,
         busy,
+        compacting,
+        context: { ...context },
         queue: { steering: [...queue.steering], followUp: [...queue.followUp] },
       };
     },

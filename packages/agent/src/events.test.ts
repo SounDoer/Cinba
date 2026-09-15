@@ -219,6 +219,31 @@ test("queue updates replace the complete pending-message view", () => {
   assert.deepEqual(fold({ type: "queue_update", steering: "wrong", followUp: [] }), []);
 });
 
+test("compaction stays visible from start through its estimated result", () => {
+  const fold = createEventFolder();
+
+  assert.deepEqual(fold({ type: "compaction_start", reason: "manual" }), [
+    { type: "compaction_changed", compacting: true },
+  ]);
+  assert.deepEqual(
+    fold({
+      type: "compaction_end",
+      reason: "manual",
+      result: { tokensBefore: 120_000, estimatedTokensAfter: 28_000 },
+      aborted: false,
+    }),
+    [
+      {
+        type: "compaction_changed",
+        compacting: false,
+        tokensBefore: 120_000,
+        estimatedTokensAfter: 28_000,
+      },
+      { type: "notice", text: "Context compacted: 120,000 → ~28,000 tokens." },
+    ],
+  );
+});
+
 test("a confirm UI request becomes a confirm action; other kinds become nothing", () => {
   assert.deepEqual(
     foldUiRequest({

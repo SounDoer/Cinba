@@ -639,18 +639,24 @@ Bedrock 把它原样回显在错误里，**显示到了屏幕上**。当时代�
 ### 在 Cinba 里做
 
 **已完成**：对话（`prompt` / `abort`）、模型（列表 / 切换）、
-会话（新建 / 切换 / 删除 / 列表 / 改名 / 历史重建）。
+会话（新建 / 切换 / 删除 / 列表 / 改名 / 历史重建）、上下文压缩与占用显示、
+中途插话与排队。
+
+上下文压缩采用 Cinba 自己的产品默认值：每次启动 Pi 会话都通过
+`set_auto_compaction(false)` 关闭自动压缩；Web/Desktop 用 `Compact`，TUI 用
+`/compact` 手动触发。这个设置写进 Cinba 独立的 `PI_CODING_AGENT_DIR`，不改变用户单独运行
+Pi 时的设置。三端的固定状态栏显示 `get_session_stats.contextUsage`，每个 turn 完成和模型切换后
+刷新；压缩刚完成而 provider 尚无精确 usage 时，暂时显示 Pi 返回的
+`estimatedTokensAfter`，并用 `~` 标明估算值。`compaction_start` / `compaction_end` 进入共享账本，
+所以压缩中的锁定状态和完成、失败、中止结果对所有界面都可见。
 
 **该做，顺理成章**（纯 RPC 接线，加一条协议消息 + 画两遍）：
 
 | 功能 | Pi 的命令 |
 |---|---|
-| 上下文压缩 | `compact` / `set_auto_compaction` |
 | 思考强度 | `set_thinking_level` 等 3 条 |
 | 会话分叉 | `fork` / `clone` / `get_tree` / `get_fork_messages` |
-| 中途插话与排队 | `steer` / `follow_up` / `clear_queue` / `set_steering_mode` |
 | 自动重试 | `set_auto_retry` / `abort_retry` |
-| 用量统计 | `get_session_stats` |
 | 导出对话 | `export_html` |
 | 列出并调用 Pi 的自定义命令 | `get_commands` |
 

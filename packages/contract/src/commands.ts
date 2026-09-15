@@ -13,7 +13,16 @@
 // wire rather than be listed here.
 
 export type CommandId =
-  "model" | "sessions" | "new" | "name" | "providers" | "login" | "logout" | "webtools" | "help";
+  | "compact"
+  | "model"
+  | "sessions"
+  | "new"
+  | "name"
+  | "providers"
+  | "login"
+  | "logout"
+  | "webtools"
+  | "help";
 
 export type Command = {
   id: CommandId;
@@ -27,6 +36,7 @@ export type Command = {
  * alphabetical to match, rather than looking like a ranking that does nothing.
  */
 export const COMMANDS: readonly Command[] = [
+  { id: "compact", name: "compact", summary: "summarize older context now" },
   { id: "help", name: "help", summary: "list these commands" },
   { id: "model", name: "model", summary: "switch model, keeping this conversation" },
   { id: "name", name: "name", summary: "name this conversation, e.g. /name parser work" },

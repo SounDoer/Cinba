@@ -10,6 +10,8 @@ test("a fresh session is empty and not busy", () => {
     totalTokens: 0,
     totalCost: 0,
     busy: false,
+    compacting: false,
+    context: { tokens: null, contextWindow: null, percent: null, estimated: false },
     queue: { steering: [], followUp: [] },
   });
 });
@@ -184,6 +186,29 @@ test("cost and busy state are carried on the snapshot", () => {
   assert.equal(snapshot.busy, true);
   assert.equal(snapshot.totalTokens, 120);
   assert.equal(snapshot.totalCost, 0.0042);
+});
+
+test("context usage and compaction progress are carried on the snapshot", () => {
+  const session = createSession();
+  session.apply({
+    type: "context_changed",
+    context: { tokens: 90_000, contextWindow: 128_000, percent: 70.3125, estimated: false },
+  });
+  session.apply({ type: "compaction_changed", compacting: true });
+  session.apply({
+    type: "compaction_changed",
+    compacting: false,
+    tokensBefore: 90_000,
+    estimatedTokensAfter: 24_000,
+  });
+
+  assert.deepEqual(session.snapshot().context, {
+    tokens: 24_000,
+    contextWindow: 128_000,
+    percent: 18.75,
+    estimated: true,
+  });
+  assert.equal(session.snapshot().compacting, false);
 });
 
 test("queue updates replace pending messages and snapshots do not share their arrays", () => {

@@ -12,6 +12,15 @@ export type PendingMessages = {
   followUp: string[];
 };
 
+/** Current model context, distinct from cumulative session token spend. */
+export type ContextUsage = {
+  tokens: number | null;
+  contextWindow: number | null;
+  percent: number | null;
+  /** True when tokens came from Pi's post-compaction estimate rather than provider usage. */
+  estimated: boolean;
+};
+
 export type ViewAction =
   | {
       type: "message_added";
@@ -52,5 +61,14 @@ export type ViewAction =
    */
   | { type: "notice"; text: string }
   | { type: "usage_changed"; totalTokens: number; totalCost: number }
+  | { type: "context_changed"; context: ContextUsage }
+  | {
+      type: "compaction_changed";
+      compacting: boolean;
+      tokensBefore?: number;
+      estimatedTokensAfter?: number;
+      aborted?: boolean;
+      error?: string;
+    }
   | { type: "queue_changed"; steering: string[]; followUp: string[] }
   | { type: "busy_changed"; busy: boolean };

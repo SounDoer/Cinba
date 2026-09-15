@@ -14,6 +14,7 @@ import {
   listSessions as storedSessions,
 } from "@cinba/agent";
 import {
+  type ContextUsage,
   type ModelRef,
   type PendingMessages,
   type PromptStreamingBehavior,
@@ -76,6 +77,7 @@ export type SessionRegistry = {
   prompt(session: LiveSession, text: string, streamingBehavior?: PromptStreamingBehavior): void;
   clearQueue(session: LiveSession): Promise<RecoveredDraft[]>;
   abort(session: LiveSession): Promise<RecoveredDraft[]>;
+  compact(session: LiveSession): Promise<boolean>;
   editMessage(session: LiveSession, entryId: string, text: string): Promise<boolean>;
   denyPendingConfirmations(session: LiveSession): void;
   respondToConfirmation(session: LiveSession, requestId: string, confirmed: boolean): void;
@@ -257,8 +259,47 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     if (!transcriptMatches) {
       console.warn(`[cinba] transcript drifted in ${session.id}; taking Pi's copy`);
     }
+    const current = session.ledger.snapshot();
+    truth.apply({ type: "context_changed", context: current.context });
+    truth.apply({ type: "compaction_changed", compacting: current.compacting });
     session.ledger = truth;
     options.onSnapshot(session.id, snapshot(session));
+  }
+
+  async function refreshContext(session: ManagedSession, broadcast = true): Promise<void> {
+    const response = await session.pi.getSessionStats();
+    if (!response.success || findManaged(session) !== session) {
+      return;
+    }
+    const raw = (response.data as { contextUsage?: unknown } | undefined)?.contextUsage as
+      { tokens?: unknown; contextWindow?: unknown; percent?: unknown } | undefined;
+    const previous = session.ledger.snapshot().context;
+    const contextWindow =
+      typeof raw?.contextWindow === "number" ? raw.contextWindow : previous.contextWindow;
+    const keepsEstimate = typeof raw?.tokens !== "number" && previous.estimated;
+    let tokens: number | null = null;
+    if (typeof raw?.tokens === "number") {
+      tokens = raw.tokens;
+    } else if (keepsEstimate) {
+      tokens = previous.tokens;
+    }
+    let percent: number | null = null;
+    if (typeof raw?.percent === "number") {
+      percent = raw.percent;
+    } else if (keepsEstimate && tokens !== null && contextWindow !== null) {
+      percent = (tokens / contextWindow) * 100;
+    }
+    const context: ContextUsage = {
+      tokens,
+      contextWindow,
+      percent,
+      estimated: keepsEstimate,
+    };
+    if (broadcast) {
+      emitManaged(session, [{ type: "context_changed", context }]);
+    } else {
+      session.ledger.apply({ type: "context_changed", context });
+    }
   }
 
   async function open(openOptions: OpenSessionOptions): Promise<LiveSession | undefined> {
@@ -284,6 +325,23 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
       return undefined;
     }
     if (!state) {
+      void launch.pi.close();
+      return undefined;
+    }
+
+    let autoCompaction;
+    try {
+      autoCompaction = await launch.pi.setAutoCompaction(false);
+    } catch (error) {
+      console.error(
+        "[cinba] could not disable Pi auto-compaction:",
+        error instanceof Error ? error.message : String(error),
+      );
+      void launch.pi.close();
+      return undefined;
+    }
+    if (!autoCompaction.success) {
+      console.error("[cinba] could not disable Pi auto-compaction; abandoning this start");
       void launch.pi.close();
       return undefined;
     }
@@ -326,6 +384,12 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
             error instanceof Error ? error.message : String(error),
           );
         });
+        void refreshContext(session).catch((error: unknown) => {
+          console.error(
+            `[cinba] could not refresh context usage for ${session.id}:`,
+            error instanceof Error ? error.message : String(error),
+          );
+        });
       }
     });
     launch.pi.onUiRequest(async (request) => {
@@ -359,6 +423,14 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
       session.ledger.apply(action);
     }
     live.set(session.id, session);
+    try {
+      await refreshContext(session, false);
+    } catch (error) {
+      console.error(
+        `[cinba] could not read initial context usage for ${session.id}:`,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
     launch.pi.onClose((error) => {
       if (!error || live.get(session.id) !== session) {
         return;
@@ -413,6 +485,10 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     }
     if (managed.stopping) {
       emitManaged(managed, [{ type: "notice", text: "Stop is still in progress; try again." }]);
+      return;
+    }
+    if (managed.ledger.snapshot().compacting) {
+      emitManaged(managed, [{ type: "notice", text: "Wait for context compaction to finish." }]);
       return;
     }
     if (!managed.model) {
@@ -478,6 +554,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
       return [];
     }
     managed.stopping = true;
+    const wasCompacting = managed.ledger.snapshot().compacting;
     let drafts: RecoveredDraft[] = [];
     try {
       try {
@@ -504,6 +581,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
       emitManaged(managed, [
         { type: "notice", text: "aborted" },
         { type: "busy_changed", busy: false },
+        ...(wasCompacting ? ([{ type: "compaction_changed", compacting: false }] as const) : []),
       ]);
       return drafts;
     } catch (error) {
@@ -518,6 +596,56 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
       return drafts;
     } finally {
       managed.stopping = false;
+    }
+  }
+
+  async function compact(session: LiveSession): Promise<boolean> {
+    const managed = findManaged(session);
+    if (!managed) {
+      return false;
+    }
+    const state = managed.ledger.snapshot();
+    if (state.busy || state.compacting || managed.pendingConfirms.size > 0) {
+      emitManaged(managed, [{ type: "notice", text: "Wait until the current work is idle." }]);
+      return false;
+    }
+
+    emitManaged(managed, [{ type: "compaction_changed", compacting: true }]);
+    try {
+      const response = await managed.pi.compact();
+      if (!response.success) {
+        throw new Error(String(response.error ?? "unknown error"));
+      }
+      const result = response.data as
+        { tokensBefore?: unknown; estimatedTokensAfter?: unknown } | undefined;
+      if (managed.ledger.snapshot().compacting) {
+        emitManaged(managed, [
+          {
+            type: "compaction_changed",
+            compacting: false,
+            ...(typeof result?.tokensBefore === "number"
+              ? { tokensBefore: result.tokensBefore }
+              : {}),
+            ...(typeof result?.estimatedTokensAfter === "number"
+              ? { estimatedTokensAfter: result.estimatedTokensAfter }
+              : {}),
+          },
+        ]);
+      }
+      await reconcile(managed);
+      await refreshContext(managed);
+      return true;
+    } catch (error) {
+      if (findManaged(managed) === managed && managed.ledger.snapshot().compacting) {
+        emitManaged(managed, [
+          { type: "compaction_changed", compacting: false },
+          {
+            type: "notice",
+            text: `context not compacted: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ]);
+      }
+      return false;
     }
   }
 
@@ -616,6 +744,10 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     if (!managed) {
       return false;
     }
+    if (managed.ledger.snapshot().compacting) {
+      emitManaged(managed, [{ type: "notice", text: "Wait for context compaction to finish." }]);
+      return false;
+    }
     const response = await managed.pi.setModel(model.provider, model.id);
     if (!response.success) {
       emitManaged(managed, [
@@ -626,6 +758,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
 
     managed.model = model;
     emitManaged(managed, [{ type: "model_in_use", provider: model.provider, modelId: model.id }]);
+    await refreshContext(managed);
     return true;
   }
 
@@ -662,6 +795,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     prompt,
     clearQueue,
     abort,
+    compact,
     editMessage,
     denyPendingConfirmations,
     respondToConfirmation,

@@ -60,6 +60,7 @@ export type RecoveredDraft = { text: string; behavior: PromptStreamingBehavior }
 export type ClientMessage =
   | { type: "prompt"; text: string; streamingBehavior?: PromptStreamingBehavior }
   | { type: "clear_queue" }
+  | { type: "compact" }
   | { type: "edit_message"; entryId: string; text: string }
   | { type: "abort" }
   | { type: "respond_confirm"; requestId: string; confirmed: boolean }
@@ -229,6 +230,9 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
     case "abort":
       return { type: "abort" };
 
+    case "compact":
+      return hasOnlyKeys(message, ["type"]) ? { type: "compact" } : undefined;
+
     case "respond_confirm":
       if (typeof message.requestId !== "string" || typeof message.confirmed !== "boolean") {
         return undefined;
@@ -383,6 +387,17 @@ function isViewAction(value: unknown): value is ViewAction {
       return typeof value.text === "string";
     case "usage_changed":
       return typeof value.totalTokens === "number" && typeof value.totalCost === "number";
+    case "context_changed":
+      return isContextUsage(value.context);
+    case "compaction_changed":
+      return (
+        typeof value.compacting === "boolean" &&
+        (value.tokensBefore === undefined || typeof value.tokensBefore === "number") &&
+        (value.estimatedTokensAfter === undefined ||
+          typeof value.estimatedTokensAfter === "number") &&
+        (value.aborted === undefined || typeof value.aborted === "boolean") &&
+        (value.error === undefined || typeof value.error === "string")
+      );
     case "busy_changed":
       return typeof value.busy === "boolean";
     case "queue_changed":
@@ -432,7 +447,24 @@ function isSnapshot(value: unknown): value is Snapshot {
     typeof value.totalTokens === "number" &&
     typeof value.totalCost === "number" &&
     typeof value.busy === "boolean" &&
+    typeof value.compacting === "boolean" &&
+    isContextUsage(value.context) &&
     isPendingMessages(value.queue)
+  );
+}
+
+function isNullableNumber(value: unknown): value is number | null {
+  return value === null || typeof value === "number";
+}
+
+function isContextUsage(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["tokens", "contextWindow", "percent", "estimated"]) &&
+    isNullableNumber(value.tokens) &&
+    isNullableNumber(value.contextWindow) &&
+    isNullableNumber(value.percent) &&
+    typeof value.estimated === "boolean"
   );
 }
 

@@ -7,7 +7,7 @@
 
 export { COMMANDS, commandArgument, isCommand, matchCommands } from "./commands.ts";
 export type { Command, CommandId } from "./commands.ts";
-export type { PendingMessages, ToolStatus, ViewAction } from "./actions.ts";
+export type { ContextUsage, PendingMessages, ToolStatus, ViewAction } from "./actions.ts";
 export {
   NAME_COLOURS,
   nameColourIndex,

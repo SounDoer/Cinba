@@ -182,6 +182,44 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
             ]
           : [];
 
+      case "compaction_start":
+        return [{ type: "compaction_changed", compacting: true }];
+
+      case "compaction_end": {
+        const result = event.result as
+          { tokensBefore?: unknown; estimatedTokensAfter?: unknown } | null | undefined;
+        const tokensBefore =
+          typeof result?.tokensBefore === "number" ? result.tokensBefore : undefined;
+        const estimatedTokensAfter =
+          typeof result?.estimatedTokensAfter === "number"
+            ? result.estimatedTokensAfter
+            : undefined;
+        const status: ViewAction = {
+          type: "compaction_changed",
+          compacting: false,
+          ...(tokensBefore === undefined ? {} : { tokensBefore }),
+          ...(estimatedTokensAfter === undefined ? {} : { estimatedTokensAfter }),
+          ...(event.aborted === true ? { aborted: true } : {}),
+          ...(typeof event.errorMessage === "string" ? { error: event.errorMessage } : {}),
+        };
+        if (typeof event.errorMessage === "string") {
+          return [status, { type: "notice", text: event.errorMessage }];
+        }
+        if (event.aborted === true) {
+          return [status, { type: "notice", text: "Context compaction aborted." }];
+        }
+        if (tokensBefore !== undefined && estimatedTokensAfter !== undefined) {
+          return [
+            status,
+            {
+              type: "notice",
+              text: `Context compacted: ${tokensBefore.toLocaleString("en-US")} → ~${estimatedTokensAfter.toLocaleString("en-US")} tokens.`,
+            },
+          ];
+        }
+        return [status, { type: "notice", text: "Context compacted." }];
+      }
+
       default:
         return [];
     }

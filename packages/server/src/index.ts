@@ -134,10 +134,13 @@ function safeToRestart(): boolean {
   return (
     recoveries.size === 0 &&
     isSafeToRestart(
-      sessions.values().map((session) => ({
-        busy: session.ledger.snapshot().busy,
-        awaitingConfirmation: session.pendingConfirms.size > 0,
-      })),
+      sessions.values().map((session) => {
+        const state = session.ledger.snapshot();
+        return {
+          busy: state.busy || state.compacting,
+          awaitingConfirmation: session.pendingConfirms.size > 0,
+        };
+      }),
     )
   );
 }
@@ -332,10 +335,11 @@ function sweepIdle(): void {
 
   for (const session of sessions.values()) {
     const hasViewers = [...viewing.values()].includes(session.id);
+    const state = session.ledger.snapshot();
     const verdict = assessIdle(
       {
         hasViewers,
-        busy: session.ledger.snapshot().busy,
+        busy: state.busy || state.compacting,
         awaitingConfirmation: session.pendingConfirms.size > 0,
         idleSince: session.idleSince,
       },
@@ -408,7 +412,7 @@ async function recycleStale(): Promise<void> {
     }
     if (
       !canStopNow({
-        busy: session.ledger.snapshot().busy,
+        busy: session.ledger.snapshot().busy || session.ledger.snapshot().compacting,
         awaitingConfirmation: session.pendingConfirms.size > 0,
       })
     ) {
@@ -491,6 +495,12 @@ async function handlePromptControl(
       if (drafts.length > 0) {
         sendTo(socket, { type: "drafts_recovered", drafts });
       }
+    }
+    return true;
+  }
+  if (message.type === "compact") {
+    if (current) {
+      await sessions.compact(current);
     }
     return true;
   }
@@ -777,7 +787,8 @@ export function startService(): void {
       if (mode === "forced") {
         for (const session of sessions.values()) {
           sessions.denyPendingConfirmations(session);
-          if (session.ledger.snapshot().busy) {
+          const state = session.ledger.snapshot();
+          if (state.busy || state.compacting) {
             sessions.abort(session);
           }
         }

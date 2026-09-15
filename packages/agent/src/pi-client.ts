@@ -114,6 +114,19 @@ export class PiClient {
     return this.#send({ type: "abort" });
   }
 
+  compact(): Promise<CoreResponse> {
+    // Summarization is a model call and can legitimately outlive ordinary RPCs.
+    return this.#send({ type: "compact" }, 5 * 60_000);
+  }
+
+  setAutoCompaction(enabled: boolean): Promise<CoreResponse> {
+    return this.#send({ type: "set_auto_compaction", enabled });
+  }
+
+  getSessionStats(): Promise<CoreResponse> {
+    return this.#send({ type: "get_session_stats" });
+  }
+
   /** Session state, including which model is currently in use. */
   getState(): Promise<CoreResponse> {
     return this.#send({ type: "get_state" });
@@ -172,7 +185,10 @@ export class PiClient {
     await this.#transport.close();
   }
 
-  #send(command: Record<string, unknown>): Promise<CoreResponse> {
+  #send(
+    command: Record<string, unknown>,
+    requestTimeoutMs = this.#requestTimeoutMs,
+  ): Promise<CoreResponse> {
     if (this.#closedError) {
       return Promise.reject(this.#closedError);
     }
@@ -182,7 +198,7 @@ export class PiClient {
       const timer = setTimeout(() => {
         this.#pending.delete(id);
         reject(new Error(`Pi command ${String(command.type)} timed out`));
-      }, this.#requestTimeoutMs);
+      }, requestTimeoutMs);
       timer.unref();
       this.#pending.set(id, { resolve, reject, timer });
       try {

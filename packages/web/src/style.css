@@ -41,12 +41,26 @@ body {
 
 header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
   padding: 0.5rem 1rem;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
+}
+
+.context-usage {
+  white-space: nowrap;
+}
+
+header .context-warning {
+  color: #a96a00;
+}
+
+header .context-critical {
+  color: #c43d3d;
+  font-weight: 600;
 }
 
 header span {

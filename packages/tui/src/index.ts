@@ -30,6 +30,7 @@ import {
 import {
   COMMANDS,
   type Command,
+  type ContextUsage,
   type Entry,
   type RecoveredDraft,
   type Session,
@@ -76,6 +77,13 @@ class StatusBar implements Component {
   totalTokens = 0;
   totalCost = 0;
   busy = false;
+  compacting = false;
+  context: ContextUsage = {
+    tokens: null,
+    contextWindow: null,
+    percent: null,
+    estimated: false,
+  };
   model = "";
   /** Which machine this terminal is talking to. Empty until the core says. */
   core = "";
@@ -91,17 +99,32 @@ class StatusBar implements Component {
       this.core === ""
         ? ""
         : `${CORE_COLOURS[nameColourIndex(this.core)]}${BOLD}● ${this.core}${RESET}  `;
-    const usage = `${DIM}${this.totalTokens} tokens · $${this.totalCost.toFixed(4)}${RESET}`;
+    const context = formatContextUsage(this.context);
+    const usage = `${DIM}${context} · ${this.totalTokens} tokens · $${this.totalCost.toFixed(4)}${RESET}`;
     // Highlight while busy: this line sits pinned at the bottom of a fast-scrolling screen, and all-dim means invisible.
     const pending = this.pendingCount > 0 ? ` · ${this.pendingCount} queued` : "";
     const recovered = this.recoveredCount > 0 ? ` · ${this.recoveredCount} drafts (Alt+Up)` : "";
-    const hint = this.busy
-      ? `${YELLOW}${BOLD}⏳ answering${pending} - Enter steer · Alt+Enter follow-up · Esc stop${RESET}`
-      : `${DIM}/ for commands · ^C exit${RESET}`;
+    let hint = `${DIM}/ for commands · ^C exit${RESET}`;
+    if (this.busy) {
+      hint = `${YELLOW}${BOLD}⏳ answering${pending} - Enter steer · Alt+Enter follow-up · Esc stop${RESET}`;
+    }
+    if (this.compacting) {
+      hint = `${YELLOW}${BOLD}⏳ compacting context · Esc stop${RESET}`;
+    }
     const model = this.model ? `${DIM} · ${this.model}${RESET}` : "";
     // Truncated by display columns as well; see the note in Transcript.render.
     return [truncateToWidth(`${where}${usage}${model}${recovered}    ${hint}`, width)];
   }
+}
+
+function formatContextUsage(context: ContextUsage): string {
+  if (context.contextWindow === null) {
+    return "context unavailable";
+  }
+  const used = context.tokens === null ? "—" : context.tokens.toLocaleString("en-US");
+  const percent = context.percent === null ? "—" : `${Math.round(context.percent)}%`;
+  const estimate = context.estimated ? "~" : "";
+  return `context ${estimate}${used}/${context.contextWindow.toLocaleString("en-US")} (${percent})`;
 }
 
 /** The permission confirmation. While it is up, it stands in for the input at the bottom. */
@@ -255,6 +278,7 @@ function showPrompt(): void {
 /** The mirror ledger, the same one the web UI keeps. The server owns the real one. */
 let mirror: Session = createSession();
 let busy = false;
+let compacting = false;
 let sessionId = "";
 let statusModel = "";
 let exiting = false;
@@ -352,6 +376,15 @@ function applyAction(action: ViewAction): void {
       }
       break;
 
+    case "context_changed":
+      statusBar.context = action.context;
+      break;
+
+    case "compaction_changed":
+      compacting = action.compacting;
+      statusBar.compacting = action.compacting;
+      break;
+
     case "queue_changed":
       statusBar.pendingCount = action.steering.length + action.followUp.length;
       break;
@@ -377,6 +410,9 @@ function drawSnapshot(snapshot: Snapshot): void {
   statusBar.model = statusModel;
   busy = snapshot.busy;
   statusBar.busy = snapshot.busy;
+  compacting = snapshot.compacting;
+  statusBar.compacting = snapshot.compacting;
+  statusBar.context = snapshot.context;
   statusBar.pendingCount = snapshot.queue.steering.length + snapshot.queue.followUp.length;
   tui.requestRender();
 }
@@ -598,6 +634,10 @@ function land(sessions: SessionSummary[]): void {
 /** Carry out one of Cinba's own commands. What it means here; the catalogue says which exist. */
 function runCommand(command: Command, line: string): void {
   switch (command.id) {
+    case "compact":
+      coreClient.compact();
+      return;
+
     case "name": {
       const name = commandArgument(line);
       if (name === "") {
@@ -653,8 +693,13 @@ function submitInput(value: string, delivery: "default" | "followUp" = "default"
     return;
   }
 
+  if (compacting) {
+    applyAction({ type: "notice", text: "Wait for context compaction to finish." });
+    return;
+  }
+
   if (isCommand(text)) {
-    if (busy) {
+    if (busy || compacting) {
       applyAction({ type: "notice", text: "Commands cannot be queued while answering." });
       return;
     }
@@ -673,7 +718,7 @@ function submitInput(value: string, delivery: "default" | "followUp" = "default"
   }
 
   let sent: boolean;
-  if (!busy) {
+  if (!busy && !compacting) {
     sent = coreClient.prompt(text);
   } else if (delivery === "followUp") {
     sent = coreClient.followUp(text);
@@ -685,7 +730,7 @@ function submitInput(value: string, delivery: "default" | "followUp" = "default"
   }
   promptInput.input.setValue("");
 
-  if (!busy) {
+  if (!busy && !compacting) {
     // Go busy immediately rather than waiting for the signal to come back over
     // the socket. The server sends the same thing; this only updates the hint at once.
     applyAction({ type: "busy_changed", busy: true });
@@ -697,7 +742,7 @@ promptInput.input.onSubmit = (value: string) => submitInput(value);
 // Esc stops an answer in progress. Pressing it while idle does nothing: exiting
 // is Ctrl+C, so a slip of the hand cannot close the conversation.
 promptInput.input.onEscape = () => {
-  if (!busy) {
+  if (!busy && !compacting) {
     return;
   }
   coreClient.abort();

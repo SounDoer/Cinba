@@ -222,3 +222,24 @@ test("the session commands go out in the shape Pi expects", () => {
   assert.equal(commands[3].sessionPath, "C:/sessions/a.jsonl");
   assert.equal(commands[4].name, "refactor the parser");
 });
+
+test("compaction controls use Pi's dedicated RPC commands", () => {
+  const fake = createFakeTransport();
+  const client = new PiClient(fake.transport);
+
+  void client.setAutoCompaction(false);
+  void client.getSessionStats();
+  void client.compact();
+
+  assert.deepEqual(
+    fake.sent.map((line) => {
+      const { id: _id, ...command } = JSON.parse(line);
+      return command;
+    }),
+    [
+      { type: "set_auto_compaction", enabled: false },
+      { type: "get_session_stats" },
+      { type: "compact" },
+    ],
+  );
+});

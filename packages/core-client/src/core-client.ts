@@ -156,6 +156,10 @@ export class CoreClient {
     return this.#send({ type: "abort" });
   }
 
+  compact(): boolean {
+    return this.#send({ type: "compact" });
+  }
+
   respondConfirm(requestId: string, confirmed: boolean): boolean {
     return this.#send({ type: "respond_confirm", requestId, confirmed });
   }

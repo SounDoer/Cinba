@@ -16,6 +16,12 @@ class FakeTransport implements Transport {
   model: { provider: string; id: string } | undefined = { provider: "test", id: "model-1" };
   responses = new Map<string, { success: boolean; error?: unknown }>();
   queue = { steering: [] as string[], followUp: [] as string[] };
+  contextUsage: { tokens: number | null; contextWindow: number; percent: number | null } = {
+    tokens: 32_000,
+    contextWindow: 128_000,
+    percent: 25,
+  };
+  compactResult = { tokensBefore: 32_000, estimatedTokensAfter: 12_000 };
 
   send(line: string): void {
     const command = JSON.parse(line) as {
@@ -44,6 +50,10 @@ class FakeTransport implements Transport {
     } else if (command.type === "clear_queue") {
       data = this.queue;
       this.queue = { steering: [], followUp: [] };
+    } else if (command.type === "get_session_stats") {
+      data = { contextUsage: this.contextUsage };
+    } else if (command.type === "compact") {
+      data = this.compactResult;
     }
     queueMicrotask(() => {
       const response = this.responses.get(command.type);
@@ -280,9 +290,73 @@ test("public session commands hide the Pi transport from callers", async () => {
 
     assert.deepEqual(
       transport.commands.map((command) => command.type),
-      ["prompt", "clear_queue", "abort", "get_available_models", "set_model", "set_session_name"],
+      [
+        "prompt",
+        "clear_queue",
+        "abort",
+        "get_available_models",
+        "set_model",
+        "get_session_stats",
+        "set_session_name",
+      ],
     );
     assert.equal(opened.model?.id, "model-2");
+  } finally {
+    registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("opening disables auto-compaction and manual compaction updates context", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  const transport = new FakeTransport();
+  const registry = createSessionRegistry({
+    defaultModel: () => undefined,
+    onActions: () => {},
+    onSnapshot: () => {},
+    launchPi: () => ({
+      pi: new PiClient(transport),
+      failed: new Promise<undefined>(() => {}),
+    }),
+  });
+
+  try {
+    const opened = await registry.open({ cwd });
+    assert(opened);
+    assert.deepEqual(
+      transport.commands.slice(0, 4).map(({ id: _id, ...command }) => command),
+      [
+        { type: "get_state" },
+        { type: "set_auto_compaction", enabled: false },
+        { type: "get_entries" },
+        { type: "get_session_stats" },
+      ],
+    );
+    assert.deepEqual(opened.ledger.snapshot().context, {
+      tokens: 32_000,
+      contextWindow: 128_000,
+      percent: 25,
+      estimated: false,
+    });
+
+    transport.contextUsage = { tokens: null, contextWindow: 128_000, percent: null };
+    const compacting = registry.compact(opened);
+    registry.prompt(opened, "must not run during compaction");
+    assert.equal(await compacting, true);
+    assert.equal(
+      transport.commands.some(
+        (command) =>
+          command.type === "prompt" && command.message === "must not run during compaction",
+      ),
+      false,
+    );
+    assert.deepEqual(opened.ledger.snapshot().context, {
+      tokens: 12_000,
+      contextWindow: 128_000,
+      percent: 9.375,
+      estimated: true,
+    });
+    assert.equal(opened.ledger.snapshot().compacting, false);
   } finally {
     registry.closeAll();
     rmSync(cwd, { recursive: true, force: true });
