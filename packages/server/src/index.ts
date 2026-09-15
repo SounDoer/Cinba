@@ -37,6 +37,7 @@ import {
 } from "./drain.ts";
 import { createHealthHandler, isSafeToRestart, normalizeRevision } from "./health.ts";
 import { createLocalCoreControlHandler } from "./local-core-control.ts";
+import { createProjectTrustGate } from "./project-trust-gate.ts";
 import { resolveCinbaStateDirectory } from "./runtime-paths.ts";
 import { createServerRuntime } from "./server-runtime.ts";
 import { SERVICE_IDLE_TIMEOUT_MS, assessServiceIdle, readCoreLifetime } from "./service-idle.ts";
@@ -106,6 +107,10 @@ function toViewers(sessionId: string, message: ServerMessage): void {
     }
   }
 }
+
+const projectTrust = createProjectTrustGate<WebSocket>({
+  request: (socket, request) => sendTo(socket, { type: "project_trust_requested", ...request }),
+});
 
 const sessions = createSessionRegistry({
   defaultModel: () => config.get().model,
@@ -191,14 +196,25 @@ async function serveHttp(request: IncomingMessage, response: ServerResponse): Pr
  */
 let resolving: Promise<LiveSession | undefined> | undefined;
 
-function defaultSession(): Promise<LiveSession | undefined> {
-  resolving ??= resolveDefaultSession().finally(() => {
+function defaultSession(socket: WebSocket): Promise<LiveSession | undefined> {
+  resolving ??= resolveDefaultSession(socket).finally(() => {
     resolving = undefined;
   });
   return resolving;
 }
 
-async function resolveDefaultSession(): Promise<LiveSession | undefined> {
+async function openWithTrust(
+  socket: WebSocket,
+  openOptions: Parameters<typeof sessions.open>[0],
+): Promise<LiveSession | undefined> {
+  const trust = await projectTrust.ensure(openOptions.cwd, socket);
+  if (!trust.proceed) {
+    return undefined;
+  }
+  return await sessions.open({ ...openOptions, projectTrusted: trust.projectTrusted });
+}
+
+async function resolveDefaultSession(socket: WebSocket): Promise<LiveSession | undefined> {
   const { cwd, lastSessionId } = config.get();
   if (lastSessionId) {
     const existing = sessions.get(lastSessionId);
@@ -211,7 +227,7 @@ async function resolveDefaultSession(): Promise<LiveSession | undefined> {
     }
     const stored = await findSession(lastSessionId);
     if (stored) {
-      return await sessions.open({ sessionPath: stored.path, cwd: stored.cwd || cwd });
+      return await openWithTrust(socket, { sessionPath: stored.path, cwd: stored.cwd || cwd });
     }
   }
 
@@ -223,11 +239,11 @@ async function resolveDefaultSession(): Promise<LiveSession | undefined> {
     }
     const stored = await findSession(recent.id);
     if (stored) {
-      return await sessions.open({ sessionPath: stored.path, cwd: stored.cwd || cwd });
+      return await openWithTrust(socket, { sessionPath: stored.path, cwd: stored.cwd || cwd });
     }
   }
 
-  return await sessions.open({ cwd });
+  return await openWithTrust(socket, { cwd });
 }
 
 async function recoverUnexpectedClose(session: LiveSession, error: Error): Promise<void> {
@@ -318,6 +334,7 @@ function show(socket: WebSocket, session: LiveSession): void {
   });
   sendTo(socket, { type: "session_opened", sessionId: session.id });
   sendTo(socket, sessions.snapshot(session));
+  sendTo(socket, { type: "skill_listing", sessionId: session.id, skills: session.skills });
 }
 
 // ---- Reclaiming idle conversations ----
@@ -574,6 +591,10 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
   }
 
   switch (message.type) {
+    case "respond_project_trust":
+      projectTrust.respond(socket, message.requestId, message.trusted);
+      return;
+
     case "edit_message":
       if (!current) {
         return;
@@ -662,7 +683,7 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
       } // Deleted from under us; the client's next listing will show that
       // Its own directory, not whichever one is current: a conversation about
       // one project must not resume with its tools pointed at another.
-      const opened = await sessions.open({
+      const opened = await openWithTrust(socket, {
         sessionPath: stored.path,
         cwd: stored.cwd || config.get().cwd,
       });
@@ -673,7 +694,7 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
     }
 
     case "create_session": {
-      const created = await sessions.open({ cwd: message.cwd });
+      const created = await openWithTrust(socket, { cwd: message.cwd });
       if (created) {
         show(socket, created);
       }
@@ -708,7 +729,7 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
 
       // Anyone who was looking at it needs somewhere to go.
       const orphaned = [...viewing].filter(([, id]) => id === message.sessionId);
-      const fallback = orphaned.length > 0 ? await defaultSession() : undefined;
+      const fallback = orphaned.length > 0 ? await defaultSession(orphaned[0]![0]) : undefined;
       for (const [orphan] of orphaned) {
         if (fallback) {
           show(orphan, fallback);
@@ -733,7 +754,7 @@ function onConnection(socket: WebSocket): void {
 
   // A new connection lands on the conversation it was last on. Its Pi starts
   // here if it was not already running, which is why nothing starts at boot.
-  void defaultSession().then((session) => {
+  void defaultSession(socket).then((session) => {
     if (session) {
       show(socket, session);
     }
@@ -748,6 +769,7 @@ function onConnection(socket: WebSocket): void {
     });
   });
   socket.on("close", () => {
+    projectTrust.cancel(socket);
     clients.delete(socket);
     if (clients.size === 0) {
       serviceIdleSince = Date.now();

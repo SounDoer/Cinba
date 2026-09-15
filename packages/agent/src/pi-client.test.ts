@@ -220,6 +220,16 @@ test("the thinking commands go out in the shape Pi expects", () => {
   );
 });
 
+test("the available command catalogue comes from Pi", () => {
+  const fake = createFakeTransport();
+  const client = new PiClient(fake.transport);
+
+  void client.getCommands();
+
+  const { id: _id, ...command } = JSON.parse(fake.sent[0]!);
+  assert.deepEqual(command, { type: "get_commands" });
+});
+
 test("the session commands go out in the shape Pi expects", () => {
   const fake = createFakeTransport();
   const client = new PiClient(fake.transport);

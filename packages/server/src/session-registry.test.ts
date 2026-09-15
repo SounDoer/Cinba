@@ -24,6 +24,7 @@ class FakeTransport implements Transport {
     percent: 25,
   };
   compactResult = { tokensBefore: 32_000, estimatedTokensAfter: 12_000 };
+  slashCommands: unknown[] = [];
 
   send(line: string): void {
     const command = JSON.parse(line) as {
@@ -68,6 +69,8 @@ class FakeTransport implements Transport {
       data = { contextUsage: this.contextUsage };
     } else if (command.type === "compact") {
       data = this.compactResult;
+    } else if (command.type === "get_commands") {
+      data = { commands: this.slashCommands };
     }
     queueMicrotask(() => {
       const response = this.responses.get(command.type);
@@ -130,6 +133,56 @@ test("open owns a live session and stop releases its Pi", async () => {
     assert.equal(registry.size, 0);
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(transport.closed, true);
+  } finally {
+    registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("open exposes Pi skills but not prompt or extension commands", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  const transport = new FakeTransport();
+  transport.slashCommands = [
+    {
+      name: "skill:review",
+      description: "Review the current change",
+      source: "skill",
+      sourceInfo: { scope: "project" },
+    },
+    {
+      name: "deploy",
+      description: "Deploy from a prompt",
+      source: "prompt",
+      sourceInfo: { scope: "project" },
+    },
+    {
+      name: "cinba-edit-message",
+      description: "Internal command",
+      source: "extension",
+      sourceInfo: { scope: "path" },
+    },
+  ];
+  const registry = createSessionRegistry({
+    defaultModel: () => undefined,
+    onActions: () => {},
+    onSnapshot: () => {},
+    launchPi: () => ({
+      pi: new PiClient(transport),
+      failed: new Promise<undefined>(() => {}),
+    }),
+  });
+
+  try {
+    const opened = await registry.open({ cwd });
+
+    assert.deepEqual(opened?.skills, [
+      {
+        source: "skill",
+        name: "skill:review",
+        summary: "Review the current change",
+        scope: "project",
+      },
+    ]);
   } finally {
     registry.closeAll();
     rmSync(cwd, { recursive: true, force: true });

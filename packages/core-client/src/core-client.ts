@@ -11,6 +11,7 @@ import {
   type ProviderStatus,
   type RecoveredDraft,
   type SessionSummary,
+  type SkillCommand,
   type Snapshot,
   type ThinkingLevel,
   type ViewAction,
@@ -90,6 +91,12 @@ export type CoreClientHandlers = {
   onWebToolsStatus?: (status: WebToolsStatus, error?: string) => void;
   onCoreIdentity?: (name: string) => void;
   onDraftsRecovered?: (drafts: RecoveredDraft[]) => void;
+  onSkillListing?: (sessionId: string, skills: SkillCommand[]) => void;
+  onProjectTrustRequested?: (request: {
+    requestId: string;
+    cwd: string;
+    resources: string[];
+  }) => void;
 };
 
 type WebSocketConstructor = new (url: string) => Socket;
@@ -167,6 +174,10 @@ export class CoreClient {
 
   respondConfirm(requestId: string, confirmed: boolean): boolean {
     return this.#send({ type: "respond_confirm", requestId, confirmed });
+  }
+
+  respondProjectTrust(requestId: string, trusted: boolean): boolean {
+    return this.#send({ type: "respond_project_trust", requestId, trusted });
   }
 
   listDir(path: string): boolean {
@@ -309,6 +320,16 @@ export class CoreClient {
         return;
       case "drafts_recovered":
         this.#handlers.onDraftsRecovered?.(message.drafts);
+        return;
+      case "skill_listing":
+        this.#handlers.onSkillListing?.(message.sessionId, message.skills);
+        return;
+      case "project_trust_requested":
+        this.#handlers.onProjectTrustRequested?.({
+          requestId: message.requestId,
+          cwd: message.cwd,
+          resources: message.resources,
+        });
         return;
       case "provider_listing":
         this.#handlers.onProviderListing?.(message.providers);

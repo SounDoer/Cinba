@@ -23,6 +23,10 @@ test("the basic client messages are recognized", () => {
     parseClientMessage({ type: "respond_confirm", requestId: "u1", confirmed: true }),
     { type: "respond_confirm", requestId: "u1", confirmed: true },
   );
+  assert.deepEqual(
+    parseClientMessage({ type: "respond_project_trust", requestId: "trust-1", trusted: true }),
+    { type: "respond_project_trust", requestId: "trust-1", trusted: true },
+  );
 });
 
 test("server messages are validated before reaching a client", () => {
@@ -76,6 +80,24 @@ test("server messages are validated before reaching a client", () => {
     {
       type: "drafts_recovered",
       drafts: [{ text: "change direction", behavior: "steer" }],
+    },
+    {
+      type: "skill_listing",
+      sessionId: "s1",
+      skills: [
+        {
+          source: "skill",
+          name: "skill:tdd",
+          summary: "work test-first",
+          scope: "user",
+        },
+      ],
+    },
+    {
+      type: "project_trust_requested",
+      requestId: "trust-1",
+      cwd: "C:/work",
+      resources: [".agents/skills"],
     },
   ];
 
@@ -182,6 +204,10 @@ test("anything with a wrong field type is dropped", () => {
     undefined,
   );
   assert.equal(parseClientMessage({ type: "respond_confirm", requestId: "u1" }), undefined);
+  assert.equal(
+    parseClientMessage({ type: "respond_project_trust", requestId: "u1", trusted: "yes" }),
+    undefined,
+  );
   assert.equal(
     parseClientMessage({ type: "respond_confirm", requestId: 1, confirmed: true }),
     undefined,

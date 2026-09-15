@@ -1,7 +1,14 @@
 // The web client's page composition and interaction state.
 
 import { useEffect, useRef, useState } from "react";
-import { nameColourIndex } from "@cinba/contract";
+import {
+  COMMANDS,
+  type Command,
+  type SkillCommand,
+  type SlashCommand,
+  commandArgument,
+  nameColourIndex,
+} from "@cinba/contract";
 import { Transcript } from "./transcript.tsx";
 import { PromptComposer } from "./prompt-composer.tsx";
 import { ProjectPicker } from "./project-picker.tsx";
@@ -12,11 +19,13 @@ import { ProviderSettings } from "./provider-settings.tsx";
 import { WebToolsSettings } from "./web-tools-settings.tsx";
 import { StatusBar } from "./status-bar.tsx";
 import { useCore } from "./use-core.ts";
+import { PickerShell } from "./picker-shell.tsx";
 
 /** One web colour for each stable slot supplied by the shared naming rules. */
 const CORE_COLOURS = ["#3b6fd4", "#2e9166", "#b4642a", "#8b4bc4", "#b03a52", "#2b7f96"];
 
-type ActiveOverlay = "project" | "model" | "thinking" | "session" | "provider" | "webtools" | null;
+type ActiveOverlay =
+  "project" | "model" | "thinking" | "session" | "provider" | "webtools" | "help" | null;
 type EditTarget = { sessionId: string; userMessageIndex: number; text: string };
 
 export function App({ serverUrl }: { serverUrl: string }) {
@@ -39,6 +48,55 @@ export function App({ serverUrl }: { serverUrl: string }) {
     connectionLabel = core.coreName || "...";
   } else if (core.connectionState === "connecting") {
     connectionLabel = "Connecting...";
+  }
+
+  function runCinbaCommand(command: Command, line: string): boolean {
+    switch (command.id) {
+      case "compact":
+        return core.compact();
+      case "model":
+        if (core.listModels()) {
+          setActiveOverlay("model");
+          return true;
+        }
+        return false;
+      case "sessions":
+        if (core.listSessions()) {
+          setActiveOverlay("session");
+          return true;
+        }
+        return false;
+      case "thinking":
+        setActiveOverlay("thinking");
+        return true;
+      case "new":
+        return core.createConversation(core.cwd);
+      case "name": {
+        const name = commandArgument(line);
+        return name !== "" && core.renameSession(name);
+      }
+      case "providers":
+      case "login":
+      case "logout":
+        if (core.listProviders()) {
+          setActiveOverlay("provider");
+          return true;
+        }
+        return false;
+      case "webtools":
+        if (core.getWebToolsStatus()) {
+          setActiveOverlay("webtools");
+          return true;
+        }
+        return false;
+      case "help":
+        setActiveOverlay("help");
+        return true;
+    }
+  }
+
+  function runSlashCommand(command: SlashCommand, line: string): boolean {
+    return command.source === "skill" ? core.prompt(line) : runCinbaCommand(command, line);
   }
 
   // The snapshot is an intentional trigger: streaming output should keep the newest text visible.
@@ -163,6 +221,8 @@ export function App({ serverUrl }: { serverUrl: string }) {
           queue={core.snapshot.queue}
           recoveredDrafts={core.recoveredDrafts}
           onDismissRecoveredDraft={core.dismissRecoveredDraft}
+          skills={core.skills}
+          onCommand={runSlashCommand}
         />
       </footer>
 
@@ -226,6 +286,81 @@ export function App({ serverUrl }: { serverUrl: string }) {
           onClose={() => setActiveOverlay(null)}
         />
       ) : null}
+
+      {activeOverlay === "help" ? (
+        <CommandHelp skills={core.skills} onClose={() => setActiveOverlay(null)} />
+      ) : null}
+
+      {core.projectTrustRequest ? (
+        <ProjectTrustDialog
+          request={core.projectTrustRequest}
+          onAnswer={(trusted) =>
+            core.respondProjectTrust(core.projectTrustRequest!.requestId, trusted)
+          }
+        />
+      ) : null}
     </>
+  );
+}
+
+function CommandHelp({ skills, onClose }: { skills: SkillCommand[]; onClose: () => void }) {
+  return (
+    <PickerShell label="Commands" onClose={onClose}>
+      <h2>Commands</h2>
+      <h3>Cinba</h3>
+      <dl className="command-help">
+        {COMMANDS.map((command) => (
+          <div key={command.name}>
+            <dt>/{command.name}</dt>
+            <dd>{command.summary}</dd>
+          </div>
+        ))}
+      </dl>
+      {skills.length > 0 ? (
+        <>
+          <h3>Skills</h3>
+          <dl className="command-help">
+            {skills.map((skill) => (
+              <div key={skill.name}>
+                <dt>/{skill.name}</dt>
+                <dd>
+                  {skill.summary} ({skill.scope})
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </>
+      ) : null}
+      <button onClick={onClose}>Close</button>
+    </PickerShell>
+  );
+}
+
+function ProjectTrustDialog({
+  request,
+  onAnswer,
+}: {
+  request: { cwd: string; resources: string[] };
+  onAnswer: (trusted: boolean) => void;
+}) {
+  return (
+    <PickerShell label="Project trust" onClose={() => onAnswer(false)}>
+      <h2>Trust agent resources in this project?</h2>
+      <p>{request.cwd}</p>
+      <p>Detected:</p>
+      <ul>
+        {request.resources.map((resource) => (
+          <li key={resource}>{resource}</li>
+        ))}
+      </ul>
+      <p>
+        Trusting this folder also trusts Pi settings, system prompts, skills, packages and
+        executable extensions added here later.
+      </p>
+      <div className="picker-actions">
+        <button onClick={() => onAnswer(true)}>Trust</button>
+        <button onClick={() => onAnswer(false)}>Do not trust</button>
+      </div>
+    </PickerShell>
   );
 }

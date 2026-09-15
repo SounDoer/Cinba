@@ -2,3 +2,4 @@ interface:
   display_name: "Cinba Prod"
   short_description: "Sync verified Cinba commits to master and prod"
   default_prompt: "Use $cinba-prod to sync the completed master commits and promote them to the prod branch."
+

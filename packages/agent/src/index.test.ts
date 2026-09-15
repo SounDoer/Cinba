@@ -93,3 +93,11 @@ test("no session path means a fresh conversation", () => {
   const plan = buildSpawnPlan("entry.js", ["gate.ts"], {});
   assert.equal(plan.args.includes("--session"), false);
 });
+
+test("an explicit project trust decision is passed to Pi", () => {
+  const trusted = buildSpawnPlan("entry.js", ["gate.ts"], { projectTrusted: true });
+  const refused = buildSpawnPlan("entry.js", ["gate.ts"], { projectTrusted: false });
+
+  assert.equal(trusted.args.includes("--approve"), true);
+  assert.equal(refused.args.includes("--no-approve"), true);
+});

@@ -36,6 +36,7 @@ import {
   type RecoveredDraft,
   type Session,
   type SessionSummary,
+  type SkillCommand,
   type Snapshot,
   type ViewAction,
   agentActivity,
@@ -145,15 +146,17 @@ class ConfirmDialog implements Component {
   #list: SelectList;
   #title: string;
   #message: string | undefined;
+  #negativeLabel: string;
   onAnswer?: (confirmed: boolean) => void;
 
-  constructor(title: string, message?: string) {
+  constructor(title: string, message?: string, labels = { positive: "Allow", negative: "Deny" }) {
     this.#title = title;
     this.#message = message;
+    this.#negativeLabel = labels.negative;
     this.#list = new SelectList(
       [
-        { value: "yes", label: "Allow" },
-        { value: "no", label: "Deny" },
+        { value: "yes", label: labels.positive },
+        { value: "no", label: labels.negative },
       ],
       2,
       SELECT_THEME,
@@ -180,7 +183,7 @@ class ConfirmDialog implements Component {
             .flatMap((line) => wrapTextWithAnsi(`${DIM}${line}${RESET}`, width))
         : []),
       ...this.#list.render(width),
-      `${DIM}↑↓ to choose, Enter to confirm, Esc to deny${RESET}`,
+      `${DIM}↑↓ to choose, Enter to confirm, Esc to ${this.#negativeLabel.toLowerCase()}${RESET}`,
     ];
   }
 }
@@ -296,6 +299,7 @@ let sessionId = "";
 let statusModel = "";
 let exiting = false;
 let recoveredDrafts: RecoveredDraft[] = [];
+let skillCommands: SkillCommand[] = [];
 let retryRenderTimer: NodeJS.Timeout | undefined;
 
 function refreshActivity(snapshot: Snapshot): void {
@@ -559,6 +563,36 @@ const coreClient = new CoreClient(SERVER_URL, {
     );
     tui.requestRender();
   },
+  onSkillListing: (listedSessionId, skills) => {
+    if (sessionId !== "" && listedSessionId !== sessionId) {
+      return;
+    }
+    skillCommands = skills;
+    promptInput.setSkills(skills);
+    tui.requestRender();
+  },
+  onProjectTrustRequested: (request) => {
+    confirming = true;
+    const details = [
+      request.cwd,
+      "",
+      "Detected agent resources:",
+      ...request.resources.map((resource) => `  ${resource}`),
+      "",
+      "Trusting this folder also trusts project resources added there later.",
+    ].join("\n");
+    const dialog = new ConfirmDialog("Trust agent resources in this project?", details, {
+      positive: "Trust",
+      negative: "Do not trust",
+    });
+    dialog.onAnswer = (trusted) => {
+      confirming = false;
+      showPrompt();
+      coreClient.respondProjectTrust(request.requestId, trusted);
+    };
+    setBottom(dialog);
+    tui.setFocus(dialog);
+  },
   onProviderListing: (providers) => {
     providerFlow.onListing(providers);
   },
@@ -727,6 +761,11 @@ function runCommand(command: Command, line: string): void {
       for (const entry of COMMANDS) {
         transcript.append(`${MAGENTA}/${entry.name}${RESET}  ${DIM}${entry.summary}${RESET}`);
       }
+      for (const entry of skillCommands) {
+        transcript.append(
+          `${MAGENTA}/${entry.name}${RESET}  ${DIM}${entry.summary} (${entry.scope})${RESET}`,
+        );
+      }
       tui.requestRender();
       return;
   }
@@ -756,8 +795,10 @@ function submitInput(value: string, delivery: "default" | "followUp" = "default"
     const command = promptInput.pending();
     promptInput.input.setValue("");
     promptInput.clearHints();
-    if (command) {
+    if (command?.source === "cinba") {
       runCommand(command, text);
+    } else if (command?.source === "skill") {
+      coreClient.prompt(text);
     } else {
       // Say so rather than sending it to the model: a mistyped command is not a question.
       applyAction({ type: "notice", text: `no such command: ${text}` });

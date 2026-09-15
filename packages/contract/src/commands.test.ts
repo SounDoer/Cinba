@@ -26,7 +26,26 @@ test("web tools management has one discoverable top-level command", () => {
     COMMANDS.filter((command) => command.name.startsWith("web")).map((command) => command.name),
     ["webtools"],
   );
-  assert.equal(matchCommands("/webtools")[0]?.id, "webtools");
+  const matched = matchCommands("/webtools")[0];
+  assert.equal(matched?.source, "cinba");
+  assert.equal(matched?.source === "cinba" ? matched.id : undefined, "webtools");
+});
+
+test("Pi skills join the menu after Cinba commands", () => {
+  const skills = [
+    {
+      source: "skill" as const,
+      name: "skill:tdd",
+      summary: "work test-first",
+      scope: "user" as const,
+    },
+  ];
+
+  assert.equal(matchCommands("/", skills).at(-1)?.name, "skill:tdd");
+  assert.deepEqual(
+    matchCommands("/skill:t", skills).map((command) => command.name),
+    ["skill:tdd"],
+  );
 });
 
 test("an exact name wins over one that merely starts with it", () => {

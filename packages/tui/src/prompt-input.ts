@@ -7,7 +7,7 @@ import {
   matchesKey,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import { type Command, matchCommands } from "@cinba/contract";
+import { type SkillCommand, type SlashCommand, matchCommands } from "@cinba/contract";
 import { BOLD, DIM, GREEN, MAGENTA, RESET } from "./theme.ts";
 
 /**
@@ -19,7 +19,8 @@ import { BOLD, DIM, GREEN, MAGENTA, RESET } from "./theme.ts";
  */
 export class PromptInput implements Component, Focusable {
   readonly input = new Input();
-  #hints: Command[] = [];
+  #hints: SlashCommand[] = [];
+  #skills: SkillCommand[] = [];
   #selected = 0;
   #focused = false;
 
@@ -47,20 +48,28 @@ export class PromptInput implements Component, Focusable {
 
     this.input.handleInput(data);
 
-    const before = this.#hints[this.#selected]?.id;
-    this.#hints = matchCommands(this.input.getValue());
+    const before = this.#hints[this.#selected];
+    this.#hints = matchCommands(this.input.getValue(), this.#skills);
 
-    const stillThere = this.#hints.findIndex((command) => command.id === before);
+    const stillThere = this.#hints.findIndex(
+      (command) => command.source === before?.source && command.name === before.name,
+    );
     this.#selected = stillThere >= 0 ? stillThere : 0;
   }
 
   /** The command Enter would run, if any. */
-  pending(): Command | undefined {
+  pending(): SlashCommand | undefined {
     return this.#hints[this.#selected];
   }
 
   clearHints(): void {
     this.#hints = [];
+    this.#selected = 0;
+  }
+
+  setSkills(skills: SkillCommand[]): void {
+    this.#skills = [...skills];
+    this.#hints = matchCommands(this.input.getValue(), this.#skills);
     this.#selected = 0;
   }
 
@@ -72,9 +81,10 @@ export class PromptInput implements Component, Focusable {
     const menu: string[] = [];
     for (const [index, command] of this.#hints.entries()) {
       const chosen = index === this.#selected;
+      const source = command.source === "skill" ? `  ${command.scope}` : "";
       const line = chosen
-        ? `${MAGENTA}> /${command.name}${RESET}  ${DIM}${command.summary}${RESET}`
-        : `${DIM}  /${command.name}  ${command.summary}${RESET}`;
+        ? `${MAGENTA}> /${command.name}${RESET}  ${DIM}${command.summary}${source}${RESET}`
+        : `${DIM}  /${command.name}  ${command.summary}${source}${RESET}`;
       menu.push(...wrapTextWithAnsi(line, width));
     }
 

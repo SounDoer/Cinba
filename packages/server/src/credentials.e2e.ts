@@ -78,8 +78,15 @@ async function modelsOf(provider: string): Promise<Model[]> {
 before(async () => {
   home = mkdtempSync(join(tmpdir(), "cinba-e2e-"));
   mkdirSync(join(home, ".pi", "agent"), { recursive: true });
+  mkdirSync(join(home, ".cinba"), { recursive: true });
   // No credentials at all, which is where a fresh machine starts.
   writeFileSync(join(home, ".pi", "agent", "auth.json"), "{}", "utf8");
+  // Open this repository so the real project-skill bridge is exercised too.
+  writeFileSync(
+    join(home, ".cinba", "config.json"),
+    JSON.stringify({ cwd: process.cwd() }),
+    "utf8",
+  );
 
   server = spawn(process.execPath, ["--experimental-strip-types", "packages/server/src/index.ts"], {
     // The whole home directory rather than PI_CODING_AGENT_DIR, which is what
@@ -126,7 +133,17 @@ before(async () => {
     arrived?.();
   });
 
+  // This repository deliberately contains a project-local skill. The real
+  // client must answer the same pre-start trust question a person sees.
+  const trust = await nextOfType("project_trust_requested");
+  send({ type: "respond_project_trust", requestId: trust.requestId, trusted: true });
   await nextOfType("session_opened");
+  const skillListing = await nextOfType("skill_listing");
+  assert.equal(
+    (skillListing.skills as { name: string }[]).some((skill) => skill.name === "skill:cinba-prod"),
+    true,
+    "the trusted project skill should be exposed through the real Pi process",
+  );
 });
 
 after(async () => {

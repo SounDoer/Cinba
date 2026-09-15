@@ -6,7 +6,7 @@
 // does lives with that end.
 
 export { COMMANDS, commandArgument, isCommand, matchCommands } from "./commands.ts";
-export type { Command, CommandId } from "./commands.ts";
+export type { Command, CommandId, SkillCommand, SkillScope, SlashCommand } from "./commands.ts";
 export type {
   AutoRetry,
   ContextUsage,

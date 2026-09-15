@@ -182,6 +182,76 @@ footer {
   gap: 0.5rem;
 }
 
+.command-menu {
+  max-height: 16rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.command-menu button {
+  display: grid;
+  grid-template-columns: minmax(10rem, auto) 1fr auto;
+  gap: 0.75rem;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  padding: 0.45rem 0.65rem;
+  background: transparent;
+  text-align: left;
+}
+
+.command-menu button:last-child {
+  border-bottom: 0;
+}
+
+.command-menu button.selected,
+.command-menu button:hover {
+  background: var(--surface-hover);
+}
+
+.command-menu span,
+.command-help dt {
+  font-family: ui-monospace, monospace;
+  color: var(--accent);
+}
+
+.command-menu small,
+.command-menu em,
+.command-help dd {
+  color: var(--text-muted);
+}
+
+.command-menu em {
+  font-size: 11px;
+  font-style: normal;
+}
+
+.command-error {
+  color: #ef7777;
+  font-size: 12px;
+}
+
+.command-help {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  overflow-y: auto;
+}
+
+.command-help div {
+  display: grid;
+  grid-template-columns: minmax(10rem, auto) 1fr;
+  gap: 0.75rem;
+}
+
+.command-help dd {
+  margin: 0;
+}
+
 @media (max-width: 800px) {
   .status-bar {
     grid-template-columns: minmax(0, 1fr) auto;

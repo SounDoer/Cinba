@@ -1,7 +1,14 @@
 // The prompt input and the controls for starting or stopping one turn.
 
 import { useEffect, useRef, useState } from "react";
-import type { PendingMessages, RecoveredDraft } from "@cinba/contract";
+import {
+  type PendingMessages,
+  type RecoveredDraft,
+  type SkillCommand,
+  type SlashCommand,
+  isCommand,
+  matchCommands,
+} from "@cinba/contract";
 
 export function PromptComposer({
   connected,
@@ -17,6 +24,8 @@ export function PromptComposer({
   queue,
   recoveredDrafts,
   onDismissRecoveredDraft,
+  skills,
+  onCommand,
 }: {
   connected: boolean;
   busy: boolean;
@@ -31,9 +40,14 @@ export function PromptComposer({
   queue: PendingMessages;
   recoveredDrafts: RecoveredDraft[];
   onDismissRecoveredDraft: (index: number) => void;
+  skills: SkillCommand[];
+  onCommand: (command: SlashCommand, text: string) => boolean;
 }) {
   const [draft, setDraft] = useState(editDraft?.text ?? "");
+  const [selectedCommand, setSelectedCommand] = useState(0);
+  const [commandError, setCommandError] = useState<string | undefined>(undefined);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const commandHints = editDraft === undefined ? matchCommands(draft, skills) : [];
 
   useEffect(() => {
     if (editDraft === undefined) {
@@ -63,7 +77,21 @@ export function PromptComposer({
       return;
     }
     let sent: boolean;
-    if (editDraft) {
+    if (isCommand(text) && !editDraft) {
+      if (busy) {
+        setCommandError("Wait until the current work is idle.");
+        return;
+      }
+      const command = commandHints[selectedCommand];
+      if (!command) {
+        setCommandError(`No such command: ${text}`);
+        return;
+      }
+      sent = onCommand(command, text);
+      if (!sent) {
+        setCommandError("Command could not be started.");
+      }
+    } else if (editDraft) {
       sent = !busy && onSend(text);
     } else if (!busy) {
       sent = onSend(text);
@@ -74,7 +102,15 @@ export function PromptComposer({
     }
     if (sent) {
       setDraft("");
+      setSelectedCommand(0);
+      setCommandError(undefined);
     }
+  }
+
+  function updateDraft(value: string) {
+    setDraft(value);
+    setSelectedCommand(0);
+    setCommandError(undefined);
   }
 
   let sendLabel = "Send";
@@ -108,7 +144,7 @@ export function PromptComposer({
                 <button
                   key={`${item.behavior}-${index}-${item.text}`}
                   onClick={() => {
-                    setDraft((current) => `${current}${current ? "\n\n" : ""}${item.text}`);
+                    updateDraft(`${draft}${draft ? "\n\n" : ""}${item.text}`);
                     onDismissRecoveredDraft(index);
                     inputRef.current?.focus();
                   }}
@@ -121,6 +157,27 @@ export function PromptComposer({
           ) : null}
         </div>
       ) : null}
+      {commandHints.length > 0 ? (
+        <div className="command-menu" aria-label="Commands">
+          {commandHints.map((command, index) => (
+            <button
+              key={`${command.source}-${command.name}`}
+              className={index === selectedCommand ? "selected" : ""}
+              aria-current={index === selectedCommand}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                updateDraft(`/${command.name} `);
+                inputRef.current?.focus();
+              }}
+            >
+              <span>/{command.name}</span>
+              <small>{command.summary}</small>
+              <em>{command.source === "skill" ? command.scope : "Cinba"}</em>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {commandError ? <div className="command-error">{commandError}</div> : null}
       <div className="composer-row">
         <textarea
           ref={inputRef}
@@ -129,8 +186,18 @@ export function PromptComposer({
           placeholder="Say something (Enter to send, Alt+Enter after completion, Shift+Enter for a new line)"
           value={draft}
           disabled={!connected}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => updateDraft(event.target.value)}
           onKeyDown={(event) => {
+            if (commandHints.length > 0 && event.key === "ArrowUp") {
+              event.preventDefault();
+              setSelectedCommand((selectedCommand + commandHints.length - 1) % commandHints.length);
+              return;
+            }
+            if (commandHints.length > 0 && (event.key === "ArrowDown" || event.key === "Tab")) {
+              event.preventDefault();
+              setSelectedCommand((selectedCommand + 1) % commandHints.length);
+              return;
+            }
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
               send(event.altKey ? "followUp" : "default");

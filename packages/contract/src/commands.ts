@@ -9,8 +9,8 @@
 //
 // These are Cinba's own commands. Pi has a second, separate set of its own
 // (extension commands, prompt templates, skills, reachable through its
-// get_commands call) which are per-session and would have to arrive over the
-// wire rather than be listed here.
+// get_commands call). The core sends the allowed per-session subset over the
+// wire rather than listing it here.
 
 export type CommandId =
   | "compact"
@@ -26,28 +26,77 @@ export type CommandId =
   | "help";
 
 export type Command = {
+  source: "cinba";
   id: CommandId;
   /** Typed after the slash. */
   name: string;
   summary: string;
 };
 
+export type SkillScope = "user" | "project" | "path";
+
+/** A skill Pi actually loaded for this session and can expand through prompt. */
+export type SkillCommand = {
+  source: "skill";
+  /** Pi's invokable name without the leading slash, normally skill:name. */
+  name: string;
+  summary: string;
+  scope: SkillScope;
+};
+
+export type SlashCommand = Command | SkillCommand;
+
 /**
  * Order here is not the order shown — matchCommands sorts — so it is kept
  * alphabetical to match, rather than looking like a ranking that does nothing.
  */
 export const COMMANDS: readonly Command[] = [
-  { id: "compact", name: "compact", summary: "summarize older context now" },
-  { id: "help", name: "help", summary: "list these commands" },
-  { id: "model", name: "model", summary: "switch model, keeping this conversation" },
-  { id: "name", name: "name", summary: "name this conversation, e.g. /name parser work" },
-  { id: "login", name: "login", summary: "give a provider an API key" },
-  { id: "logout", name: "logout", summary: "forget a provider's API key" },
-  { id: "new", name: "new", summary: "start a conversation here" },
-  { id: "providers", name: "providers", summary: "which providers are configured" },
-  { id: "sessions", name: "sessions", summary: "switch to another conversation" },
-  { id: "thinking", name: "thinking", summary: "set reasoning effort for this conversation" },
-  { id: "webtools", name: "webtools", summary: "manage web search and fetch" },
+  { source: "cinba", id: "compact", name: "compact", summary: "summarize older context now" },
+  { source: "cinba", id: "help", name: "help", summary: "list these commands" },
+  {
+    source: "cinba",
+    id: "model",
+    name: "model",
+    summary: "switch model, keeping this conversation",
+  },
+  {
+    source: "cinba",
+    id: "name",
+    name: "name",
+    summary: "name this conversation, e.g. /name parser work",
+  },
+  { source: "cinba", id: "login", name: "login", summary: "give a provider an API key" },
+  {
+    source: "cinba",
+    id: "logout",
+    name: "logout",
+    summary: "forget a provider's API key",
+  },
+  { source: "cinba", id: "new", name: "new", summary: "start a conversation here" },
+  {
+    source: "cinba",
+    id: "providers",
+    name: "providers",
+    summary: "which providers are configured",
+  },
+  {
+    source: "cinba",
+    id: "sessions",
+    name: "sessions",
+    summary: "switch to another conversation",
+  },
+  {
+    source: "cinba",
+    id: "thinking",
+    name: "thinking",
+    summary: "set reasoning effort for this conversation",
+  },
+  {
+    source: "cinba",
+    id: "webtools",
+    name: "webtools",
+    summary: "manage web search and fetch",
+  },
 ];
 
 /** The command word: what follows the slash, up to the first space. */
@@ -82,7 +131,7 @@ export function isCommand(input: string): boolean {
  * The first is what Enter takes. On a bare slash that is /help, which is the
  * right thing for the one case where the user has expressed no intent yet.
  */
-export function matchCommands(input: string): Command[] {
+export function matchCommands(input: string, skills: readonly SkillCommand[] = []): SlashCommand[] {
   if (!isCommand(input)) {
     return [];
   }
@@ -90,8 +139,16 @@ export function matchCommands(input: string): Command[] {
   // "/name parser work" keeps matching "name" as it is typed.
   const typed = commandWord(input);
 
-  return COMMANDS.filter((command) => command.name.startsWith(typed)).toSorted((a, b) => {
-    const exact = Number(b.name === typed) - Number(a.name === typed);
-    return exact !== 0 ? exact : a.name.localeCompare(b.name);
-  });
+  return [...COMMANDS, ...skills]
+    .filter((command) => command.name.startsWith(typed))
+    .toSorted((a, b) => {
+      const exact = Number(b.name === typed) - Number(a.name === typed);
+      if (exact !== 0) {
+        return exact;
+      }
+      if (a.source !== b.source) {
+        return a.source === "cinba" ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
 }

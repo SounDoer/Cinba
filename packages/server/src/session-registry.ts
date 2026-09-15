@@ -22,6 +22,7 @@ import {
   type ServerMessage,
   type Session,
   type SessionSummary,
+  type SkillCommand,
   type ThinkingLevel,
   type ViewAction,
   createSession,
@@ -38,6 +39,7 @@ export type LiveSession = {
   idleSince: number | undefined;
   staleCredentials: boolean;
   stopping: boolean;
+  skills: SkillCommand[];
 };
 
 type PendingConfirmation = {
@@ -59,6 +61,7 @@ export type OpenSessionOptions = {
   sessionPath?: string;
   cwd: string;
   model?: ModelRef;
+  projectTrusted?: boolean;
 };
 
 export type PiLaunch = {
@@ -108,6 +111,7 @@ function launchPiProcess(options: OpenSessionOptions): PiLaunch {
     provider: starting?.provider,
     model: starting?.id,
     sessionPath: options.sessionPath,
+    projectTrusted: options.projectTrusted,
   });
 
   let stderrTail = "";
@@ -334,6 +338,44 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     }
   }
 
+  async function refreshSkills(session: ManagedSession): Promise<void> {
+    const response = await session.pi.getCommands();
+    if (!response.success || findManaged(session) !== session) {
+      throw new Error(String(response.error ?? "Pi did not list commands"));
+    }
+    const raw = (response.data as { commands?: unknown } | undefined)?.commands;
+    session.skills = (Array.isArray(raw) ? raw : []).flatMap((item) => {
+      const candidate = item as {
+        name?: unknown;
+        description?: unknown;
+        source?: unknown;
+        location?: unknown;
+        sourceInfo?: { scope?: unknown };
+      };
+      if (
+        candidate.source !== "skill" ||
+        typeof candidate.name !== "string" ||
+        !candidate.name.startsWith("skill:") ||
+        candidate.name.length === "skill:".length
+      ) {
+        return [];
+      }
+      const rawScope = candidate.sourceInfo?.scope ?? candidate.location;
+      const scope = rawScope === "user" || rawScope === "project" ? rawScope : "path";
+      return [
+        {
+          source: "skill" as const,
+          name: candidate.name,
+          summary:
+            typeof candidate.description === "string" && candidate.description.trim() !== ""
+              ? candidate.description
+              : "load this skill",
+          scope,
+        },
+      ];
+    });
+  }
+
   async function open(openOptions: OpenSessionOptions): Promise<LiveSession | undefined> {
     if (!existsSync(openOptions.cwd)) {
       console.error(`[cinba] cannot start there, the directory is gone: ${openOptions.cwd}`);
@@ -422,6 +464,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
       idleSince: undefined,
       staleCredentials: false,
       stopping: false,
+      skills: [],
     };
 
     launch.pi.onEvent((event) => {
@@ -472,14 +515,26 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
       session.ledger.apply(action);
     }
     live.set(session.id, session);
+    const sessionStatus = Promise.all([
+      refreshContext(session, false),
+      refreshThinking(session, false),
+    ]);
+    const skillStatus = refreshSkills(session).catch((error: unknown) => {
+      console.error(
+        `[cinba] could not load skills for ${session.id}:`,
+        error instanceof Error ? error.message : String(error),
+      );
+      session.ledger.apply({ type: "notice", text: "Could not load the available skills." });
+    });
     try {
-      await Promise.all([refreshContext(session, false), refreshThinking(session, false)]);
+      await sessionStatus;
     } catch (error) {
       console.error(
         `[cinba] could not read initial session status for ${session.id}:`,
         error instanceof Error ? error.message : String(error),
       );
     }
+    await skillStatus;
     launch.pi.onClose((error) => {
       if (!error || live.get(session.id) !== session) {
         return;

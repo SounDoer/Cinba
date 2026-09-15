@@ -173,6 +173,11 @@ export class PiClient {
     return this.#send({ type: "get_available_thinking_levels" });
   }
 
+  /** Extension commands, prompt templates and skills loaded in this exact Pi session. */
+  getCommands(): Promise<CoreResponse> {
+    return this.#send({ type: "get_commands" });
+  }
+
   /**
    * The conversation as Pi has stored it.
    *

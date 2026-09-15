@@ -10,6 +10,8 @@ export { activeBranchEntries, foldSessionEntries } from "./entries.ts";
 export { createEventFolder, foldUiRequest } from "./events.ts";
 export { buildSpawnPlan, startPi } from "./pi-process.ts";
 export type { CoreOptions, SpawnPlan } from "./pi-process.ts";
+export { inspectProjectTrust, rememberProjectTrust } from "./project-trust.ts";
+export type { ProjectTrustInspection } from "./project-trust.ts";
 export { findSession, listSessions } from "./stored-sessions.ts";
 export type { StoredSession } from "./stored-sessions.ts";
 export { StdioTransport } from "./transport.ts";

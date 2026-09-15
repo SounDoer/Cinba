@@ -6,6 +6,7 @@
 // the two ends cannot drift apart.
 
 import type { ViewAction } from "./actions.ts";
+import type { SkillCommand } from "./commands.ts";
 import type { Snapshot } from "./session.ts";
 import { type ThinkingLevel, isThinkingLevel } from "./thinking.ts";
 
@@ -66,6 +67,7 @@ export type ClientMessage =
   | { type: "edit_message"; entryId: string; text: string }
   | { type: "abort" }
   | { type: "respond_confirm"; requestId: string; confirmed: boolean }
+  | { type: "respond_project_trust"; requestId: string; trusted: boolean }
   | { type: "list_dir"; path: string }
   | { type: "list_models" }
   | { type: "set_model"; provider: string; modelId: string }
@@ -108,6 +110,8 @@ export type ServerMessage =
   | { type: "provider_listing"; providers: ProviderStatus[] }
   | { type: "web_tools_status"; status: WebToolsStatus; error?: string }
   | { type: "drafts_recovered"; drafts: RecoveredDraft[] }
+  | { type: "skill_listing"; sessionId: string; skills: SkillCommand[] }
+  | { type: "project_trust_requested"; requestId: string; cwd: string; resources: string[] }
   /**
    * Which core this is. Sent once, as soon as a client connects.
    *
@@ -233,6 +237,8 @@ function parseWebToolsClientMessage(
  * check — even though we currently listen on the loopback address only. By the
  * time 3b opens a real door outward, this check is already in place.
  */
+// The switch is intentionally exhaustive at this trust boundary.
+// oxlint-disable-next-line complexity
 export function parseClientMessage(raw: unknown): ClientMessage | undefined {
   if (typeof raw !== "object" || raw === null) {
     return undefined;
@@ -279,6 +285,16 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
         type: "respond_confirm",
         requestId: message.requestId,
         confirmed: message.confirmed,
+      };
+
+    case "respond_project_trust":
+      if (typeof message.requestId !== "string" || typeof message.trusted !== "boolean") {
+        return undefined;
+      }
+      return {
+        type: "respond_project_trust",
+        requestId: message.requestId,
+        trusted: message.trusted,
       };
 
     case "list_dir":
@@ -595,6 +611,19 @@ function isRecoveredDraft(value: unknown): value is RecoveredDraft {
   );
 }
 
+function isSkillCommand(value: unknown): value is SkillCommand {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["source", "name", "summary", "scope"]) &&
+    value.source === "skill" &&
+    typeof value.name === "string" &&
+    value.name.startsWith("skill:") &&
+    value.name.length > "skill:".length &&
+    typeof value.summary === "string" &&
+    (value.scope === "user" || value.scope === "project" || value.scope === "path")
+  );
+}
+
 function isSessionSummary(value: unknown): value is SessionSummary {
   return (
     isRecord(value) &&
@@ -649,6 +678,8 @@ function isWebToolsStatus(value: unknown): value is WebToolsStatus {
 }
 
 /** Validate a message received by a client before dispatching it to UI code. */
+// The switch is intentionally exhaustive at this trust boundary.
+// oxlint-disable-next-line complexity
 export function parseServerMessage(raw: unknown): ServerMessage | undefined {
   if (!isRecord(raw)) {
     return undefined;
@@ -706,6 +737,20 @@ export function parseServerMessage(raw: unknown): ServerMessage | undefined {
       return hasOnlyKeys(raw, ["type", "drafts"]) &&
         Array.isArray(raw.drafts) &&
         raw.drafts.every(isRecoveredDraft)
+        ? (raw as ServerMessage)
+        : undefined;
+    case "skill_listing":
+      return hasOnlyKeys(raw, ["type", "sessionId", "skills"]) &&
+        typeof raw.sessionId === "string" &&
+        Array.isArray(raw.skills) &&
+        raw.skills.every(isSkillCommand)
+        ? (raw as ServerMessage)
+        : undefined;
+    case "project_trust_requested":
+      return hasOnlyKeys(raw, ["type", "requestId", "cwd", "resources"]) &&
+        typeof raw.requestId === "string" &&
+        typeof raw.cwd === "string" &&
+        isStringArray(raw.resources)
         ? (raw as ServerMessage)
         : undefined;
     case "core_identity":

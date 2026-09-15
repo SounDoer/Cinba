@@ -349,6 +349,7 @@ test("the conversation commands go out in protocol form", () => {
   client.abortRetry();
   client.compact();
   client.respondConfirm("u1", false);
+  client.respondProjectTrust("trust-1", true);
 
   assert.deepEqual(
     fake.sent.map((line) => JSON.parse(line)),
@@ -362,8 +363,56 @@ test("the conversation commands go out in protocol form", () => {
       { type: "abort_retry" },
       { type: "compact" },
       { type: "respond_confirm", requestId: "u1", confirmed: false },
+      { type: "respond_project_trust", requestId: "trust-1", trusted: true },
     ],
   );
+});
+
+test("skill listings and project trust requests reach their handlers", () => {
+  const fake = createFakeSocket();
+  const seen: unknown[] = [];
+  connect(fake, {
+    onSkillListing: (sessionId, skills) => seen.push([sessionId, skills]),
+    onProjectTrustRequested: (request) => seen.push(request),
+  });
+
+  fake.receive({
+    type: "skill_listing",
+    sessionId: "s1",
+    skills: [
+      {
+        source: "skill",
+        name: "skill:review",
+        summary: "Review the current change",
+        scope: "project",
+      },
+    ],
+  });
+  fake.receive({
+    type: "project_trust_requested",
+    requestId: "trust-1",
+    cwd: "C:/work",
+    resources: [".agents/skills"],
+  });
+
+  assert.deepEqual(seen, [
+    [
+      "s1",
+      [
+        {
+          source: "skill",
+          name: "skill:review",
+          summary: "Review the current change",
+          scope: "project",
+        },
+      ],
+    ],
+    {
+      requestId: "trust-1",
+      cwd: "C:/work",
+      resources: [".agents/skills"],
+    },
+  ]);
 });
 
 test("recovered drafts reach only their dedicated handler", () => {

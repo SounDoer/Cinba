@@ -9,6 +9,8 @@ export type CoreOptions = {
   model?: string;
   sessionPath?: string;
   extensions?: string[];
+  /** Explicit per-process project trust decision made by the Cinba host. */
+  projectTrusted?: boolean;
 };
 
 export type SpawnPlan = {
@@ -33,6 +35,9 @@ export function buildSpawnPlan(
   }
   if (options.sessionPath) {
     args.push("--session", options.sessionPath);
+  }
+  if (options.projectTrusted !== undefined) {
+    args.push(options.projectTrusted ? "--approve" : "--no-approve");
   }
 
   for (const extension of [...intrinsicExtensions, ...(options.extensions ?? [])]) {

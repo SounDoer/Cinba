@@ -11,6 +11,7 @@ import {
   type RecoveredDraft,
   type Session,
   type SessionSummary,
+  type SkillCommand,
   type Snapshot,
   type ThinkingLevel,
   type WebSearchCredentialProviderId,
@@ -51,6 +52,10 @@ export function useCore(serverUrl: string) {
   const [coreName, setCoreName] = useState("");
   const [connectionState, setConnectionState] = useState<CoreConnectionState>("connecting");
   const [recoveredDrafts, setRecoveredDrafts] = useState<RecoveredDraft[]>([]);
+  const [skills, setSkills] = useState<SkillCommand[]>([]);
+  const [projectTrustRequest, setProjectTrustRequest] = useState<
+    { requestId: string; cwd: string; resources: string[] } | undefined
+  >(undefined);
 
   const clientRef = useRef<CoreClient | undefined>(undefined);
   const mirrorRef = useRef<Session>(createSession());
@@ -70,6 +75,7 @@ export function useCore(serverUrl: string) {
         onSnapshot: (state) => {
           if (sessionIdRef.current !== "" && sessionIdRef.current !== state.sessionId) {
             setRecoveredDrafts([]);
+            setSkills([]);
           }
           sessionIdRef.current = state.sessionId;
           mirrorRef.current = createSession(state.snapshot);
@@ -98,6 +104,12 @@ export function useCore(serverUrl: string) {
         onDraftsRecovered: (drafts) => {
           setRecoveredDrafts((current) => [...current, ...drafts]);
         },
+        onSkillListing: (listedSessionId, listedSkills) => {
+          if (sessionIdRef.current === listedSessionId) {
+            setSkills(listedSkills);
+          }
+        },
+        onProjectTrustRequested: setProjectTrustRequest,
       },
       { autoReconnect: true },
     );
@@ -141,6 +153,16 @@ export function useCore(serverUrl: string) {
   const respondConfirm = useCallback(
     (requestId: string, confirmed: boolean) =>
       withClient((client) => client.respondConfirm(requestId, confirmed)),
+    [withClient],
+  );
+  const respondProjectTrust = useCallback(
+    (requestId: string, trusted: boolean) => {
+      const sent = withClient((client) => client.respondProjectTrust(requestId, trusted));
+      if (sent) {
+        setProjectTrustRequest(undefined);
+      }
+      return sent;
+    },
     [withClient],
   );
   const listDirectory = useCallback(
@@ -230,6 +252,8 @@ export function useCore(serverUrl: string) {
     webToolsStatus,
     webToolsError,
     recoveredDrafts,
+    skills,
+    projectTrustRequest,
     prompt,
     steer,
     followUp,
@@ -240,6 +264,7 @@ export function useCore(serverUrl: string) {
     abortRetry,
     compact,
     respondConfirm,
+    respondProjectTrust,
     listDirectory,
     listModels,
     selectModel,
