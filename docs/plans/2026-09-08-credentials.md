@@ -1,7 +1,16 @@
 # 基础功能：在 Cinba 里管理 provider 凭据
 
 日期：2026-09-08
-状态：已完成（2026-09-08）
+状态：已完成（2026-09-08）；连接来源限制于 2026-09-12 调整
+
+> **后续决定（2026-09-12）：** 本文最初把“凭据写入只接受 loopback 连接”当作安全边界。
+> VPS 形态落地后，这条限制已经移除，本机与远程客户端功能一致。远程入口由 Caddy 反向代理到
+> loopback，Core 看到的是代理连接，不能靠 `remoteAddress` 准确判断最终用户是否在本机；而获准
+> 进入 Core 的用户本来就能操作该 Core 的 shell，单独禁止凭据管理也不构成真正的安全边界。
+> 当前边界是 Tailscale Grant、Caddy 精确监听、WebSocket Origin 校验、操作系统用户隔离与统一
+> 权限门。详见 `docs/specs/2026-09-12-phase3b2-vps-tailscale-design.md` 第 7、8 节。
+>
+> 本文后面的 loopback 内容保留为当时的设计与执行记录，不再代表当前行为。
 
 兑现设计文档第 1 节的第一条动机「模型/厂商自由」的后半截：模型能切了，但**加一家新的
 provider 仍然要退出去开 `pi`**。
@@ -77,9 +86,9 @@ getProviderAuthStatus("groq") → { "configured": true, "source": "stored" }
 | 问题 | 决定 | 理由 |
 |---|---|---|
 | 做到哪一步 | **只读状态 + API key 登录 + logout**，不做 OAuth | OAuth 要开浏览器等回调，Pi 那套实现围着它自己的 TUI 写；而绝大多数 provider 都是 API key |
-| 凭据操作的来源 | **只接受 loopback 连接** | 今天一切都是 loopback，这条现在不生效。但形态 C 之后「你自己」会变成「任何连上来的人」，**五行代码，现在写和以后写是两回事** |
+| 凭据操作的来源 | ~~只接受 loopback 连接~~ **已于 2026-09-12 移除；获准连接 Core 的客户端均可操作** | 反向代理会让远程请求在 Core 看来也是 loopback；真正的访问边界在 Core 外层，见文首后续决定 |
 | 界面 | `/login` 选 provider → 输 key；`/logout`；`/providers` 只读 | 40 个 provider，`SelectList` 的模糊搜索扛得住 |
-| 多用户 | **本次不处理** | 用户明确要求先聚焦登录。loopback 那条是唯一提前埋的东西 |
+| 多用户 | **本次不处理** | 用户明确要求先聚焦登录；当前仍以一个 Core 对应一个受信任用户边界为前提 |
 
 ## 安全（本次新增的红线）
 
@@ -87,7 +96,8 @@ getProviderAuthStatus("groq") → { "configured": true, "source": "stored" }
    `{ providerId, type, configured }`。
 2. **不进日志、不进账本、不进快照**——账本会被广播给所有观看者，也会被写进快照。
 3. **界面遮蔽输入**（网页 `type="password"`，TUI 不回显字符）。
-4. **凭据操作只允许 loopback**，非 loopback 直接丢弃。
+4. ~~**凭据操作只允许 loopback**，非 loopback 直接丢弃。~~ **2026-09-12 已移除**；原因见文首
+   后续决定。密钥单向、不记录和界面遮蔽仍然有效。
 5. 权限门不受影响，本次不碰。
 
 ## 任务
@@ -105,7 +115,7 @@ clearCredential(providerId): Promise<void>   // logout
 测试用 `PI_CODING_AGENT_DIR` 指向临时目录，**不碰真实凭据**：登录一个假 key、
 断言列表里 `configured` 变 true、断言返回值里搜不到那个 key、logout 之后变回 false。
 
-### Task 2：协议 + loopback 闸门 → 验证：`protocol.test.ts`
+### Task 2：协议 + loopback 闸门 → 验证：`protocol.test.ts`（闸门后来移除）
 
 ```ts
 ClientMessage += | { type: "list_providers" }
@@ -117,6 +127,9 @@ ServerMessage += | { type: "provider_listing"; providers: ProviderStatus[] }
 
 `core-server` 在 `connection` 时记下 `request.socket.remoteAddress` 是不是 loopback；
 `set_api_key` / `clear_credential` 只在 loopback 客户端上执行，否则丢弃并回一条 notice。
+
+这段是 2026-09-08 的实施记录。2026-09-12 决定本机与远程功能一致后，来源判断和拒绝逻辑已从
+server 移除；协议消息保留。
 
 ### Task 3：`core-server` 接线 → 验证：手工
 
@@ -174,6 +187,10 @@ Bedrock 把它原样回显在错误里。
 它是**为门打开的那天提前放好的**,而不是等到那天再去想起来。
 `isLoopback()` 抽成了独立模块并加测试——IPv4-mapped IPv6(`::ffff:127.0.0.1`)、
 整个 `127.0.0.0/8`、以及 Tailscale 的 `100.x` 必须被拒,这些形状很容易写错。
+
+**2026-09-12 更新：** 这条结论已被 VPS 反向代理的真实连接形态推翻，闸门随后移除。Caddy
+连接 Core 时本身来自 loopback，检查 `remoteAddress` 无法区分本机客户端和经 Caddy 进入的远程
+客户端；当前安全边界见文首后续决定。
 
 **4. 原计划担心的「登录后要重启 Pi」不存在。** 实测运行中的 Pi 立刻看到新 provider
 (0 → 7 models)。那一整块设计可以删掉。
