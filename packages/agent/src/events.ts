@@ -124,6 +124,24 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
         ];
       }
 
+      case "tool_execution_update": {
+        if (typeof event.toolCallId !== "string" || typeof event.toolName !== "string") {
+          return [];
+        }
+        // Pi sends the complete output accumulated so far, not a delta. Replacing
+        // the card result prevents repeated output when successive updates arrive.
+        return [
+          {
+            type: "tool_changed",
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+            args: event.args,
+            status: "running",
+            result: extractText(event.partialResult),
+          },
+        ];
+      }
+
       case "tool_execution_end": {
         if (typeof event.toolCallId !== "string" || typeof event.toolName !== "string") {
           return [];

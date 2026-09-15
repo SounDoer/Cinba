@@ -4,6 +4,7 @@
 // updates incrementally here. The whole thing renders from the snapshot and
 // React does the diffing, so the textNodes / toolNodes bookkeeping is gone.
 
+import { useEffect, useRef } from "react";
 import Markdown from "react-markdown";
 import type { Entry, MessageEntry, ModelEntry, NoticeEntry, ToolEntry } from "@cinba/contract";
 
@@ -65,6 +66,13 @@ function ToolCard({
   onRespond: (requestId: string, confirmed: boolean) => void;
 }) {
   const requestId = entry.confirmRequestId;
+  const resultRef = useRef<HTMLPreElement>(null);
+
+  useEffect(() => {
+    if (entry.status === "running" && entry.result && resultRef.current) {
+      resultRef.current.scrollTop = resultRef.current.scrollHeight;
+    }
+  }, [entry.result, entry.status]);
 
   return (
     <div className={`tool ${entry.status}`}>
@@ -77,7 +85,11 @@ function ToolCard({
         <pre className="tool-args">{JSON.stringify(entry.args, null, 2)}</pre>
       ) : null}
 
-      {entry.result ? <pre className="tool-result">{entry.result}</pre> : null}
+      {entry.result ? (
+        <pre ref={resultRef} className="tool-result">
+          {entry.result}
+        </pre>
+      ) : null}
 
       {requestId ? (
         <div className="tool-confirmation">

@@ -88,6 +88,7 @@ test("events with missing or wrong fields are ignored safely", () => {
     [],
   );
   assert.deepEqual(fold({ type: "tool_execution_start", toolName: "bash" }), []);
+  assert.deepEqual(fold({ type: "tool_execution_update", toolCallId: "call_1" }), []);
   assert.deepEqual(fold({ type: "tool_execution_end", toolCallId: "call_1" }), []);
   assert.deepEqual(
     fold({
@@ -115,6 +116,31 @@ test("tool_execution_start means running unless a confirmation arrives", () => {
       toolName: "bash",
       args: { command: "ls" },
       status: "running",
+    },
+  ]);
+});
+
+test("tool_execution_update replaces a running tool's accumulated output", () => {
+  const fold = createEventFolder();
+
+  const actions = fold({
+    type: "tool_execution_update",
+    toolCallId: "call_1",
+    toolName: "bash",
+    args: { command: "npm run check" },
+    partialResult: {
+      content: [{ type: "text", text: "format passed\nlint passed\n" }],
+    },
+  });
+
+  assert.deepEqual(actions, [
+    {
+      type: "tool_changed",
+      toolCallId: "call_1",
+      toolName: "bash",
+      args: { command: "npm run check" },
+      status: "running",
+      result: "format passed\nlint passed\n",
     },
   ]);
 });

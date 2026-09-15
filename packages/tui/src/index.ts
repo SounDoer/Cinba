@@ -313,18 +313,14 @@ function applyAction(action: ViewAction): void {
             transcript.append(`${DIM}   ${line}${RESET}`);
           }
         }
-      } else if (action.status === "done" || action.status === "error") {
-        transcript.append(
-          action.status === "done"
-            ? `   ${GREEN}done${RESET}`
-            : `   ${RED}denied or failed${RESET}`,
-        );
-        // Tool output can be long, so take the first 20 lines: flooding a terminal is worse than showing less.
-        for (const line of (action.result ?? "").split("\n").slice(0, 20)) {
-          transcript.append(`${DIM}   ${line}${RESET}`);
-        }
+      } else if (action.status !== "running" || action.result !== undefined) {
+        // Progress is cumulative, so redraw the card from the mirror instead of
+        // appending every update. The server already coalesces events into short
+        // batches, and queueRedraw coalesces every action in that batch again.
+        queueRedraw();
       }
-      // running is not drawn: the dialog disappearing is itself the signal that execution began.
+      // A newly started tool stays hidden until it produces output. This avoids
+      // briefly drawing an optimistic running card before a confirmation arrives.
       break;
     }
 
@@ -404,7 +400,10 @@ function drawEntry(entry: Entry): void {
         outcome = `${RED}denied or failed${RESET}`;
       }
       transcript.append(`${YELLOW}[tool] ${entry.toolName}${RESET} ${outcome}`);
-      for (const line of (entry.result ?? "").split("\n").slice(0, 20)) {
+      const outputLines = (entry.result ?? "").split("\n");
+      const visibleLines =
+        entry.status === "running" ? outputLines.slice(-20) : outputLines.slice(0, 20);
+      for (const line of visibleLines) {
         if (line !== "") {
           transcript.append(`${DIM}   ${line}${RESET}`);
         }

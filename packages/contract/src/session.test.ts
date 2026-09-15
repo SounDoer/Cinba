@@ -85,6 +85,30 @@ test("a tool card updates in place by toolCallId instead of adding an entry", ()
   ]);
 });
 
+test("running tool progress replaces accumulated output instead of appending it", () => {
+  const session = createSession();
+
+  session.apply({
+    type: "tool_changed",
+    toolCallId: "call_1",
+    toolName: "bash",
+    status: "running",
+    result: "first line\n",
+  });
+  session.apply({
+    type: "tool_changed",
+    toolCallId: "call_1",
+    toolName: "bash",
+    status: "running",
+    result: "first line\nsecond line\n",
+  });
+
+  const [tool] = session.snapshot().entries;
+  assert(tool?.kind === "tool");
+  assert.equal(tool.status, "running");
+  assert.equal(tool.result, "first line\nsecond line\n");
+});
+
 test("two concurrent tools get one card each", () => {
   const session = createSession();
 
