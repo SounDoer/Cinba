@@ -1,17 +1,9 @@
-import {
-  type Component,
-  type Focusable,
-  SelectList,
-  matchesKey,
-  wrapTextWithAnsi,
-} from "@earendil-works/pi-tui";
+import type { Component } from "@earendil-works/pi-tui";
 import type { ProviderStatus } from "@cinba/contract";
-import { BOLD, DIM, GREEN, MAGENTA, RESET, SELECT_THEME, YELLOW } from "./theme.ts";
+import { ChoicePicker, SecretInput } from "./settings-components.ts";
+import { DIM, GREEN, RESET } from "./theme.ts";
 
 type ProviderIntent = "list" | "login" | "logout";
-
-const BRACKETED_PASTE_START = "\x1b[200~";
-const BRACKETED_PASTE_END = "\x1b[201~";
 
 export type ProviderClient = {
   listProviders(): boolean;
@@ -33,126 +25,6 @@ function providerLabel(provider: ProviderStatus, markConfigured: boolean): strin
   }
   const marker = provider.configured ? "* " : "  ";
   return `${marker}${provider.name}`;
-}
-
-/** A provider chooser, including the filtering used for a long provider catalogue. */
-class ProviderPicker implements Component {
-  #list: SelectList;
-  #title: string;
-  #filter = "";
-  onAnswer?: (providerId: string | undefined) => void;
-
-  constructor(title: string, providers: ProviderStatus[], markConfigured: boolean) {
-    this.#title = title;
-    this.#list = new SelectList(
-      providers.map((provider) => ({
-        value: provider.id,
-        label: providerLabel(provider, markConfigured),
-        description: provider.id,
-      })),
-      10,
-      SELECT_THEME,
-    );
-    this.#list.onSelect = (item) => this.onAnswer?.(item.value);
-    this.#list.onCancel = () => this.onAnswer?.(undefined);
-  }
-
-  handleInput(data: string): void {
-    if (matchesKey(data, "backspace")) {
-      this.#filter = this.#filter.slice(0, -1);
-      this.#list.setFilter(this.#filter);
-      return;
-    }
-    if (data.length === 1 && data >= " " && data !== "\x7f") {
-      this.#filter += data;
-      this.#list.setFilter(this.#filter);
-      return;
-    }
-    this.#list.handleInput(data);
-  }
-
-  invalidate(): void {
-    this.#list.invalidate();
-  }
-
-  render(width: number): string[] {
-    const typed = this.#filter === "" ? "" : `  ${MAGENTA}${this.#filter}${RESET}`;
-    return [
-      ...wrapTextWithAnsi(`${YELLOW}${BOLD}${this.#title}${RESET}${typed}`, width),
-      ...this.#list.render(width),
-      `${DIM}type to narrow, up/down to choose, Enter to confirm, Esc to cancel${RESET}`,
-    ];
-  }
-}
-
-/** A provider API-key input that never exposes the secret in terminal history. */
-class ApiKeyInput implements Component, Focusable {
-  #value = "";
-  #providerId: string;
-  #receivingPaste = false;
-  focused = false;
-  onAnswer?: (apiKey: string | undefined) => void;
-
-  constructor(providerId: string) {
-    this.#providerId = providerId;
-  }
-
-  handleInput(data: string): void {
-    if (this.#receivingPaste) {
-      const end = data.indexOf(BRACKETED_PASTE_END);
-      if (end === -1) {
-        this.#appendPrintable(data);
-        return;
-      }
-      this.#appendPrintable(data.slice(0, end));
-      this.#receivingPaste = false;
-      const remaining = data.slice(end + BRACKETED_PASTE_END.length);
-      if (remaining !== "") {
-        this.handleInput(remaining);
-      }
-      return;
-    }
-
-    const pasteStart = data.indexOf(BRACKETED_PASTE_START);
-    if (pasteStart !== -1) {
-      this.#appendPrintable(data.slice(0, pasteStart));
-      this.#receivingPaste = true;
-      this.handleInput(data.slice(pasteStart + BRACKETED_PASTE_START.length));
-      return;
-    }
-
-    if (matchesKey(data, "escape")) {
-      this.onAnswer?.(undefined);
-      return;
-    }
-    if (matchesKey(data, "enter") || matchesKey(data, "return")) {
-      this.onAnswer?.(this.#value.trim() === "" ? undefined : this.#value.trim());
-      return;
-    }
-    if (matchesKey(data, "backspace")) {
-      this.#value = this.#value.slice(0, -1);
-      return;
-    }
-    if (data.length > 0 && !data.startsWith("\x1b") && data >= " ") {
-      this.#value += data;
-    }
-  }
-
-  #appendPrintable(data: string): void {
-    this.#value += [...data]
-      .filter((character) => character >= " " && character !== "\x7f")
-      .join("");
-  }
-
-  invalidate(): void {}
-
-  render(width: number): string[] {
-    return [
-      ...wrapTextWithAnsi(`${YELLOW}${BOLD}API key for ${this.#providerId}${RESET}`, width),
-      `${DIM}(nothing is echoed; Enter to save, Esc to cancel)${RESET}`,
-      `> ${"*".repeat(Math.min(this.#value.length, Math.max(width - 4, 0)))}`,
-    ];
-  }
 }
 
 /** Owns the complete /providers, /login, and /logout user flow. */
@@ -206,10 +78,13 @@ export class ProviderFlow {
       return;
     }
 
-    const picker = new ProviderPicker(
+    const picker = new ChoicePicker(
       intent === "login" ? "Give which provider an API key?" : "Forget which provider's key?",
-      choices,
-      intent === "login",
+      choices.map((provider) => ({
+        value: provider.id,
+        label: providerLabel(provider, intent === "login"),
+        description: provider.id,
+      })),
     );
     picker.onAnswer = (providerId) => {
       this.#host.showPrompt();
@@ -233,7 +108,7 @@ export class ProviderFlow {
   }
 
   #askForApiKey(providerId: string): void {
-    const input = new ApiKeyInput(providerId);
+    const input = new SecretInput(`API key for ${providerId}`);
     input.onAnswer = (apiKey) => {
       this.#host.showPrompt();
       if (apiKey) {

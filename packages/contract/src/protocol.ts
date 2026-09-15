@@ -23,6 +23,26 @@ export type ProviderStatus = {
   configured: boolean;
 };
 
+export type WebSearchProviderId = "exa" | "brave" | "duckduckgo";
+export type WebSearchCredentialProviderId = "exa" | "brave";
+export type WebSearchPrimary = "auto" | "exa" | "brave";
+export type WebSearchCredentialSource = "environment" | "stored";
+
+export type WebSearchProviderStatus = {
+  id: WebSearchProviderId;
+  name: string;
+  available: boolean;
+  source?: WebSearchCredentialSource;
+  hasStoredCredential: boolean;
+  bestEffort: boolean;
+};
+
+export type WebToolsStatus = {
+  primary: WebSearchPrimary;
+  effectiveOrder: WebSearchProviderId[];
+  providers: WebSearchProviderStatus[];
+};
+
 export type SessionSummary = {
   id: string;
   cwd: string;
@@ -52,7 +72,11 @@ export type ClientMessage =
   | { type: "list_providers" }
   /** The one message in this protocol that carries a secret. It must never be logged, and nothing sends one back. */
   | { type: "set_api_key"; providerId: string; apiKey: string }
-  | { type: "clear_credential"; providerId: string };
+  | { type: "clear_credential"; providerId: string }
+  | { type: "get_web_tools_status" }
+  | { type: "set_web_tools_api_key"; providerId: WebSearchCredentialProviderId; apiKey: string }
+  | { type: "clear_web_tools_api_key"; providerId: WebSearchCredentialProviderId }
+  | { type: "set_web_search_primary"; primary: WebSearchPrimary };
 
 /** Server to client. */
 export type ServerMessage =
@@ -73,6 +97,7 @@ export type ServerMessage =
   /** Which session this client is now looking at. The snapshot for it follows. */
   | { type: "session_opened"; sessionId: string }
   | { type: "provider_listing"; providers: ProviderStatus[] }
+  | { type: "web_tools_status"; status: WebToolsStatus; error?: string }
   /**
    * Which core this is. Sent once, as soon as a client connects.
    *
@@ -82,6 +107,51 @@ export type ServerMessage =
    * wrong, which is precisely the mistake this exists to prevent.
    */
   | { type: "core_identity"; name: string };
+
+type WebToolsClientMessage = Extract<
+  ClientMessage,
+  {
+    type:
+      | "get_web_tools_status"
+      | "set_web_tools_api_key"
+      | "clear_web_tools_api_key"
+      | "set_web_search_primary";
+  }
+>;
+
+function parseWebToolsClientMessage(
+  message: Record<string, unknown>,
+): WebToolsClientMessage | undefined {
+  switch (message.type) {
+    case "get_web_tools_status":
+      return hasOnlyKeys(message, ["type"]) ? { type: "get_web_tools_status" } : undefined;
+    case "set_web_tools_api_key":
+      if (
+        !hasOnlyKeys(message, ["type", "providerId", "apiKey"]) ||
+        !isWebSearchCredentialProviderId(message.providerId) ||
+        typeof message.apiKey !== "string" ||
+        message.apiKey.trim() === ""
+      ) {
+        return undefined;
+      }
+      return {
+        type: "set_web_tools_api_key",
+        providerId: message.providerId,
+        apiKey: message.apiKey.trim(),
+      };
+    case "clear_web_tools_api_key":
+      return hasOnlyKeys(message, ["type", "providerId"]) &&
+        isWebSearchCredentialProviderId(message.providerId)
+        ? { type: "clear_web_tools_api_key", providerId: message.providerId }
+        : undefined;
+    case "set_web_search_primary":
+      return hasOnlyKeys(message, ["type", "primary"]) && isWebSearchPrimary(message.primary)
+        ? { type: "set_web_search_primary", primary: message.primary }
+        : undefined;
+    default:
+      return undefined;
+  }
+}
 
 /**
  * Validate a message from a client; return undefined for anything unrecognized
@@ -96,6 +166,10 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
     return undefined;
   }
   const message = raw as Record<string, unknown>;
+  const webToolsMessage = parseWebToolsClientMessage(message);
+  if (webToolsMessage) {
+    return webToolsMessage;
+  }
 
   switch (message.type) {
     case "prompt":
@@ -218,6 +292,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  const accepted = new Set(allowed);
+  return Object.keys(value).every((key) => accepted.has(key));
+}
+
+function isWebSearchProviderId(value: unknown): value is WebSearchProviderId {
+  return value === "exa" || value === "brave" || value === "duckduckgo";
+}
+
+function isWebSearchCredentialProviderId(value: unknown): value is WebSearchCredentialProviderId {
+  return value === "exa" || value === "brave";
+}
+
+function isWebSearchPrimary(value: unknown): value is WebSearchPrimary {
+  return value === "auto" || value === "exa" || value === "brave";
+}
+
 function isModelRef(value: unknown): value is ModelRef {
   return isRecord(value) && typeof value.provider === "string" && typeof value.id === "string";
 }
@@ -330,6 +421,38 @@ function isProviderStatus(value: unknown): value is ProviderStatus {
   );
 }
 
+function isWebSearchProviderStatus(value: unknown): value is WebSearchProviderStatus {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "id",
+      "name",
+      "available",
+      "source",
+      "hasStoredCredential",
+      "bestEffort",
+    ]) &&
+    isWebSearchProviderId(value.id) &&
+    typeof value.name === "string" &&
+    typeof value.available === "boolean" &&
+    (value.source === undefined || value.source === "environment" || value.source === "stored") &&
+    typeof value.hasStoredCredential === "boolean" &&
+    typeof value.bestEffort === "boolean"
+  );
+}
+
+function isWebToolsStatus(value: unknown): value is WebToolsStatus {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["primary", "effectiveOrder", "providers"]) &&
+    isWebSearchPrimary(value.primary) &&
+    Array.isArray(value.effectiveOrder) &&
+    value.effectiveOrder.every(isWebSearchProviderId) &&
+    Array.isArray(value.providers) &&
+    value.providers.every(isWebSearchProviderStatus)
+  );
+}
+
 /** Validate a message received by a client before dispatching it to UI code. */
 export function parseServerMessage(raw: unknown): ServerMessage | undefined {
   if (!isRecord(raw)) {
@@ -372,6 +495,12 @@ export function parseServerMessage(raw: unknown): ServerMessage | undefined {
       return typeof raw.sessionId === "string" ? (raw as ServerMessage) : undefined;
     case "provider_listing":
       return Array.isArray(raw.providers) && raw.providers.every(isProviderStatus)
+        ? (raw as ServerMessage)
+        : undefined;
+    case "web_tools_status":
+      return hasOnlyKeys(raw, ["type", "status", "error"]) &&
+        isWebToolsStatus(raw.status) &&
+        (raw.error === undefined || typeof raw.error === "string")
         ? (raw as ServerMessage)
         : undefined;
     case "core_identity":

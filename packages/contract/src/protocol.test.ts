@@ -175,3 +175,92 @@ test("the session messages parse, and bad ids are dropped", () => {
   assert.equal(parseClientMessage({ type: "create_session", cwd: "" }), undefined);
   assert.equal(parseClientMessage({ type: "list_sessions", cwd: 7 }), undefined);
 });
+
+test("web tools management messages accept only supported providers and primary choices", () => {
+  const messages = [
+    { type: "get_web_tools_status" },
+    { type: "set_web_tools_api_key", providerId: "exa", apiKey: "secret" },
+    { type: "clear_web_tools_api_key", providerId: "brave" },
+    { type: "set_web_search_primary", primary: "auto" },
+    { type: "set_web_search_primary", primary: "exa" },
+    { type: "set_web_search_primary", primary: "brave" },
+  ];
+
+  for (const message of messages) {
+    assert.deepEqual(parseClientMessage(message), message);
+  }
+
+  assert.equal(
+    parseClientMessage({ type: "set_web_tools_api_key", providerId: "duckduckgo", apiKey: "x" }),
+    undefined,
+  );
+  assert.equal(
+    parseClientMessage({ type: "set_web_tools_api_key", providerId: "exa", apiKey: "  " }),
+    undefined,
+  );
+  assert.equal(
+    parseClientMessage({ type: "clear_web_tools_api_key", providerId: "duckduckgo" }),
+    undefined,
+  );
+  assert.equal(
+    parseClientMessage({ type: "set_web_search_primary", primary: "duckduckgo" }),
+    undefined,
+  );
+  assert.equal(
+    parseClientMessage({ type: "clear_web_tools_api_key", providerId: "exa", apiKey: "secret" }),
+    undefined,
+  );
+});
+
+test("web tools status is strictly validated and never carries credentials", () => {
+  const message = {
+    type: "web_tools_status",
+    status: {
+      primary: "auto",
+      effectiveOrder: ["exa", "brave", "duckduckgo"],
+      providers: [
+        {
+          id: "exa",
+          name: "Exa",
+          available: true,
+          source: "stored",
+          hasStoredCredential: true,
+          bestEffort: false,
+        },
+        {
+          id: "brave",
+          name: "Brave Search",
+          available: false,
+          hasStoredCredential: false,
+          bestEffort: false,
+        },
+        {
+          id: "duckduckgo",
+          name: "DuckDuckGo",
+          available: true,
+          hasStoredCredential: false,
+          bestEffort: true,
+        },
+      ],
+    },
+  };
+
+  assert.equal(parseServerMessage(message), message);
+  const failed = { ...message, error: "Could not save the credential" };
+  assert.equal(parseServerMessage(failed), failed);
+  assert.equal(parseServerMessage({ ...message, error: 500 }), undefined);
+  assert.equal(
+    parseServerMessage({
+      ...message,
+      status: {
+        ...message.status,
+        providers: [{ ...message.status.providers[0], apiKey: "secret" }],
+      },
+    }),
+    undefined,
+  );
+  assert.equal(
+    parseServerMessage({ ...message, status: { ...message.status, effectiveOrder: ["google"] } }),
+    undefined,
+  );
+});

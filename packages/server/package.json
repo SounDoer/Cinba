@@ -12,6 +12,7 @@
     "@cinba/agent": "*",
     "@cinba/contract": "*",
     "@cinba/deploy": "*",
+    "@cinba/extensions": "*",
     "ws": "^8.21.3"
   }
 }

@@ -432,6 +432,47 @@ test("the model commands go out, and both model messages reach their handlers", 
   assert.deepEqual(seen, [[{ provider: "deepseek", id: "a" }], { provider: "deepseek", id: "a" }]);
 });
 
+test("web tools commands go out and sanitized status reaches its handler", () => {
+  const fake = createFakeSocket();
+  const statuses: unknown[] = [];
+  const client = connect(fake, {
+    onWebToolsStatus: (status) => statuses.push(status),
+  });
+
+  client.getWebToolsStatus();
+  client.setWebToolsApiKey("exa", "secret");
+  client.clearWebToolsApiKey("brave");
+  client.setWebSearchPrimary("brave");
+
+  assert.deepEqual(
+    fake.sent.map((line) => JSON.parse(line)),
+    [
+      { type: "get_web_tools_status" },
+      { type: "set_web_tools_api_key", providerId: "exa", apiKey: "secret" },
+      { type: "clear_web_tools_api_key", providerId: "brave" },
+      { type: "set_web_search_primary", primary: "brave" },
+    ],
+  );
+
+  const status = {
+    primary: "brave",
+    effectiveOrder: ["brave", "exa", "duckduckgo"],
+    providers: [
+      {
+        id: "brave",
+        name: "Brave Search",
+        available: true,
+        source: "stored",
+        hasStoredCredential: true,
+        bestEffort: false,
+      },
+    ],
+  };
+  fake.receive({ type: "web_tools_status", status });
+
+  assert.deepEqual(statuses, [status]);
+});
+
 test("a snapshot carries the current model alongside the working directory", () => {
   const fake = createFakeSocket();
   let got: unknown;

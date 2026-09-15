@@ -3,9 +3,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ModelRef } from "@cinba/contract";
-
-export type WebSearchPrimary = "auto" | "exa" | "brave";
+import type { ModelRef, WebSearchPrimary } from "@cinba/contract";
 
 export type CinbaConfig = {
   cwd: string;

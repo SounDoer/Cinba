@@ -11,6 +11,9 @@ import {
   type Session,
   type SessionSummary,
   type Snapshot,
+  type WebSearchCredentialProviderId,
+  type WebSearchPrimary,
+  type WebToolsStatus,
   createSession,
 } from "@cinba/contract";
 
@@ -31,6 +34,8 @@ export function useCore(serverUrl: string) {
   const [sessionId, setSessionId] = useState("");
   const [sessions, setSessions] = useState<SessionSummary[] | undefined>(undefined);
   const [providers, setProviders] = useState<ProviderStatus[] | undefined>(undefined);
+  const [webToolsStatus, setWebToolsStatus] = useState<WebToolsStatus | undefined>(undefined);
+  const [webToolsError, setWebToolsError] = useState<string | undefined>(undefined);
   const [coreName, setCoreName] = useState("");
   const [connectionState, setConnectionState] = useState<CoreConnectionState>("connecting");
 
@@ -67,6 +72,10 @@ export function useCore(serverUrl: string) {
         onSessionListing: setSessions,
         onSessionOpened: setSessionId,
         onProviderListing: setProviders,
+        onWebToolsStatus: (status, error) => {
+          setWebToolsStatus(status);
+          setWebToolsError(error);
+        },
         onCoreIdentity: setCoreName,
       },
       { autoReconnect: true },
@@ -141,6 +150,31 @@ export function useCore(serverUrl: string) {
     (providerId: string) => withClient((client) => client.clearCredential(providerId)),
     [withClient],
   );
+  const getWebToolsStatus = useCallback(() => {
+    setWebToolsError(undefined);
+    return withClient((client) => client.getWebToolsStatus());
+  }, [withClient]);
+  const setWebToolsApiKey = useCallback(
+    (providerId: WebSearchCredentialProviderId, apiKey: string) => {
+      setWebToolsError(undefined);
+      return withClient((client) => client.setWebToolsApiKey(providerId, apiKey));
+    },
+    [withClient],
+  );
+  const clearWebToolsApiKey = useCallback(
+    (providerId: WebSearchCredentialProviderId) => {
+      setWebToolsError(undefined);
+      return withClient((client) => client.clearWebToolsApiKey(providerId));
+    },
+    [withClient],
+  );
+  const setWebSearchPrimary = useCallback(
+    (primary: WebSearchPrimary) => {
+      setWebToolsError(undefined);
+      return withClient((client) => client.setWebSearchPrimary(primary));
+    },
+    [withClient],
+  );
 
   return {
     connectionState,
@@ -154,6 +188,8 @@ export function useCore(serverUrl: string) {
     sessionId,
     sessions,
     providers,
+    webToolsStatus,
+    webToolsError,
     prompt,
     editMessage,
     abort,
@@ -169,5 +205,9 @@ export function useCore(serverUrl: string) {
     listProviders,
     setApiKey,
     clearCredential,
+    getWebToolsStatus,
+    setWebToolsApiKey,
+    clearWebToolsApiKey,
+    setWebSearchPrimary,
   };
 }

@@ -23,6 +23,7 @@ import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findSession } from "@cinba/agent";
+import { createWebToolsCredentialStore } from "@cinba/extensions/src/web-tools/credentials.ts";
 import { IDLE_TIMEOUT_MS, assessIdle, canStopNow } from "./reclaim.ts";
 import { createConfigStore } from "./config.ts";
 import { createCredentialService } from "./credential-service.ts";
@@ -42,6 +43,8 @@ import { SERVICE_IDLE_TIMEOUT_MS, assessServiceIdle, readCoreLifetime } from "./
 import { type LiveSession, createSessionRegistry } from "./session-registry.ts";
 import { createStaticFileHandler } from "./static-files.ts";
 import { isAllowedWebSocketOrigin } from "./websocket-origin.ts";
+import { handleWebToolsMessage } from "./web-tools-messages.ts";
+import { createWebToolsService } from "./web-tools-service.ts";
 import { type ModelRef, type ServerMessage, parseClientMessage } from "@cinba/contract";
 
 const HOST = "127.0.0.1";
@@ -82,6 +85,13 @@ function sendTo(socket: WebSocket, message: ServerMessage): void {
   socket.send(JSON.stringify(message));
 }
 
+function broadcast(message: ServerMessage): void {
+  const text = JSON.stringify(message);
+  for (const socket of clients) {
+    socket.send(text);
+  }
+}
+
 /** Send only to the clients looking at this conversation. */
 function toViewers(sessionId: string, message: ServerMessage): void {
   const text = JSON.stringify(message);
@@ -106,6 +116,14 @@ const sessions = createSessionRegistry({
 });
 
 const credentials = createCredentialService({ onChanged: markCredentialsStale });
+const webTools = createWebToolsService({
+  getPrimary: () => config.get().webSearchPrimary,
+  setPrimary: (primary) => config.update({ webSearchPrimary: primary }),
+  credentials: createWebToolsCredentialStore(
+    join(STATE_DIRECTORY, "credentials.json"),
+    process.env,
+  ),
+});
 
 function safeToRestart(): boolean {
   return (
@@ -453,6 +471,16 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
         { type: "notice", text: "Core is restarting; new work is temporarily unavailable" },
       ]);
     }
+    return;
+  }
+
+  if (
+    handleWebToolsMessage(message, {
+      service: webTools,
+      send: (reply) => sendTo(socket, reply),
+      broadcast,
+    })
+  ) {
     return;
   }
 

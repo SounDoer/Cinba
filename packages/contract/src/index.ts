@@ -22,6 +22,12 @@ export type {
   ProviderStatus,
   ServerMessage,
   SessionSummary,
+  WebSearchCredentialProviderId,
+  WebSearchCredentialSource,
+  WebSearchPrimary,
+  WebSearchProviderId,
+  WebSearchProviderStatus,
+  WebToolsStatus,
 } from "./protocol.ts";
 export { createSession, sameTranscript } from "./session.ts";
 export type {

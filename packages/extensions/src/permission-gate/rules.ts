@@ -132,6 +132,8 @@ const BUILT_IN_TOOLS = new Set([
   "grep",
   "find",
   "ls",
+  "web_search",
+  "web_fetch",
 ]);
 
 const askMalformedBuiltInInput: PermissionRule = (context) => {

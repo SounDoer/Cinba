@@ -22,7 +22,7 @@ const DEFAULT_PROVIDER = "deepseek";
 /** Build the process arguments separately so they can be tested without spawning Pi. */
 export function buildSpawnPlan(
   entry: string,
-  gate: string,
+  intrinsicExtensions: readonly string[],
   options: CoreOptions = {},
   baseEnv: Record<string, string | undefined> = process.env,
 ): SpawnPlan {
@@ -35,8 +35,7 @@ export function buildSpawnPlan(
     args.push("--session", options.sessionPath);
   }
 
-  // The permission gate is intrinsic, not an option callers can forget.
-  for (const extension of [gate, ...(options.extensions ?? [])]) {
+  for (const extension of [...intrinsicExtensions, ...(options.extensions ?? [])]) {
     args.push("-e", extension);
   }
 
@@ -53,10 +52,8 @@ export function startPi(options: CoreOptions = {}): ChildProcess {
   const entry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent/rpc-entry"));
   const gate = fileURLToPath(import.meta.resolve("@cinba/extensions/src/permission-gate.ts"));
   const sessionEdit = fileURLToPath(import.meta.resolve("@cinba/extensions/src/session-edit.ts"));
-  const plan = buildSpawnPlan(entry, gate, {
-    ...options,
-    extensions: [sessionEdit, ...(options.extensions ?? [])],
-  });
+  const webTools = fileURLToPath(import.meta.resolve("@cinba/extensions/src/web-tools.ts"));
+  const plan = buildSpawnPlan(entry, [gate, sessionEdit, webTools], options);
 
   return spawn(process.execPath, plan.args, {
     cwd: options.cwd ?? process.cwd(),

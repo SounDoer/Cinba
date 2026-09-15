@@ -58,6 +58,7 @@ import {
 import { Transcript } from "./transcript.ts";
 import { PromptInput } from "./prompt-input.ts";
 import { ProviderFlow } from "./provider-flow.ts";
+import { WebToolsFlow } from "./web-tools-flow.ts";
 
 /**
  * Which core to talk to. Nothing here starts one: the service has to be running.
@@ -479,6 +480,9 @@ const coreClient = new CoreClient(SERVER_URL, {
   onProviderListing: (providers) => {
     providerFlow.onListing(providers);
   },
+  onWebToolsStatus: (status, error) => {
+    webToolsFlow.onStatus(status, error);
+  },
   onSessionListing: (sessions) => {
     if (!landed) {
       land(sessions);
@@ -522,6 +526,17 @@ const coreClient = new CoreClient(SERVER_URL, {
 });
 
 const providerFlow = new ProviderFlow(coreClient, {
+  append: (line) => transcript.append(line),
+  showInteraction: (component) => {
+    setBottom(component);
+    tui.setFocus(component);
+  },
+  showPrompt,
+  requestRender: () => tui.requestRender(),
+  showNotice: (text) => applyAction({ type: "notice", text }),
+});
+
+const webToolsFlow = new WebToolsFlow(coreClient, {
   append: (line) => transcript.append(line),
   showInteraction: (component) => {
     setBottom(component);
@@ -595,6 +610,10 @@ function runCommand(command: Command, line: string): void {
 
     case "logout":
       providerFlow.logout();
+      return;
+
+    case "webtools":
+      webToolsFlow.open();
       return;
 
     case "help":

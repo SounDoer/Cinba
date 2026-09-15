@@ -11,6 +11,9 @@ import {
   type SessionSummary,
   type Snapshot,
   type ViewAction,
+  type WebSearchCredentialProviderId,
+  type WebSearchPrimary,
+  type WebToolsStatus,
   parseServerMessage,
 } from "@cinba/contract";
 
@@ -81,6 +84,7 @@ export type CoreClientHandlers = {
   onSessionListing?: (sessions: SessionSummary[]) => void;
   onSessionOpened?: (sessionId: string) => void;
   onProviderListing?: (providers: ProviderStatus[]) => void;
+  onWebToolsStatus?: (status: WebToolsStatus, error?: string) => void;
   onCoreIdentity?: (name: string) => void;
 };
 
@@ -184,6 +188,23 @@ export class CoreClient {
     return this.#send({ type: "clear_credential", providerId });
   }
 
+  getWebToolsStatus(): boolean {
+    return this.#send({ type: "get_web_tools_status" });
+  }
+
+  /** Sends a web search secret. Status replies expose only its source and presence. */
+  setWebToolsApiKey(providerId: WebSearchCredentialProviderId, apiKey: string): boolean {
+    return this.#send({ type: "set_web_tools_api_key", providerId, apiKey });
+  }
+
+  clearWebToolsApiKey(providerId: WebSearchCredentialProviderId): boolean {
+    return this.#send({ type: "clear_web_tools_api_key", providerId });
+  }
+
+  setWebSearchPrimary(primary: WebSearchPrimary): boolean {
+    return this.#send({ type: "set_web_search_primary", primary });
+  }
+
   close(): void {
     if (this.#closed) {
       return;
@@ -252,6 +273,9 @@ export class CoreClient {
         return;
       case "provider_listing":
         this.#handlers.onProviderListing?.(message.providers);
+        return;
+      case "web_tools_status":
+        this.#handlers.onWebToolsStatus?.(message.status, message.error);
         return;
       case "session_listing":
         this.#handlers.onSessionListing?.(message.sessions);

@@ -8,12 +8,13 @@ import { ProjectPicker } from "./project-picker.tsx";
 import { ModelPicker } from "./model-picker.tsx";
 import { SessionPicker } from "./session-picker.tsx";
 import { ProviderSettings } from "./provider-settings.tsx";
+import { WebToolsSettings } from "./web-tools-settings.tsx";
 import { useCore } from "./use-core.ts";
 
 /** One web colour for each stable slot supplied by the shared naming rules. */
 const CORE_COLOURS = ["#3b6fd4", "#2e9166", "#b4642a", "#8b4bc4", "#b03a52", "#2b7f96"];
 
-type ActiveOverlay = "project" | "model" | "session" | "provider" | null;
+type ActiveOverlay = "project" | "model" | "session" | "provider" | "webtools" | null;
 type EditTarget = { sessionId: string; userMessageIndex: number; text: string };
 
 export function App({ serverUrl }: { serverUrl: string }) {
@@ -83,6 +84,16 @@ export function App({ serverUrl }: { serverUrl: string }) {
         >
           Providers
         </button>
+        <button
+          onClick={() => {
+            if (core.getWebToolsStatus()) {
+              setActiveOverlay("webtools");
+            }
+          }}
+          disabled={!core.connected}
+        >
+          Web tools
+        </button>
         <span>
           {core.snapshot.totalTokens} tokens · ${core.snapshot.totalCost.toFixed(4)}
         </span>
@@ -130,6 +141,17 @@ export function App({ serverUrl }: { serverUrl: string }) {
           providers={core.providers}
           onSetApiKey={core.setApiKey}
           onClearCredential={core.clearCredential}
+          onClose={() => setActiveOverlay(null)}
+        />
+      ) : null}
+
+      {activeOverlay === "webtools" ? (
+        <WebToolsSettings
+          status={core.webToolsStatus}
+          error={core.webToolsError}
+          onSetApiKey={core.setWebToolsApiKey}
+          onClearApiKey={core.clearWebToolsApiKey}
+          onSetPrimary={core.setWebSearchPrimary}
           onClose={() => setActiveOverlay(null)}
         />
       ) : null}

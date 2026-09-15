@@ -198,6 +198,18 @@ test("allows ordinary built-in operations by default", () => {
   assert.equal(evaluatePermission(command(POSIX, "git status && npm test")).effect, "allow");
 });
 
+test("allows intrinsic read-only web tools without confirmation", () => {
+  assert.equal(
+    evaluatePermission({ ...POSIX, toolName: "web_search", input: { query: "Cinba" } }).effect,
+    "allow",
+  );
+  assert.equal(
+    evaluatePermission({ ...POSIX, toolName: "web_fetch", input: { url: "https://example.com" } })
+      .effect,
+    "allow",
+  );
+});
+
 test("does not mistake quoted redirection or help output for a risky operation", () => {
   assert.equal(evaluatePermission(command(POSIX, 'echo "a > b"')).effect, "allow");
   assert.equal(

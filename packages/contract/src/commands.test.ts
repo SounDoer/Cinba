@@ -21,6 +21,14 @@ test("typing narrows the list", () => {
   assert.deepEqual(matchCommands("/zzz"), []);
 });
 
+test("web tools management has one discoverable top-level command", () => {
+  assert.deepEqual(
+    COMMANDS.filter((command) => command.name.startsWith("web")).map((command) => command.name),
+    ["webtools"],
+  );
+  assert.equal(matchCommands("/webtools")[0]?.id, "webtools");
+});
+
 test("an exact name wins over one that merely starts with it", () => {
   // Guards the day a command is added whose name extends another's: "/new"
   // must keep meaning new, not new-something.

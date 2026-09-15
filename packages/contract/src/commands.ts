@@ -13,7 +13,7 @@
 // wire rather than be listed here.
 
 export type CommandId =
-  "model" | "sessions" | "new" | "name" | "providers" | "login" | "logout" | "help";
+  "model" | "sessions" | "new" | "name" | "providers" | "login" | "logout" | "webtools" | "help";
 
 export type Command = {
   id: CommandId;
@@ -35,6 +35,7 @@ export const COMMANDS: readonly Command[] = [
   { id: "new", name: "new", summary: "start a conversation here" },
   { id: "providers", name: "providers", summary: "which providers are configured" },
   { id: "sessions", name: "sessions", summary: "switch to another conversation" },
+  { id: "webtools", name: "webtools", summary: "manage web search and fetch" },
 ];
 
 /** The command word: what follows the slash, up to the first space. */
