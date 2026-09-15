@@ -505,20 +505,34 @@ function isEntry(value: unknown): boolean {
   }
 }
 
-function isSnapshot(value: unknown): value is Snapshot {
-  return (
-    isRecord(value) &&
-    Array.isArray(value.entries) &&
-    value.entries.every(isEntry) &&
-    typeof value.totalTokens === "number" &&
-    typeof value.totalCost === "number" &&
-    typeof value.busy === "boolean" &&
-    typeof value.compacting === "boolean" &&
-    (value.retry === null || isAutoRetry(value.retry)) &&
-    isContextUsage(value.context) &&
-    isThinkingState(value.thinking) &&
-    isPendingMessages(value.queue)
-  );
+function parseSnapshot(value: unknown): Snapshot | undefined {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.entries) ||
+    !value.entries.every(isEntry) ||
+    typeof value.totalTokens !== "number" ||
+    typeof value.totalCost !== "number" ||
+    typeof value.busy !== "boolean" ||
+    typeof value.compacting !== "boolean" ||
+    (value.retry !== undefined && value.retry !== null && !isAutoRetry(value.retry)) ||
+    !isContextUsage(value.context) ||
+    (value.thinking !== undefined && !isThinkingState(value.thinking)) ||
+    !isPendingMessages(value.queue)
+  ) {
+    return undefined;
+  }
+
+  // A persistent Core can briefly outlive a Desktop update. Defaults for
+  // additive fields keep that rolling upgrade usable until the Core restarts.
+  if (value.retry === undefined || value.thinking === undefined) {
+    return {
+      ...(value as unknown as Snapshot),
+      retry: value.retry === undefined ? null : value.retry,
+      thinking:
+        value.thinking === undefined ? { level: "off", available: ["off"] } : value.thinking,
+    } as Snapshot;
+  }
+  return value as unknown as Snapshot;
 }
 
 function isThinkingState(value: unknown): boolean {
@@ -642,15 +656,19 @@ export function parseServerMessage(raw: unknown): ServerMessage | undefined {
 
   switch (raw.type) {
     case "snapshot":
-      if (
-        !isSnapshot(raw.snapshot) ||
-        typeof raw.cwd !== "string" ||
-        typeof raw.sessionId !== "string" ||
-        (raw.model !== undefined && !isModelRef(raw.model))
-      ) {
+      if (typeof raw.cwd !== "string" || typeof raw.sessionId !== "string") {
         return undefined;
       }
-      return raw as ServerMessage;
+      if (raw.model !== undefined && !isModelRef(raw.model)) {
+        return undefined;
+      }
+      const parsedSnapshot = parseSnapshot(raw.snapshot);
+      if (!parsedSnapshot) {
+        return undefined;
+      }
+      return parsedSnapshot === raw.snapshot
+        ? (raw as ServerMessage)
+        : ({ ...raw, snapshot: parsedSnapshot } as ServerMessage);
     case "actions":
       return Array.isArray(raw.actions) && raw.actions.every(isViewAction)
         ? (raw as ServerMessage)

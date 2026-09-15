@@ -84,6 +84,28 @@ test("server messages are validated before reaching a client", () => {
   }
 });
 
+test("a new client supplies defaults when a persistent Core sends an older snapshot", () => {
+  const parsed = parseServerMessage({
+    type: "snapshot",
+    snapshot: {
+      entries: [],
+      totalTokens: 12,
+      totalCost: 0.01,
+      busy: false,
+      compacting: false,
+      context: { tokens: 12, contextWindow: 1_000, percent: 1.2, estimated: false },
+      queue: { steering: [], followUp: [] },
+    },
+    cwd: "C:/work",
+    sessionId: "s1",
+  });
+
+  assert(parsed?.type === "snapshot");
+  assert.equal(parsed.snapshot.retry, null);
+  assert.deepEqual(parsed.snapshot.thinking, { level: "off", available: ["off"] });
+  assert.equal(parsed.cwd, "C:/work");
+});
+
 test("malformed server messages are dropped", () => {
   assert.equal(parseServerMessage(null), undefined);
   assert.equal(parseServerMessage({ type: "actions", actions: "busy" }), undefined);
