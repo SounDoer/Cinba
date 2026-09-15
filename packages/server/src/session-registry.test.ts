@@ -14,6 +14,8 @@ class FakeTransport implements Transport {
   entries: Array<Record<string, unknown>> = [];
   leafId: string | null = null;
   model: { provider: string; id: string } | undefined = { provider: "test", id: "model-1" };
+  thinkingLevel = "medium";
+  thinkingLevels = ["off", "low", "medium", "high"];
   responses = new Map<string, { success: boolean; error?: unknown }>();
   queue = { steering: [] as string[], followUp: [] as string[] };
   contextUsage: { tokens: number | null; contextWindow: number; percent: number | null } = {
@@ -29,6 +31,7 @@ class FakeTransport implements Transport {
       type: string;
       since?: string;
       message?: string;
+      level?: string;
     };
     this.commands.push(command);
     if (command.type === "prompt" && command.message?.startsWith("/cinba-edit-message ")) {
@@ -42,11 +45,22 @@ class FakeTransport implements Transport {
     const entries = sinceIndex >= 0 ? this.entries.slice(sinceIndex + 1) : this.entries;
     let data: unknown;
     if (command.type === "get_state") {
-      data = { sessionId: "session-1", ...(this.model ? { model: this.model } : {}) };
+      data = {
+        sessionId: "session-1",
+        thinkingLevel: this.thinkingLevel,
+        ...(this.model ? { model: this.model } : {}),
+      };
     } else if (command.type === "get_entries") {
       data = { entries, leafId: this.leafId };
     } else if (command.type === "get_available_models") {
       data = { models: [{ provider: "test", id: "model-2" }] };
+    } else if (command.type === "get_available_thinking_levels") {
+      data = { levels: this.thinkingLevels };
+    } else if (command.type === "set_thinking_level" && command.level) {
+      this.thinkingLevel = command.level;
+    } else if (command.type === "cycle_thinking_level") {
+      const index = this.thinkingLevels.indexOf(this.thinkingLevel);
+      this.thinkingLevel = this.thinkingLevels[(index + 1) % this.thinkingLevels.length]!;
     } else if (command.type === "clear_queue") {
       data = this.queue;
       this.queue = { steering: [], followUp: [] };
@@ -297,6 +311,8 @@ test("public session commands hide the Pi transport from callers", async () => {
         "get_available_models",
         "set_model",
         "get_session_stats",
+        "get_state",
+        "get_available_thinking_levels",
         "set_session_name",
       ],
     );
@@ -324,13 +340,15 @@ test("opening sets Cinba's compaction and retry defaults and manual compaction u
     const opened = await registry.open({ cwd });
     assert(opened);
     assert.deepEqual(
-      transport.commands.slice(0, 5).map(({ id: _id, ...command }) => command),
+      transport.commands.slice(0, 7).map(({ id: _id, ...command }) => command),
       [
         { type: "get_state" },
         { type: "set_auto_compaction", enabled: false },
         { type: "set_auto_retry", enabled: true },
         { type: "get_entries" },
         { type: "get_session_stats" },
+        { type: "get_state" },
+        { type: "get_available_thinking_levels" },
       ],
     );
     assert.deepEqual(opened.ledger.snapshot().context, {
@@ -338,6 +356,10 @@ test("opening sets Cinba's compaction and retry defaults and manual compaction u
       contextWindow: 128_000,
       percent: 25,
       estimated: false,
+    });
+    assert.deepEqual(opened.ledger.snapshot().thinking, {
+      level: "medium",
+      available: ["off", "low", "medium", "high"],
     });
 
     transport.contextUsage = { tokens: null, contextWindow: 128_000, percent: null };
@@ -358,6 +380,33 @@ test("opening sets Cinba's compaction and retry defaults and manual compaction u
       estimated: true,
     });
     assert.equal(opened.ledger.snapshot().compacting, false);
+  } finally {
+    registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("thinking controls use the levels supported by the current model", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  const transport = new FakeTransport();
+  const registry = createSessionRegistry({
+    defaultModel: () => undefined,
+    onActions: () => {},
+    onSnapshot: () => {},
+    launchPi: () => ({
+      pi: new PiClient(transport),
+      failed: new Promise<undefined>(() => {}),
+    }),
+  });
+
+  try {
+    const opened = await registry.open({ cwd });
+    assert(opened);
+
+    assert.equal(await registry.setThinkingLevel(opened, "high"), true);
+    assert.equal(opened.ledger.snapshot().thinking.level, "high");
+    assert.equal(await registry.cycleThinkingLevel(opened), true);
+    assert.equal(opened.ledger.snapshot().thinking.level, "off");
   } finally {
     registry.closeAll();
     rmSync(cwd, { recursive: true, force: true });

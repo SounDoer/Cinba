@@ -1,4 +1,4 @@
-import type { PromptStreamingBehavior } from "@cinba/contract";
+import type { PromptStreamingBehavior, ThinkingLevel } from "@cinba/contract";
 import type { Transport } from "./transport.ts";
 
 /** UI methods that expect an answer. The rest (notify, setStatus, ...) are broadcasts. */
@@ -159,6 +159,18 @@ export class PiClient {
    */
   setModel(provider: string, modelId: string): Promise<CoreResponse> {
     return this.#send({ type: "set_model", provider, modelId });
+  }
+
+  setThinkingLevel(level: ThinkingLevel): Promise<CoreResponse> {
+    return this.#send({ type: "set_thinking_level", level });
+  }
+
+  cycleThinkingLevel(): Promise<CoreResponse> {
+    return this.#send({ type: "cycle_thinking_level" });
+  }
+
+  getAvailableThinkingLevels(): Promise<CoreResponse> {
+    return this.#send({ type: "get_available_thinking_levels" });
   }
 
   /**

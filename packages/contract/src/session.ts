@@ -18,6 +18,7 @@ import type {
   ToolStatus,
   ViewAction,
 } from "./actions.ts";
+import type { ThinkingState } from "./thinking.ts";
 
 export type MessageEntry = {
   kind: "message";
@@ -72,6 +73,7 @@ export type Snapshot = {
   compacting: boolean;
   retry: AutoRetry | null;
   context: ContextUsage;
+  thinking: ThinkingState;
   queue: PendingMessages;
 };
 
@@ -98,6 +100,10 @@ export function createSession(initial?: Snapshot): Session {
     contextWindow: initial?.context.contextWindow ?? null,
     percent: initial?.context.percent ?? null,
     estimated: initial?.context.estimated ?? false,
+  };
+  let thinking: ThinkingState = {
+    level: initial?.thinking.level ?? "off",
+    available: [...(initial?.thinking.available ?? ["off"])],
   };
   let queue: PendingMessages = {
     steering: [...(initial?.queue.steering ?? [])],
@@ -231,6 +237,13 @@ export function createSession(initial?: Snapshot): Session {
           context = { ...action.context };
           return;
 
+        case "thinking_changed":
+          thinking = {
+            level: action.level,
+            available: action.available === undefined ? thinking.available : [...action.available],
+          };
+          return;
+
         case "compaction_changed":
           compacting = action.compacting;
           if (
@@ -274,6 +287,7 @@ export function createSession(initial?: Snapshot): Session {
         compacting,
         retry: retry ? { ...retry } : null,
         context: { ...context },
+        thinking: { level: thinking.level, available: [...thinking.available] },
         queue: { steering: [...queue.steering], followUp: [...queue.followUp] },
       };
     },

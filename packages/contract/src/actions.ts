@@ -5,6 +5,8 @@
 // folders that emit them because a browser needs the words without needing to
 // know that Pi exists.
 
+import type { ThinkingLevel } from "./thinking.ts";
+
 export type ToolStatus = "pending" | "running" | "done" | "error";
 
 export type PendingMessages = {
@@ -71,6 +73,7 @@ export type ViewAction =
   | { type: "notice"; text: string }
   | { type: "usage_changed"; totalTokens: number; totalCost: number }
   | { type: "context_changed"; context: ContextUsage }
+  | { type: "thinking_changed"; level: ThinkingLevel; available?: ThinkingLevel[] }
   | {
       type: "compaction_changed";
       compacting: boolean;

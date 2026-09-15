@@ -22,8 +22,10 @@ import {
   type ServerMessage,
   type Session,
   type SessionSummary,
+  type ThinkingLevel,
   type ViewAction,
   createSession,
+  isThinkingLevel,
   sameTranscript,
 } from "@cinba/contract";
 
@@ -84,6 +86,8 @@ export type SessionRegistry = {
   respondToConfirmation(session: LiveSession, requestId: string, confirmed: boolean): void;
   listModels(session: LiveSession): Promise<ModelRef[]>;
   setModel(session: LiveSession, model: ModelRef): Promise<boolean>;
+  setThinkingLevel(session: LiveSession, level: ThinkingLevel): Promise<boolean>;
+  cycleThinkingLevel(session: LiveSession): Promise<boolean>;
   rename(session: LiveSession, name: string): Promise<boolean>;
 };
 
@@ -262,6 +266,11 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     }
     const current = session.ledger.snapshot();
     truth.apply({ type: "context_changed", context: current.context });
+    truth.apply({
+      type: "thinking_changed",
+      level: current.thinking.level,
+      available: current.thinking.available,
+    });
     truth.apply({ type: "compaction_changed", compacting: current.compacting });
     session.ledger = truth;
     options.onSnapshot(session.id, snapshot(session));
@@ -300,6 +309,28 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
       emitManaged(session, [{ type: "context_changed", context }]);
     } else {
       session.ledger.apply({ type: "context_changed", context });
+    }
+  }
+
+  async function refreshThinking(session: ManagedSession, broadcast = true): Promise<void> {
+    const [state, levelsResponse] = await Promise.all([
+      session.pi.getState(),
+      session.pi.getAvailableThinkingLevels(),
+    ]);
+    if (!state.success || !levelsResponse.success || findManaged(session) !== session) {
+      return;
+    }
+    const level = (state.data as { thinkingLevel?: unknown } | undefined)?.thinkingLevel;
+    const rawLevels = (levelsResponse.data as { levels?: unknown } | undefined)?.levels;
+    const available = Array.isArray(rawLevels) ? rawLevels.filter(isThinkingLevel) : [];
+    if (!isThinkingLevel(level) || available.length === 0) {
+      return;
+    }
+    const action: ViewAction = { type: "thinking_changed", level, available };
+    if (broadcast) {
+      emitManaged(session, [action]);
+    } else {
+      session.ledger.apply(action);
     }
   }
 
@@ -442,10 +473,10 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     }
     live.set(session.id, session);
     try {
-      await refreshContext(session, false);
+      await Promise.all([refreshContext(session, false), refreshThinking(session, false)]);
     } catch (error) {
       console.error(
-        `[cinba] could not read initial context usage for ${session.id}:`,
+        `[cinba] could not read initial session status for ${session.id}:`,
         error instanceof Error ? error.message : String(error),
       );
     }
@@ -800,7 +831,48 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
 
     managed.model = model;
     emitManaged(managed, [{ type: "model_in_use", provider: model.provider, modelId: model.id }]);
-    await refreshContext(managed);
+    await Promise.all([refreshContext(managed), refreshThinking(managed)]);
+    return true;
+  }
+
+  function canChangeThinking(session: ManagedSession): boolean {
+    const state = session.ledger.snapshot();
+    if (state.busy || state.compacting || session.pendingConfirms.size > 0) {
+      emitManaged(session, [{ type: "notice", text: "Wait until the current work is idle." }]);
+      return false;
+    }
+    return true;
+  }
+
+  async function setThinkingLevel(session: LiveSession, level: ThinkingLevel): Promise<boolean> {
+    const managed = findManaged(session);
+    if (!managed || !canChangeThinking(managed)) {
+      return false;
+    }
+    const response = await managed.pi.setThinkingLevel(level);
+    if (!response.success) {
+      emitManaged(managed, [
+        { type: "notice", text: `thinking level not changed: ${String(response.error)}` },
+      ]);
+      return false;
+    }
+    await refreshThinking(managed);
+    return true;
+  }
+
+  async function cycleThinkingLevel(session: LiveSession): Promise<boolean> {
+    const managed = findManaged(session);
+    if (!managed || !canChangeThinking(managed)) {
+      return false;
+    }
+    const response = await managed.pi.cycleThinkingLevel();
+    if (!response.success) {
+      emitManaged(managed, [
+        { type: "notice", text: `thinking level not changed: ${String(response.error)}` },
+      ]);
+      return false;
+    }
+    await refreshThinking(managed);
     return true;
   }
 
@@ -844,6 +916,8 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     respondToConfirmation,
     listModels,
     setModel,
+    setThinkingLevel,
+    cycleThinkingLevel,
     rename,
   };
 }

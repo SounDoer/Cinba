@@ -640,7 +640,7 @@ Bedrock 把它原样回显在错误里，**显示到了屏幕上**。当时代�
 
 **已完成**：对话（`prompt` / `abort`）、模型（列表 / 切换）、
 会话（新建 / 切换 / 删除 / 列表 / 改名 / 历史重建）、上下文压缩与占用显示、
-中途插话与排队、失败自动重试的可见性与中止。
+中途插话与排队、失败自动重试的可见性与中止、按模型能力选择思考强度。
 
 上下文压缩采用 Cinba 自己的产品默认值：每次启动 Pi 会话都通过
 `set_auto_compaction(false)` 关闭自动压缩；Web/Desktop 用 `Compact`，TUI 用
@@ -655,6 +655,12 @@ Pi 的自动重试保持开启，并在每次启动会话时用 `set_auto_retry(
 失败摘要。Web/Desktop 的 `Stop retrying` 和 TUI 重试期间的 Escape 使用 `abort_retry`，只取消
 等待中的重试，不清空 steering / follow-up 队列；普通 Stop 仍使用 `abort`。
 
+思考强度也作为每个会话的实时状态接入。Core 从 `get_state` 读取当前档位，从
+`get_available_thinking_levels` 读取当前模型实际支持的选项；切换模型后重新读取两者，不能假定
+所有模型都有相同档位。Web/Desktop 在 Model 旁提供选择器，只有 `off` 时禁用；TUI 提供
+`/thinking` 和 `Shift+Tab`。设置通过 `set_thinking_level` / `cycle_thinking_level` 作用于当前会话，
+不改 Cinba 或 Pi 的全局默认值。
+
 三端使用同一套当前活动优先级：等待权限、压缩、重试、执行工具、回答、空闲。Web/Desktop
 在输入框上方显示固定状态栏，TUI 复用底部状态行；两者都先显示当前 context，再显示会话累计
 token 与价格，随后显示当前活动和对应操作。Web 顶部只保留 Core、会话、模型和配置入口。
@@ -663,7 +669,6 @@ token 与价格，随后显示当前活动和对应操作。Web 顶部只保留 
 
 | 功能 | Pi 的命令 |
 |---|---|
-| 思考强度 | `set_thinking_level` 等 3 条 |
 | 会话分叉 | `fork` / `clone` / `get_tree` / `get_fork_messages` |
 | 导出对话 | `export_html` |
 | 列出并调用 Pi 的自定义命令 | `get_commands` |

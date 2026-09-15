@@ -36,6 +36,7 @@ test("server messages are validated before reaching a client", () => {
       compacting: false,
       retry: null,
       context: { tokens: null, contextWindow: null, percent: null, estimated: false },
+      thinking: { level: "off", available: ["off"] },
       queue: { steering: [], followUp: [] },
     },
     cwd: "C:/work",
@@ -196,6 +197,18 @@ test("the model messages parse, and a half-filled set_model does not", () => {
   assert.equal(parseClientMessage({ type: "set_model", provider: "deepseek" }), undefined);
   assert.equal(parseClientMessage({ type: "set_model", provider: "", modelId: "x" }), undefined);
   assert.equal(parseClientMessage({ type: "set_model", provider: "x", modelId: 7 }), undefined);
+});
+
+test("thinking controls accept only Pi's canonical levels", () => {
+  assert.deepEqual(parseClientMessage({ type: "set_thinking_level", level: "high" }), {
+    type: "set_thinking_level",
+    level: "high",
+  });
+  assert.deepEqual(parseClientMessage({ type: "cycle_thinking_level" }), {
+    type: "cycle_thinking_level",
+  });
+  assert.equal(parseClientMessage({ type: "set_thinking_level", level: "extreme" }), undefined);
+  assert.equal(parseClientMessage({ type: "cycle_thinking_level", extra: true }), undefined);
 });
 
 test("the session messages parse, and bad ids are dropped", () => {

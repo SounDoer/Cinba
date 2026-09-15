@@ -13,6 +13,7 @@ test("a fresh session is empty and not busy", () => {
     compacting: false,
     retry: null,
     context: { tokens: null, contextWindow: null, percent: null, estimated: false },
+    thinking: { level: "off", available: ["off"] },
     queue: { steering: [], followUp: [] },
   });
 });
@@ -210,6 +211,24 @@ test("context usage and compaction progress are carried on the snapshot", () => 
     estimated: true,
   });
   assert.equal(session.snapshot().compacting, false);
+});
+
+test("thinking level and model-specific choices are carried on the snapshot", () => {
+  const session = createSession();
+  session.apply({
+    type: "thinking_changed",
+    level: "medium",
+    available: ["off", "low", "medium", "high"],
+  });
+  session.apply({ type: "thinking_changed", level: "high" });
+
+  const snapshot = session.snapshot();
+  assert.deepEqual(snapshot.thinking, {
+    level: "high",
+    available: ["off", "low", "medium", "high"],
+  });
+  snapshot.thinking.available.push("max");
+  assert.equal(session.snapshot().thinking.available.includes("max"), false);
 });
 
 test("retry progress survives snapshots and clears when retrying ends", () => {

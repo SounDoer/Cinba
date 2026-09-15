@@ -7,7 +7,7 @@
 // This module depends on neither Electron nor any transport, so node --test can
 // cover it directly, and the phase 2 TUI and phase 3 web UI reuse it as is.
 
-import type { ViewAction } from "@cinba/contract";
+import { type ViewAction, isThinkingLevel } from "@cinba/contract";
 import type { CoreEvent, UiRequest } from "./pi-client.ts";
 
 /**
@@ -281,6 +281,11 @@ export function createEventFolder(
       case "auto_retry_start":
       case "auto_retry_end":
         return foldAutoRetry(event, now);
+
+      case "thinking_level_changed":
+        return isThinkingLevel(event.level)
+          ? [{ type: "thinking_changed", level: event.level }]
+          : [];
 
       default:
         return [];

@@ -12,6 +12,7 @@ import {
   type Session,
   type SessionSummary,
   type Snapshot,
+  type ThinkingLevel,
   type WebSearchCredentialProviderId,
   type WebSearchPrimary,
   type WebToolsStatus,
@@ -32,6 +33,7 @@ const EMPTY: Snapshot = {
   compacting: false,
   retry: null,
   context: { tokens: null, contextWindow: null, percent: null, estimated: false },
+  thinking: { level: "off", available: ["off"] },
   queue: { steering: [], followUp: [] },
 };
 
@@ -150,6 +152,10 @@ export function useCore(serverUrl: string) {
     (next: ModelRef) => withClient((client) => client.setModel(next.provider, next.id)),
     [withClient],
   );
+  const selectThinkingLevel = useCallback(
+    (level: ThinkingLevel) => withClient((client) => client.setThinkingLevel(level)),
+    [withClient],
+  );
   const listSessions = useCallback(
     (directory?: string) => withClient((client) => client.listSessions(directory)),
     [withClient],
@@ -237,6 +243,7 @@ export function useCore(serverUrl: string) {
     listDirectory,
     listModels,
     selectModel,
+    selectThinkingLevel,
     listSessions,
     openSession,
     createConversation,

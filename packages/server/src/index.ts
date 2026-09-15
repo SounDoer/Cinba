@@ -513,6 +513,25 @@ async function handlePromptControl(
   return false;
 }
 
+async function handleThinkingControl(
+  message: ClientMessage,
+  current: LiveSession | undefined,
+): Promise<boolean> {
+  if (message.type === "set_thinking_level") {
+    if (current) {
+      await sessions.setThinkingLevel(current, message.level);
+    }
+    return true;
+  }
+  if (message.type === "cycle_thinking_level") {
+    if (current) {
+      await sessions.cycleThinkingLevel(current);
+    }
+    return true;
+  }
+  return false;
+}
+
 async function handle(socket: WebSocket, raw: string): Promise<void> {
   let parsed: unknown;
   try {
@@ -548,6 +567,9 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
   }
 
   if (await handlePromptControl(socket, message, current)) {
+    return;
+  }
+  if (await handleThinkingControl(message, current)) {
     return;
   }
 

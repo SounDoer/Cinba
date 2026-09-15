@@ -49,3 +49,5 @@ export type {
   Snapshot,
   ToolEntry,
 } from "./session.ts";
+export { isThinkingLevel, THINKING_LEVELS } from "./thinking.ts";
+export type { ThinkingLevel, ThinkingState } from "./thinking.ts";

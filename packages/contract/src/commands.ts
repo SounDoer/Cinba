@@ -16,6 +16,7 @@ export type CommandId =
   | "compact"
   | "model"
   | "sessions"
+  | "thinking"
   | "new"
   | "name"
   | "providers"
@@ -45,6 +46,7 @@ export const COMMANDS: readonly Command[] = [
   { id: "new", name: "new", summary: "start a conversation here" },
   { id: "providers", name: "providers", summary: "which providers are configured" },
   { id: "sessions", name: "sessions", summary: "switch to another conversation" },
+  { id: "thinking", name: "thinking", summary: "set reasoning effort for this conversation" },
   { id: "webtools", name: "webtools", summary: "manage web search and fetch" },
 ];
 

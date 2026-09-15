@@ -428,6 +428,7 @@ test("snapshots and actions reach their respective handlers", () => {
     compacting: false,
     retry: null,
     context: { tokens: null, contextWindow: null, percent: null, estimated: false },
+    thinking: { level: "off", available: ["off"] },
     queue: { steering: [], followUp: [] },
   };
   fake.receive({ type: "snapshot", snapshot, cwd: "/home/me", sessionId: "s1" });
@@ -470,6 +471,19 @@ test("the model commands go out, and both model messages reach their handlers", 
   fake.receive({ type: "model_changed", model: { provider: "deepseek", id: "a" } });
 
   assert.deepEqual(seen, [[{ provider: "deepseek", id: "a" }], { provider: "deepseek", id: "a" }]);
+});
+
+test("thinking controls go out in protocol form", () => {
+  const fake = createFakeSocket();
+  const client = connect(fake, {});
+
+  client.setThinkingLevel("high");
+  client.cycleThinkingLevel();
+
+  assert.deepEqual(
+    fake.sent.map((line) => JSON.parse(line)),
+    [{ type: "set_thinking_level", level: "high" }, { type: "cycle_thinking_level" }],
+  );
 });
 
 test("web tools commands go out and sanitized status reaches its handler", () => {
@@ -533,6 +547,7 @@ test("a snapshot carries the current model alongside the working directory", () 
       compacting: false,
       retry: null,
       context: { tokens: null, contextWindow: null, percent: null, estimated: false },
+      thinking: { level: "off", available: ["off"] },
       queue: { steering: [], followUp: [] },
     },
     cwd: "/tmp",

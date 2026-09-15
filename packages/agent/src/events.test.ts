@@ -310,6 +310,14 @@ test("cancelling automatic retry gets its own concise notice", () => {
   );
 });
 
+test("thinking level changes become shared state", () => {
+  const fold = createEventFolder();
+  assert.deepEqual(fold({ type: "thinking_level_changed", level: "high" }), [
+    { type: "thinking_changed", level: "high" },
+  ]);
+  assert.deepEqual(fold({ type: "thinking_level_changed", level: "extreme" }), []);
+});
+
 test("a confirm UI request becomes a confirm action; other kinds become nothing", () => {
   assert.deepEqual(
     foldUiRequest({

@@ -42,6 +42,7 @@ import {
   commandArgument,
   createSession,
   isCommand,
+  isThinkingLevel,
   nameColourIndex,
   sessionSubtitle,
   sessionTitle,
@@ -86,6 +87,7 @@ class StatusBar implements Component {
     estimated: false,
   };
   model = "";
+  thinkingLevel = "off";
   /** Which machine this terminal is talking to. Empty until the core says. */
   core = "";
   pendingCount = 0;
@@ -120,7 +122,9 @@ class StatusBar implements Component {
     if (this.activity.type === "compacting") {
       hint = `${YELLOW}${BOLD}⏳ compacting context · Esc stop${RESET}`;
     }
-    const model = this.model ? `${DIM} · ${this.model}${RESET}` : "";
+    const model = this.model
+      ? `${DIM} · ${this.model} · thinking ${this.thinkingLevel}${RESET}`
+      : "";
     // Truncated by display columns as well; see the note in Transcript.render.
     return [truncateToWidth(`${usage}${where}${model}${recovered}    ${hint}`, width)];
   }
@@ -400,6 +404,10 @@ function applyAction(action: ViewAction): void {
       statusBar.context = action.context;
       break;
 
+    case "thinking_changed":
+      statusBar.thinkingLevel = action.level;
+      break;
+
     case "compaction_changed":
       compacting = action.compacting;
       break;
@@ -428,6 +436,7 @@ function drawSnapshot(snapshot: Snapshot): void {
   statusBar.totalTokens = snapshot.totalTokens;
   statusBar.totalCost = snapshot.totalCost;
   statusBar.model = statusModel;
+  statusBar.thinkingLevel = snapshot.thinking.level;
   busy = snapshot.busy;
   compacting = snapshot.compacting;
   statusBar.context = snapshot.context;
@@ -673,6 +682,26 @@ function runCommand(command: Command, line: string): void {
     case "model":
       coreClient.listModels();
       return;
+    case "thinking": {
+      const thinking = mirror.snapshot().thinking;
+      if (thinking.available.length <= 1) {
+        applyAction({ type: "notice", text: "This model does not support adjustable reasoning." });
+        return;
+      }
+      choose(
+        "Set thinking level",
+        thinking.available.map((level) => ({
+          value: level,
+          label: `${level === thinking.level ? "● " : "  "}${level}`,
+        })),
+        (level) => {
+          if (isThinkingLevel(level)) {
+            coreClient.setThinkingLevel(level);
+          }
+        },
+      );
+      return;
+    }
     case "new":
       // The terminal's rule throughout: you are in the directory you started in.
       coreClient.createSession(process.cwd());
@@ -801,6 +830,11 @@ tui.addInputListener((data: string) => {
       statusBar.recoveredCount = recoveredDrafts.length;
       tui.requestRender();
     }
+    return { consume: true };
+  }
+
+  if (matchesKey(data, "shift+tab") && promptInput.focused && !busy && !compacting && !confirming) {
+    coreClient.cycleThinkingLevel();
     return { consume: true };
   }
 

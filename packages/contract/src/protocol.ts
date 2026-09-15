@@ -7,6 +7,7 @@
 
 import type { ViewAction } from "./actions.ts";
 import type { Snapshot } from "./session.ts";
+import { type ThinkingLevel, isThinkingLevel } from "./thinking.ts";
 
 /** Points at one model. Provider and id together, because ids are only unique within a provider. */
 export type ModelRef = { provider: string; id: string };
@@ -68,6 +69,8 @@ export type ClientMessage =
   | { type: "list_dir"; path: string }
   | { type: "list_models" }
   | { type: "set_model"; provider: string; modelId: string }
+  | { type: "set_thinking_level"; level: ThinkingLevel }
+  | { type: "cycle_thinking_level" }
   /** cwd absent means every directory. */
   | { type: "list_sessions"; cwd?: string }
   | { type: "open_session"; sessionId: string }
@@ -127,6 +130,10 @@ type WebToolsClientMessage = Extract<
 >;
 
 type PromptClientMessage = Extract<ClientMessage, { type: "prompt" | "clear_queue" }>;
+type ThinkingClientMessage = Extract<
+  ClientMessage,
+  { type: "set_thinking_level" | "cycle_thinking_level" }
+>;
 type SimpleClientMessage = Extract<ClientMessage, { type: "abort" | "abort_retry" | "compact" }>;
 
 function parseSimpleClientMessage(
@@ -168,6 +175,20 @@ function parsePromptClientMessage(
         text: message.text,
         streamingBehavior: message.streamingBehavior,
       };
+}
+
+function parseThinkingClientMessage(
+  message: Record<string, unknown>,
+): ThinkingClientMessage | undefined {
+  if (message.type === "cycle_thinking_level") {
+    return hasOnlyKeys(message, ["type"]) ? { type: "cycle_thinking_level" } : undefined;
+  }
+  if (message.type !== "set_thinking_level") {
+    return undefined;
+  }
+  return hasOnlyKeys(message, ["type", "level"]) && isThinkingLevel(message.level)
+    ? { type: "set_thinking_level", level: message.level }
+    : undefined;
 }
 
 function parseWebToolsClientMessage(
@@ -228,6 +249,10 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
   const webToolsMessage = parseWebToolsClientMessage(message);
   if (webToolsMessage) {
     return webToolsMessage;
+  }
+  const thinkingMessage = parseThinkingClientMessage(message);
+  if (thinkingMessage) {
+    return thinkingMessage;
   }
 
   switch (message.type) {
@@ -367,9 +392,21 @@ function isToolStatus(value: unknown): boolean {
   return value === "pending" || value === "running" || value === "done" || value === "error";
 }
 
+function isThinkingAction(value: Record<string, unknown>): boolean {
+  return (
+    value.type === "thinking_changed" &&
+    isThinkingLevel(value.level) &&
+    (value.available === undefined ||
+      (Array.isArray(value.available) && value.available.every(isThinkingLevel)))
+  );
+}
+
 function isViewAction(value: unknown): value is ViewAction {
   if (!isRecord(value)) {
     return false;
+  }
+  if (isThinkingAction(value)) {
+    return true;
   }
   switch (value.type) {
     case "message_added":
@@ -479,7 +516,19 @@ function isSnapshot(value: unknown): value is Snapshot {
     typeof value.compacting === "boolean" &&
     (value.retry === null || isAutoRetry(value.retry)) &&
     isContextUsage(value.context) &&
+    isThinkingState(value.thinking) &&
     isPendingMessages(value.queue)
+  );
+}
+
+function isThinkingState(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["level", "available"]) &&
+    isThinkingLevel(value.level) &&
+    Array.isArray(value.available) &&
+    value.available.length > 0 &&
+    value.available.every(isThinkingLevel)
   );
 }
 

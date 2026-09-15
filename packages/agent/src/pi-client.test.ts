@@ -199,6 +199,27 @@ test("the model commands go out in the shape Pi expects", async () => {
   assert.equal(ids.size, 3);
 });
 
+test("the thinking commands go out in the shape Pi expects", () => {
+  const fake = createFakeTransport();
+  const client = new PiClient(fake.transport);
+
+  void client.getAvailableThinkingLevels();
+  void client.setThinkingLevel("xhigh");
+  void client.cycleThinkingLevel();
+
+  assert.deepEqual(
+    fake.sent.map((line) => {
+      const { id: _id, ...command } = JSON.parse(line);
+      return command;
+    }),
+    [
+      { type: "get_available_thinking_levels" },
+      { type: "set_thinking_level", level: "xhigh" },
+      { type: "cycle_thinking_level" },
+    ],
+  );
+});
+
 test("the session commands go out in the shape Pi expects", () => {
   const fake = createFakeTransport();
   const client = new PiClient(fake.transport);

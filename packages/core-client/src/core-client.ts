@@ -12,6 +12,7 @@ import {
   type RecoveredDraft,
   type SessionSummary,
   type Snapshot,
+  type ThinkingLevel,
   type ViewAction,
   type WebSearchCredentialProviderId,
   type WebSearchPrimary,
@@ -178,6 +179,14 @@ export class CoreClient {
 
   setModel(provider: string, modelId: string): boolean {
     return this.#send({ type: "set_model", provider, modelId });
+  }
+
+  setThinkingLevel(level: ThinkingLevel): boolean {
+    return this.#send({ type: "set_thinking_level", level });
+  }
+
+  cycleThinkingLevel(): boolean {
+    return this.#send({ type: "cycle_thinking_level" });
   }
 
   listSessions(cwd?: string): boolean {

@@ -6,6 +6,7 @@ import { Transcript } from "./transcript.tsx";
 import { PromptComposer } from "./prompt-composer.tsx";
 import { ProjectPicker } from "./project-picker.tsx";
 import { ModelPicker } from "./model-picker.tsx";
+import { ThinkingPicker } from "./thinking-picker.tsx";
 import { SessionPicker } from "./session-picker.tsx";
 import { ProviderSettings } from "./provider-settings.tsx";
 import { WebToolsSettings } from "./web-tools-settings.tsx";
@@ -15,7 +16,7 @@ import { useCore } from "./use-core.ts";
 /** One web colour for each stable slot supplied by the shared naming rules. */
 const CORE_COLOURS = ["#3b6fd4", "#2e9166", "#b4642a", "#8b4bc4", "#b03a52", "#2b7f96"];
 
-type ActiveOverlay = "project" | "model" | "session" | "provider" | "webtools" | null;
+type ActiveOverlay = "project" | "model" | "thinking" | "session" | "provider" | "webtools" | null;
 type EditTarget = { sessionId: string; userMessageIndex: number; text: string };
 
 export function App({ serverUrl }: { serverUrl: string }) {
@@ -74,6 +75,22 @@ export function App({ serverUrl }: { serverUrl: string }) {
           disabled={!core.connected || core.snapshot.busy || core.snapshot.compacting}
         >
           Model: {core.model?.id ?? "..."}
+        </button>
+        <button
+          onClick={() => setActiveOverlay("thinking")}
+          disabled={
+            !core.connected ||
+            core.snapshot.busy ||
+            core.snapshot.compacting ||
+            core.snapshot.thinking.available.length <= 1
+          }
+          title={
+            core.snapshot.thinking.available.length <= 1
+              ? "The current model does not offer adjustable reasoning"
+              : "Set reasoning effort for this conversation"
+          }
+        >
+          Thinking: {core.snapshot.thinking.level}
         </button>
         <button
           onClick={() => {
@@ -198,6 +215,14 @@ export function App({ serverUrl }: { serverUrl: string }) {
           models={core.models}
           current={core.model}
           onSelect={core.selectModel}
+          onClose={() => setActiveOverlay(null)}
+        />
+      ) : null}
+
+      {activeOverlay === "thinking" ? (
+        <ThinkingPicker
+          thinking={core.snapshot.thinking}
+          onSelect={core.selectThinkingLevel}
           onClose={() => setActiveOverlay(null)}
         />
       ) : null}
