@@ -54,6 +54,25 @@ test("prompt sends a command with an id and resolves once the reply arrives", as
   assert.equal(response.success, true);
 });
 
+test("streaming prompts and queue clearing use Pi's RPC shapes", () => {
+  const fake = createFakeTransport();
+  const client = new PiClient(fake.transport);
+
+  void client.prompt("change direction", "steer");
+  void client.prompt("then summarize", "followUp");
+  void client.clearQueue();
+
+  const commands = fake.sent.map((line) => JSON.parse(line));
+  assert.deepEqual(
+    commands.map(({ id: _id, ...command }) => command),
+    [
+      { type: "prompt", message: "change direction", streamingBehavior: "steer" },
+      { type: "prompt", message: "then summarize", streamingBehavior: "followUp" },
+      { type: "clear_queue" },
+    ],
+  );
+});
+
 test("events are fanned out to subscribers", () => {
   const fake = createFakeTransport();
   const client = new PiClient(fake.transport);

@@ -117,10 +117,70 @@ header span {
 
 footer {
   display: flex;
+  flex-direction: column;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
   border-top: 1px solid var(--border);
   background: var(--surface);
+}
+
+.composer-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.message-queues {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.pending-messages,
+.recovered-drafts {
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.pending-messages ol {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.pending-messages li {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.queue-clear {
+  font-size: 12px;
+}
+
+.recovered-drafts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.recovered-drafts button {
+  display: flex;
+  gap: 0.5rem;
+  text-align: left;
+  padding: 0.3rem 0.45rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.recovered-drafts button span {
+  flex: none;
+  color: #e8a33d;
 }
 
 textarea,

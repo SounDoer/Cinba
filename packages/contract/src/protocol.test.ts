@@ -9,6 +9,11 @@ test("the basic client messages are recognized", () => {
   });
   assert.deepEqual(parseClientMessage({ type: "abort" }), { type: "abort" });
   assert.deepEqual(
+    parseClientMessage({ type: "prompt", text: "change direction", streamingBehavior: "steer" }),
+    { type: "prompt", text: "change direction", streamingBehavior: "steer" },
+  );
+  assert.deepEqual(parseClientMessage({ type: "clear_queue" }), { type: "clear_queue" });
+  assert.deepEqual(
     parseClientMessage({ type: "edit_message", entryId: "entry-1", text: "fixed" }),
     { type: "edit_message", entryId: "entry-1", text: "fixed" },
   );
@@ -21,7 +26,13 @@ test("the basic client messages are recognized", () => {
 test("server messages are validated before reaching a client", () => {
   const snapshot = {
     type: "snapshot",
-    snapshot: { entries: [], totalTokens: 0, totalCost: 0, busy: false },
+    snapshot: {
+      entries: [],
+      totalTokens: 0,
+      totalCost: 0,
+      busy: false,
+      queue: { steering: [], followUp: [] },
+    },
     cwd: "C:/work",
     sessionId: "s1",
   };
@@ -56,6 +67,10 @@ test("server messages are validated before reaching a client", () => {
     { type: "session_opened", sessionId: "s1" },
     { type: "provider_listing", providers: [{ id: "test", name: "Test", configured: true }] },
     { type: "core_identity", name: "home" },
+    {
+      type: "drafts_recovered",
+      drafts: [{ text: "change direction", behavior: "steer" }],
+    },
   ];
 
   for (const message of messages) {
@@ -109,6 +124,10 @@ test("list_dir requires a non-empty string path", () => {
 test("anything with a wrong field type is dropped", () => {
   // Anything off the network is untrusted. Better dropped than passed along with a wrong type.
   assert.equal(parseClientMessage({ type: "prompt", text: 123 }), undefined);
+  assert.equal(
+    parseClientMessage({ type: "prompt", text: "hello", streamingBehavior: "later" }),
+    undefined,
+  );
   assert.equal(parseClientMessage({ type: "respond_confirm", requestId: "u1" }), undefined);
   assert.equal(
     parseClientMessage({ type: "respond_confirm", requestId: 1, confirmed: true }),

@@ -15,6 +15,9 @@ import {
 } from "@cinba/agent";
 import {
   type ModelRef,
+  type PendingMessages,
+  type PromptStreamingBehavior,
+  type RecoveredDraft,
   type ServerMessage,
   type Session,
   type SessionSummary,
@@ -31,6 +34,7 @@ export type LiveSession = {
   pendingConfirms: Map<string, PendingConfirmation>;
   idleSince: number | undefined;
   staleCredentials: boolean;
+  stopping: boolean;
 };
 
 type PendingConfirmation = {
@@ -69,8 +73,9 @@ export type SessionRegistry = {
   closeAll(): void;
   emit(session: LiveSession, actions: ViewAction[]): void;
   snapshot(session: LiveSession): ServerMessage;
-  prompt(session: LiveSession, text: string): void;
-  abort(session: LiveSession): void;
+  prompt(session: LiveSession, text: string, streamingBehavior?: PromptStreamingBehavior): void;
+  clearQueue(session: LiveSession): Promise<RecoveredDraft[]>;
+  abort(session: LiveSession): Promise<RecoveredDraft[]>;
   editMessage(session: LiveSession, entryId: string, text: string): Promise<boolean>;
   denyPendingConfirmations(session: LiveSession): void;
   respondToConfirmation(session: LiveSession, requestId: string, confirmed: boolean): void;
@@ -309,6 +314,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
       reconciledUpTo: undefined,
       idleSince: undefined,
       staleCredentials: false,
+      stopping: false,
     };
 
     launch.pi.onEvent((event) => {
@@ -396,9 +402,17 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     }
   }
 
-  function prompt(session: LiveSession, message: string): void {
+  function prompt(
+    session: LiveSession,
+    message: string,
+    streamingBehavior?: PromptStreamingBehavior,
+  ): void {
     const managed = findManaged(session);
     if (!managed) {
+      return;
+    }
+    if (managed.stopping) {
+      emitManaged(managed, [{ type: "notice", text: "Stop is still in progress; try again." }]);
       return;
     }
     if (!managed.model) {
@@ -407,9 +421,10 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
       ]);
       return;
     }
+    const wasBusy = managed.ledger.snapshot().busy;
     emitManaged(managed, [{ type: "busy_changed", busy: true }]);
     void managed.pi
-      .prompt(message)
+      .prompt(message, streamingBehavior)
       .then((response) => {
         if (!response.success) {
           throw new Error(String(response.error ?? "unknown error"));
@@ -424,43 +439,86 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
             type: "notice",
             text: `prompt failed: ${error instanceof Error ? error.message : String(error)}`,
           },
-          { type: "busy_changed", busy: false },
+          ...(!wasBusy ? ([{ type: "busy_changed", busy: false }] as const) : []),
         ]);
       });
   }
 
-  function abort(session: LiveSession): void {
+  function recoveredDrafts(queue: PendingMessages): RecoveredDraft[] {
+    return [
+      ...queue.steering.map((text) => ({ text, behavior: "steer" as const })),
+      ...queue.followUp.map((text) => ({ text, behavior: "followUp" as const })),
+    ];
+  }
+
+  async function clearQueue(session: LiveSession): Promise<RecoveredDraft[]> {
     const managed = findManaged(session);
     if (!managed) {
-      return;
+      return [];
     }
-    void managed.pi
-      .abort()
-      .then((response) => {
-        if (findManaged(managed) !== managed) {
-          return;
-        }
-        if (!response.success) {
-          emitManaged(managed, [
-            { type: "notice", text: `abort failed: ${String(response.error ?? "unknown error")}` },
-          ]);
-          return;
-        }
+    const response = await managed.pi.clearQueue();
+    if (!response.success) {
+      throw new Error(String(response.error ?? "unknown error"));
+    }
+    const data = response.data as { steering?: unknown; followUp?: unknown } | undefined;
+    const queue: PendingMessages = {
+      steering: Array.isArray(data?.steering)
+        ? data.steering.filter((text): text is string => typeof text === "string")
+        : [],
+      followUp: Array.isArray(data?.followUp)
+        ? data.followUp.filter((text): text is string => typeof text === "string")
+        : [],
+    };
+    return recoveredDrafts(queue);
+  }
+
+  async function abort(session: LiveSession): Promise<RecoveredDraft[]> {
+    const managed = findManaged(session);
+    if (!managed || managed.stopping) {
+      return [];
+    }
+    managed.stopping = true;
+    let drafts: RecoveredDraft[] = [];
+    try {
+      try {
+        drafts = await clearQueue(managed);
+      } catch (error) {
         emitManaged(managed, [
-          { type: "notice", text: "aborted" },
-          { type: "busy_changed", busy: false },
+          {
+            type: "notice",
+            text: `queue clear failed: ${error instanceof Error ? error.message : String(error)}`,
+          },
         ]);
-      })
-      .catch((error: unknown) => {
-        if (findManaged(managed) === managed) {
-          emitManaged(managed, [
-            {
-              type: "notice",
-              text: `abort failed: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ]);
-        }
-      });
+      }
+
+      const response = await managed.pi.abort();
+      if (findManaged(managed) !== managed) {
+        return drafts;
+      }
+      if (!response.success) {
+        emitManaged(managed, [
+          { type: "notice", text: `abort failed: ${String(response.error ?? "unknown error")}` },
+        ]);
+        return drafts;
+      }
+      emitManaged(managed, [
+        { type: "notice", text: "aborted" },
+        { type: "busy_changed", busy: false },
+      ]);
+      return drafts;
+    } catch (error) {
+      if (findManaged(managed) === managed) {
+        emitManaged(managed, [
+          {
+            type: "notice",
+            text: `abort failed: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ]);
+      }
+      return drafts;
+    } finally {
+      managed.stopping = false;
+    }
   }
 
   async function editMessage(
@@ -602,6 +660,7 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
     emit,
     snapshot,
     prompt,
+    clearQueue,
     abort,
     editMessage,
     denyPendingConfirmations,

@@ -10,6 +10,7 @@ test("a fresh session is empty and not busy", () => {
     totalTokens: 0,
     totalCost: 0,
     busy: false,
+    queue: { steering: [], followUp: [] },
   });
 });
 
@@ -159,6 +160,17 @@ test("cost and busy state are carried on the snapshot", () => {
   assert.equal(snapshot.busy, true);
   assert.equal(snapshot.totalTokens, 120);
   assert.equal(snapshot.totalCost, 0.0042);
+});
+
+test("queue updates replace pending messages and snapshots do not share their arrays", () => {
+  const session = createSession();
+  session.apply({ type: "queue_changed", steering: ["first"], followUp: ["later"] });
+  session.apply({ type: "queue_changed", steering: [], followUp: ["replacement"] });
+
+  const snapshot = session.snapshot();
+  assert.deepEqual(snapshot.queue, { steering: [], followUp: ["replacement"] });
+  snapshot.queue.followUp.push("outside mutation");
+  assert.deepEqual(session.snapshot().queue.followUp, ["replacement"]);
 });
 
 test("a snapshot is a copy; editing it does not affect the ledger", () => {

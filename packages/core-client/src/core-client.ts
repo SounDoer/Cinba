@@ -7,7 +7,9 @@
 import {
   type ClientMessage,
   type ModelRef,
+  type PromptStreamingBehavior,
   type ProviderStatus,
+  type RecoveredDraft,
   type SessionSummary,
   type Snapshot,
   type ViewAction,
@@ -86,6 +88,7 @@ export type CoreClientHandlers = {
   onProviderListing?: (providers: ProviderStatus[]) => void;
   onWebToolsStatus?: (status: WebToolsStatus, error?: string) => void;
   onCoreIdentity?: (name: string) => void;
+  onDraftsRecovered?: (drafts: RecoveredDraft[]) => void;
 };
 
 type WebSocketConstructor = new (url: string) => Socket;
@@ -127,6 +130,22 @@ export class CoreClient {
 
   prompt(text: string): boolean {
     return this.#send({ type: "prompt", text });
+  }
+
+  steer(text: string): boolean {
+    return this.#promptWhileStreaming(text, "steer");
+  }
+
+  followUp(text: string): boolean {
+    return this.#promptWhileStreaming(text, "followUp");
+  }
+
+  #promptWhileStreaming(text: string, streamingBehavior: PromptStreamingBehavior): boolean {
+    return this.#send({ type: "prompt", text, streamingBehavior });
+  }
+
+  clearQueue(): boolean {
+    return this.#send({ type: "clear_queue" });
   }
 
   editMessage(entryId: string, text: string): boolean {
@@ -270,6 +289,9 @@ export class CoreClient {
         return;
       case "core_identity":
         this.#handlers.onCoreIdentity?.(message.name);
+        return;
+      case "drafts_recovered":
+        this.#handlers.onDraftsRecovered?.(message.drafts);
         return;
       case "provider_listing":
         this.#handlers.onProviderListing?.(message.providers);

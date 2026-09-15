@@ -45,7 +45,12 @@ import { createStaticFileHandler } from "./static-files.ts";
 import { isAllowedWebSocketOrigin } from "./websocket-origin.ts";
 import { handleWebToolsMessage } from "./web-tools-messages.ts";
 import { createWebToolsService } from "./web-tools-service.ts";
-import { type ModelRef, type ServerMessage, parseClientMessage } from "@cinba/contract";
+import {
+  type ClientMessage,
+  type ModelRef,
+  type ServerMessage,
+  parseClientMessage,
+} from "@cinba/contract";
 
 const HOST = "127.0.0.1";
 
@@ -450,6 +455,48 @@ async function recycleStale(): Promise<void> {
 
 // ---- Messages from clients ----
 
+async function handlePromptControl(
+  socket: WebSocket,
+  message: ClientMessage,
+  current: LiveSession | undefined,
+): Promise<boolean> {
+  if (message.type === "prompt") {
+    if (current) {
+      sessions.prompt(current, message.text, message.streamingBehavior);
+    }
+    return true;
+  }
+  if (message.type === "clear_queue") {
+    if (!current) {
+      return true;
+    }
+    try {
+      const drafts = await sessions.clearQueue(current);
+      if (drafts.length > 0) {
+        sendTo(socket, { type: "drafts_recovered", drafts });
+      }
+    } catch (error) {
+      sessions.emit(current, [
+        {
+          type: "notice",
+          text: `queue clear failed: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      ]);
+    }
+    return true;
+  }
+  if (message.type === "abort") {
+    if (current) {
+      const drafts = await sessions.abort(current);
+      if (drafts.length > 0) {
+        sendTo(socket, { type: "drafts_recovered", drafts });
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
 async function handle(socket: WebSocket, raw: string): Promise<void> {
   let parsed: unknown;
   try {
@@ -484,26 +531,16 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
     return;
   }
 
-  switch (message.type) {
-    case "prompt":
-      if (!current) {
-        return;
-      }
-      sessions.prompt(current, message.text);
-      return;
+  if (await handlePromptControl(socket, message, current)) {
+    return;
+  }
 
+  switch (message.type) {
     case "edit_message":
       if (!current) {
         return;
       }
       await sessions.editMessage(current, message.entryId, message.text);
-      return;
-
-    case "abort":
-      if (!current) {
-        return;
-      }
-      sessions.abort(current);
       return;
 
     case "respond_confirm":

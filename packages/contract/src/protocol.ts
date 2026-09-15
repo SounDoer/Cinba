@@ -53,9 +53,13 @@ export type SessionSummary = {
   modified: string;
 };
 
+export type PromptStreamingBehavior = "steer" | "followUp";
+export type RecoveredDraft = { text: string; behavior: PromptStreamingBehavior };
+
 /** Client to server. */
 export type ClientMessage =
-  | { type: "prompt"; text: string }
+  | { type: "prompt"; text: string; streamingBehavior?: PromptStreamingBehavior }
+  | { type: "clear_queue" }
   | { type: "edit_message"; entryId: string; text: string }
   | { type: "abort" }
   | { type: "respond_confirm"; requestId: string; confirmed: boolean }
@@ -98,6 +102,7 @@ export type ServerMessage =
   | { type: "session_opened"; sessionId: string }
   | { type: "provider_listing"; providers: ProviderStatus[] }
   | { type: "web_tools_status"; status: WebToolsStatus; error?: string }
+  | { type: "drafts_recovered"; drafts: RecoveredDraft[] }
   /**
    * Which core this is. Sent once, as soon as a client connects.
    *
@@ -118,6 +123,36 @@ type WebToolsClientMessage = Extract<
       | "set_web_search_primary";
   }
 >;
+
+type PromptClientMessage = Extract<ClientMessage, { type: "prompt" | "clear_queue" }>;
+
+function parsePromptClientMessage(
+  message: Record<string, unknown>,
+): PromptClientMessage | undefined {
+  if (message.type === "clear_queue") {
+    return hasOnlyKeys(message, ["type"]) ? { type: "clear_queue" } : undefined;
+  }
+  if (message.type !== "prompt") {
+    return undefined;
+  }
+  if (
+    !hasOnlyKeys(message, ["type", "text", "streamingBehavior"]) ||
+    typeof message.text !== "string" ||
+    message.text.trim() === "" ||
+    (message.streamingBehavior !== undefined &&
+      message.streamingBehavior !== "steer" &&
+      message.streamingBehavior !== "followUp")
+  ) {
+    return undefined;
+  }
+  return message.streamingBehavior === undefined
+    ? { type: "prompt", text: message.text }
+    : {
+        type: "prompt",
+        text: message.text,
+        streamingBehavior: message.streamingBehavior,
+      };
+}
 
 function parseWebToolsClientMessage(
   message: Record<string, unknown>,
@@ -166,18 +201,16 @@ export function parseClientMessage(raw: unknown): ClientMessage | undefined {
     return undefined;
   }
   const message = raw as Record<string, unknown>;
+  const promptMessage = parsePromptClientMessage(message);
+  if (promptMessage) {
+    return promptMessage;
+  }
   const webToolsMessage = parseWebToolsClientMessage(message);
   if (webToolsMessage) {
     return webToolsMessage;
   }
 
   switch (message.type) {
-    case "prompt":
-      if (typeof message.text !== "string" || message.text.trim() === "") {
-        return undefined;
-      }
-      return { type: "prompt", text: message.text };
-
     case "edit_message":
       if (
         typeof message.entryId !== "string" ||
@@ -352,6 +385,8 @@ function isViewAction(value: unknown): value is ViewAction {
       return typeof value.totalTokens === "number" && typeof value.totalCost === "number";
     case "busy_changed":
       return typeof value.busy === "boolean";
+    case "queue_changed":
+      return isStringArray(value.steering) && isStringArray(value.followUp);
     default:
       return false;
   }
@@ -396,7 +431,30 @@ function isSnapshot(value: unknown): value is Snapshot {
     value.entries.every(isEntry) &&
     typeof value.totalTokens === "number" &&
     typeof value.totalCost === "number" &&
-    typeof value.busy === "boolean"
+    typeof value.busy === "boolean" &&
+    isPendingMessages(value.queue)
+  );
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isPendingMessages(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["steering", "followUp"]) &&
+    isStringArray(value.steering) &&
+    isStringArray(value.followUp)
+  );
+}
+
+function isRecoveredDraft(value: unknown): value is RecoveredDraft {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["text", "behavior"]) &&
+    typeof value.text === "string" &&
+    (value.behavior === "steer" || value.behavior === "followUp")
   );
 }
 
@@ -501,6 +559,12 @@ export function parseServerMessage(raw: unknown): ServerMessage | undefined {
       return hasOnlyKeys(raw, ["type", "status", "error"]) &&
         isWebToolsStatus(raw.status) &&
         (raw.error === undefined || typeof raw.error === "string")
+        ? (raw as ServerMessage)
+        : undefined;
+    case "drafts_recovered":
+      return hasOnlyKeys(raw, ["type", "drafts"]) &&
+        Array.isArray(raw.drafts) &&
+        raw.drafts.every(isRecoveredDraft)
         ? (raw as ServerMessage)
         : undefined;
     case "core_identity":

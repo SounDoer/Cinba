@@ -7,6 +7,11 @@
 
 export type ToolStatus = "pending" | "running" | "done" | "error";
 
+export type PendingMessages = {
+  steering: string[];
+  followUp: string[];
+};
+
 export type ViewAction =
   | {
       type: "message_added";
@@ -47,4 +52,5 @@ export type ViewAction =
    */
   | { type: "notice"; text: string }
   | { type: "usage_changed"; totalTokens: number; totalCost: number }
+  | { type: "queue_changed"; steering: string[]; followUp: string[] }
   | { type: "busy_changed"; busy: boolean };

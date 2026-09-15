@@ -177,6 +177,22 @@ test("agent_settled clears busy", () => {
   assert.deepEqual(fold({ type: "agent_settled" }), [{ type: "busy_changed", busy: false }]);
 });
 
+test("queue updates replace the complete pending-message view", () => {
+  const fold = createEventFolder();
+
+  assert.deepEqual(
+    fold({ type: "queue_update", steering: ["change direction"], followUp: ["then test"] }),
+    [
+      {
+        type: "queue_changed",
+        steering: ["change direction"],
+        followUp: ["then test"],
+      },
+    ],
+  );
+  assert.deepEqual(fold({ type: "queue_update", steering: "wrong", followUp: [] }), []);
+});
+
 test("a confirm UI request becomes a confirm action; other kinds become nothing", () => {
   assert.deepEqual(
     foldUiRequest({

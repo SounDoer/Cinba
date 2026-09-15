@@ -8,6 +8,7 @@ import { CoreClient, type CoreConnectionState } from "@cinba/core-client";
 import {
   type ModelRef,
   type ProviderStatus,
+  type RecoveredDraft,
   type Session,
   type SessionSummary,
   type Snapshot,
@@ -23,7 +24,13 @@ export type DirectoryListing = {
   dirs: string[];
 };
 
-const EMPTY: Snapshot = { entries: [], totalTokens: 0, totalCost: 0, busy: false };
+const EMPTY: Snapshot = {
+  entries: [],
+  totalTokens: 0,
+  totalCost: 0,
+  busy: false,
+  queue: { steering: [], followUp: [] },
+};
 
 export function useCore(serverUrl: string) {
   const [snapshot, setSnapshot] = useState<Snapshot>(EMPTY);
@@ -38,9 +45,11 @@ export function useCore(serverUrl: string) {
   const [webToolsError, setWebToolsError] = useState<string | undefined>(undefined);
   const [coreName, setCoreName] = useState("");
   const [connectionState, setConnectionState] = useState<CoreConnectionState>("connecting");
+  const [recoveredDrafts, setRecoveredDrafts] = useState<RecoveredDraft[]>([]);
 
   const clientRef = useRef<CoreClient | undefined>(undefined);
   const mirrorRef = useRef<Session>(createSession());
+  const sessionIdRef = useRef("");
 
   useEffect(() => {
     let active = true;
@@ -54,6 +63,10 @@ export function useCore(serverUrl: string) {
           }
         },
         onSnapshot: (state) => {
+          if (sessionIdRef.current !== "" && sessionIdRef.current !== state.sessionId) {
+            setRecoveredDrafts([]);
+          }
+          sessionIdRef.current = state.sessionId;
           mirrorRef.current = createSession(state.snapshot);
           setSnapshot(state.snapshot);
           setCwd(state.cwd);
@@ -77,6 +90,9 @@ export function useCore(serverUrl: string) {
           setWebToolsError(error);
         },
         onCoreIdentity: setCoreName,
+        onDraftsRecovered: (drafts) => {
+          setRecoveredDrafts((current) => [...current, ...drafts]);
+        },
       },
       { autoReconnect: true },
     );
@@ -98,6 +114,18 @@ export function useCore(serverUrl: string) {
     (text: string) => withClient((client) => client.prompt(text)),
     [withClient],
   );
+  const steer = useCallback(
+    (text: string) => withClient((client) => client.steer(text)),
+    [withClient],
+  );
+  const followUp = useCallback(
+    (text: string) => withClient((client) => client.followUp(text)),
+    [withClient],
+  );
+  const clearQueue = useCallback(() => withClient((client) => client.clearQueue()), [withClient]);
+  const dismissRecoveredDraft = useCallback((index: number) => {
+    setRecoveredDrafts((current) => current.filter((_, candidate) => candidate !== index));
+  }, []);
   const editMessage = useCallback(
     (entryId: string, text: string) => withClient((client) => client.editMessage(entryId, text)),
     [withClient],
@@ -190,7 +218,12 @@ export function useCore(serverUrl: string) {
     providers,
     webToolsStatus,
     webToolsError,
+    recoveredDrafts,
     prompt,
+    steer,
+    followUp,
+    clearQueue,
+    dismissRecoveredDraft,
     editMessage,
     abort,
     respondConfirm,

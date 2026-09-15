@@ -15,6 +15,7 @@ class FakeTransport implements Transport {
   leafId: string | null = null;
   model: { provider: string; id: string } | undefined = { provider: "test", id: "model-1" };
   responses = new Map<string, { success: boolean; error?: unknown }>();
+  queue = { steering: [] as string[], followUp: [] as string[] };
 
   send(line: string): void {
     const command = JSON.parse(line) as {
@@ -40,6 +41,9 @@ class FakeTransport implements Transport {
       data = { entries, leafId: this.leafId };
     } else if (command.type === "get_available_models") {
       data = { models: [{ provider: "test", id: "model-2" }] };
+    } else if (command.type === "clear_queue") {
+      data = this.queue;
+      this.queue = { steering: [], followUp: [] };
     }
     queueMicrotask(() => {
       const response = this.responses.get(command.type);
@@ -269,14 +273,14 @@ test("public session commands hide the Pi transport from callers", async () => {
     transport.commands = [];
 
     registry.prompt(opened, "hello");
-    registry.abort(opened);
+    await registry.abort(opened);
     assert.deepEqual(await registry.listModels(opened), [{ provider: "test", id: "model-2" }]);
     assert.equal(await registry.setModel(opened, { provider: "test", id: "model-2" }), true);
     assert.equal(await registry.rename(opened, "a useful name"), true);
 
     assert.deepEqual(
       transport.commands.map((command) => command.type),
-      ["prompt", "abort", "get_available_models", "set_model", "set_session_name"],
+      ["prompt", "clear_queue", "abort", "get_available_models", "set_model", "set_session_name"],
     );
     assert.equal(opened.model?.id, "model-2");
   } finally {
@@ -310,6 +314,37 @@ test("a refused prompt explains the failure and clears busy", async () => {
     assert.deepEqual(snapshot.entries, [
       { kind: "notice", text: "prompt failed: No model configured" },
     ]);
+  } finally {
+    registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("a rejected steering prompt keeps an already-running session busy", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  const transport = new FakeTransport();
+  transport.responses.set("prompt", { success: false, error: "cannot queue command" });
+  const registry = createSessionRegistry({
+    defaultModel: () => undefined,
+    onActions: () => {},
+    onSnapshot: () => {},
+    launchPi: () => ({
+      pi: new PiClient(transport),
+      failed: new Promise<undefined>(() => {}),
+    }),
+  });
+
+  try {
+    const opened = await registry.open({ cwd });
+    assert(opened);
+    registry.emit(opened, [{ type: "busy_changed", busy: true }]);
+    transport.commands = [];
+
+    registry.prompt(opened, "change direction", "steer");
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(opened.ledger.snapshot().busy, true);
+    assert.equal(transport.commands[0]?.streamingBehavior, "steer");
   } finally {
     registry.closeAll();
     rmSync(cwd, { recursive: true, force: true });
@@ -365,12 +400,82 @@ test("a successful abort clears busy even when Pi sends no settled event", async
     const opened = await registry.open({ cwd });
     assert(opened);
     registry.prompt(opened, "hello");
-    registry.abort(opened);
+    await registry.abort(opened);
     await new Promise((resolve) => setImmediate(resolve));
 
     const snapshot = opened.ledger.snapshot();
     assert.equal(snapshot.busy, false);
     assert.deepEqual(snapshot.entries, [{ kind: "notice", text: "aborted" }]);
+  } finally {
+    registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("abort clears both queues before stopping and returns typed recovered drafts", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  const transport = new FakeTransport();
+  transport.queue = { steering: ["change direction"], followUp: ["then test"] };
+  const registry = createSessionRegistry({
+    defaultModel: () => undefined,
+    onActions: () => {},
+    onSnapshot: () => {},
+    launchPi: () => ({
+      pi: new PiClient(transport),
+      failed: new Promise<undefined>(() => {}),
+    }),
+  });
+
+  try {
+    const opened = await registry.open({ cwd });
+    assert(opened);
+    transport.commands = [];
+
+    const drafts = await registry.abort(opened);
+
+    assert.deepEqual(
+      transport.commands.map((command) => command.type),
+      ["clear_queue", "abort"],
+    );
+    assert.deepEqual(drafts, [
+      { text: "change direction", behavior: "steer" },
+      { text: "then test", behavior: "followUp" },
+    ]);
+  } finally {
+    registry.closeAll();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("abort still stops and reports when queue clearing fails", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  const transport = new FakeTransport();
+  transport.responses.set("clear_queue", { success: false, error: "queue unavailable" });
+  const registry = createSessionRegistry({
+    defaultModel: () => undefined,
+    onActions: () => {},
+    onSnapshot: () => {},
+    launchPi: () => ({
+      pi: new PiClient(transport),
+      failed: new Promise<undefined>(() => {}),
+    }),
+  });
+
+  try {
+    const opened = await registry.open({ cwd });
+    assert(opened);
+    transport.commands = [];
+
+    await registry.abort(opened);
+
+    assert.deepEqual(
+      transport.commands.map((command) => command.type),
+      ["clear_queue", "abort"],
+    );
+    assert.deepEqual(opened.ledger.snapshot().entries, [
+      { kind: "notice", text: "queue clear failed: queue unavailable" },
+      { kind: "notice", text: "aborted" },
+    ]);
   } finally {
     registry.closeAll();
     rmSync(cwd, { recursive: true, force: true });

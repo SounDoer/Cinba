@@ -31,6 +31,7 @@ import {
   COMMANDS,
   type Command,
   type Entry,
+  type RecoveredDraft,
   type Session,
   type SessionSummary,
   type Snapshot,
@@ -78,6 +79,8 @@ class StatusBar implements Component {
   model = "";
   /** Which machine this terminal is talking to. Empty until the core says. */
   core = "";
+  pendingCount = 0;
+  recoveredCount = 0;
 
   invalidate(): void {}
 
@@ -90,12 +93,14 @@ class StatusBar implements Component {
         : `${CORE_COLOURS[nameColourIndex(this.core)]}${BOLD}● ${this.core}${RESET}  `;
     const usage = `${DIM}${this.totalTokens} tokens · $${this.totalCost.toFixed(4)}${RESET}`;
     // Highlight while busy: this line sits pinned at the bottom of a fast-scrolling screen, and all-dim means invisible.
+    const pending = this.pendingCount > 0 ? ` · ${this.pendingCount} queued` : "";
+    const recovered = this.recoveredCount > 0 ? ` · ${this.recoveredCount} drafts (Alt+Up)` : "";
     const hint = this.busy
-      ? `${YELLOW}${BOLD}⏳ answering - press Esc to stop${RESET}`
+      ? `${YELLOW}${BOLD}⏳ answering${pending} - Enter steer · Alt+Enter follow-up · Esc stop${RESET}`
       : `${DIM}/ for commands · ^C exit${RESET}`;
     const model = this.model ? `${DIM} · ${this.model}${RESET}` : "";
     // Truncated by display columns as well; see the note in Transcript.render.
-    return [truncateToWidth(`${where}${usage}${model}    ${hint}`, width)];
+    return [truncateToWidth(`${where}${usage}${model}${recovered}    ${hint}`, width)];
   }
 }
 
@@ -253,6 +258,7 @@ let busy = false;
 let sessionId = "";
 let statusModel = "";
 let exiting = false;
+let recoveredDrafts: RecoveredDraft[] = [];
 
 /**
  * Redraw the whole transcript from the mirror, once the current burst of
@@ -350,6 +356,10 @@ function applyAction(action: ViewAction): void {
       }
       break;
 
+    case "queue_changed":
+      statusBar.pendingCount = action.steering.length + action.followUp.length;
+      break;
+
     // thinking stays hidden in the terminal: it is long and rarely what you came for.
     default:
       break;
@@ -371,6 +381,7 @@ function drawSnapshot(snapshot: Snapshot): void {
   statusBar.model = statusModel;
   busy = snapshot.busy;
   statusBar.busy = snapshot.busy;
+  statusBar.pendingCount = snapshot.queue.steering.length + snapshot.queue.followUp.length;
   tui.requestRender();
 }
 
@@ -475,6 +486,14 @@ const coreClient = new CoreClient(SERVER_URL, {
   },
   onCoreIdentity: (name) => {
     statusBar.core = name;
+    tui.requestRender();
+  },
+  onDraftsRecovered: (drafts) => {
+    recoveredDrafts.push(...drafts);
+    statusBar.recoveredCount = recoveredDrafts.length;
+    transcript.append(
+      `${YELLOW}[Recovered ${drafts.length} queued message${drafts.length === 1 ? "" : "s"}; press Alt+Up to edit]${RESET}`,
+    );
     tui.requestRender();
   },
   onProviderListing: (providers) => {
@@ -626,11 +645,8 @@ function runCommand(command: Command, line: string): void {
   }
 }
 
-promptInput.input.onSubmit = (value: string) => {
-  // No new input while answering, and the box is deliberately NOT cleared:
-  // whatever the user typed during streaming has to survive, or half the point
-  // of typing while watching output is gone.
-  if (busy || confirming) {
+function submitInput(value: string, delivery: "default" | "followUp" = "default"): void {
+  if (confirming) {
     return;
   }
   const text = value.trim();
@@ -639,6 +655,10 @@ promptInput.input.onSubmit = (value: string) => {
   }
 
   if (isCommand(text)) {
+    if (busy) {
+      applyAction({ type: "notice", text: "Commands cannot be queued while answering." });
+      return;
+    }
     // What the menu is pointing at, which is not the first match once the
     // arrows have been used.
     const command = promptInput.pending();
@@ -653,15 +673,27 @@ promptInput.input.onSubmit = (value: string) => {
     return;
   }
 
-  if (!coreClient.prompt(text)) {
+  let sent: boolean;
+  if (!busy) {
+    sent = coreClient.prompt(text);
+  } else if (delivery === "followUp") {
+    sent = coreClient.followUp(text);
+  } else {
+    sent = coreClient.steer(text);
+  }
+  if (!sent) {
     return;
   }
   promptInput.input.setValue("");
 
-  // Go busy immediately rather than waiting for the signal to come back over
-  // the socket. The server sends the same thing; this only locks the input at once.
-  applyAction({ type: "busy_changed", busy: true });
-};
+  if (!busy) {
+    // Go busy immediately rather than waiting for the signal to come back over
+    // the socket. The server sends the same thing; this only updates the hint at once.
+    applyAction({ type: "busy_changed", busy: true });
+  }
+}
+
+promptInput.input.onSubmit = (value: string) => submitInput(value);
 
 // Esc stops an answer in progress. Pressing it while idle does nothing: exiting
 // is Ctrl+C, so a slip of the hand cannot close the conversation.
@@ -682,6 +714,22 @@ function exit(): void {
 tui.addInputListener((data: string) => {
   if (matchesKey(data, "ctrl+c")) {
     exit();
+  }
+
+  if (matchesKey(data, "alt+enter") && promptInput.focused && !confirming) {
+    submitInput(promptInput.input.getValue(), "followUp");
+    return { consume: true };
+  }
+
+  if (matchesKey(data, "alt+up") && promptInput.focused && !confirming) {
+    const restored = recoveredDrafts.shift();
+    if (restored) {
+      const current = promptInput.input.getValue();
+      promptInput.input.setValue(`${current}${current ? "\n\n" : ""}${restored.text}`);
+      statusBar.recoveredCount = recoveredDrafts.length;
+      tui.requestRender();
+    }
+    return { consume: true };
   }
 
   // Accelerators for two of the commands. The slash menu is the discoverable

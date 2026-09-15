@@ -341,6 +341,9 @@ test("the conversation commands go out in protocol form", () => {
   const client = connect(fake, {});
 
   client.prompt("hello");
+  client.steer("change direction");
+  client.followUp("then test");
+  client.clearQueue();
   client.editMessage("entry-1", "fixed hello");
   client.abort();
   client.respondConfirm("u1", false);
@@ -349,11 +352,35 @@ test("the conversation commands go out in protocol form", () => {
     fake.sent.map((line) => JSON.parse(line)),
     [
       { type: "prompt", text: "hello" },
+      { type: "prompt", text: "change direction", streamingBehavior: "steer" },
+      { type: "prompt", text: "then test", streamingBehavior: "followUp" },
+      { type: "clear_queue" },
       { type: "edit_message", entryId: "entry-1", text: "fixed hello" },
       { type: "abort" },
       { type: "respond_confirm", requestId: "u1", confirmed: false },
     ],
   );
+});
+
+test("recovered drafts reach only their dedicated handler", () => {
+  const fake = createFakeSocket();
+  const recovered: unknown[] = [];
+  connect(fake, { onDraftsRecovered: (drafts) => recovered.push(drafts) });
+
+  fake.receive({
+    type: "drafts_recovered",
+    drafts: [
+      { text: "change direction", behavior: "steer" },
+      { text: "then test", behavior: "followUp" },
+    ],
+  });
+
+  assert.deepEqual(recovered, [
+    [
+      { text: "change direction", behavior: "steer" },
+      { text: "then test", behavior: "followUp" },
+    ],
+  ]);
 });
 
 test("listDir goes out in protocol form and the listing reaches the handler", () => {
@@ -389,7 +416,13 @@ test("snapshots and actions reach their respective handlers", () => {
     onActions: (actions) => batches.push(actions),
   });
 
-  const snapshot = { entries: [], totalTokens: 0, totalCost: 0, busy: false };
+  const snapshot = {
+    entries: [],
+    totalTokens: 0,
+    totalCost: 0,
+    busy: false,
+    queue: { steering: [], followUp: [] },
+  };
   fake.receive({ type: "snapshot", snapshot, cwd: "/home/me", sessionId: "s1" });
   fake.receive({ type: "actions", actions: [{ type: "busy_changed", busy: true }] });
 
@@ -485,7 +518,13 @@ test("a snapshot carries the current model alongside the working directory", () 
 
   fake.receive({
     type: "snapshot",
-    snapshot: { entries: [], totalTokens: 0, totalCost: 0, busy: false },
+    snapshot: {
+      entries: [],
+      totalTokens: 0,
+      totalCost: 0,
+      busy: false,
+      queue: { steering: [], followUp: [] },
+    },
     cwd: "/tmp",
     sessionId: "s1",
     model: { provider: "deepseek", id: "deepseek-v4-pro" },

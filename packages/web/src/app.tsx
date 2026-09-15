@@ -130,10 +130,16 @@ export function App({ serverUrl }: { serverUrl: string }) {
           }
           return sent;
         }}
+        onSteer={core.steer}
+        onFollowUp={core.followUp}
+        onClearQueue={core.clearQueue}
         onAbort={core.abort}
         editDraft={editTarget}
         editReady={editTarget === undefined || editingEntryId !== undefined}
         onCancelEdit={() => setStoredEditTarget(undefined)}
+        queue={core.snapshot.queue}
+        recoveredDrafts={core.recoveredDrafts}
+        onDismissRecoveredDraft={core.dismissRecoveredDraft}
       />
 
       {activeOverlay === "provider" ? (

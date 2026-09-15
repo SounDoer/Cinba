@@ -150,6 +150,20 @@ export function createEventFolder(): (event: CoreEvent) => ViewAction[] {
       case "agent_settled":
         return [{ type: "busy_changed", busy: false }];
 
+      case "queue_update":
+        return Array.isArray(event.steering) &&
+          event.steering.every((message) => typeof message === "string") &&
+          Array.isArray(event.followUp) &&
+          event.followUp.every((message) => typeof message === "string")
+          ? [
+              {
+                type: "queue_changed",
+                steering: [...event.steering],
+                followUp: [...event.followUp],
+              },
+            ]
+          : [];
+
       default:
         return [];
     }

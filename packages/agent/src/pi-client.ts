@@ -1,3 +1,4 @@
+import type { PromptStreamingBehavior } from "@cinba/contract";
 import type { Transport } from "./transport.ts";
 
 /** UI methods that expect an answer. The rest (notify, setStatus, ...) are broadcasts. */
@@ -97,8 +98,16 @@ export class PiClient {
     this.#uiHandler = handler;
   }
 
-  prompt(message: string): Promise<CoreResponse> {
-    return this.#send({ type: "prompt", message });
+  prompt(message: string, streamingBehavior?: PromptStreamingBehavior): Promise<CoreResponse> {
+    return this.#send(
+      streamingBehavior === undefined
+        ? { type: "prompt", message }
+        : { type: "prompt", message, streamingBehavior },
+    );
+  }
+
+  clearQueue(): Promise<CoreResponse> {
+    return this.#send({ type: "clear_queue" });
   }
 
   abort(): Promise<CoreResponse> {

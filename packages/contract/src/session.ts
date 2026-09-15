@@ -11,7 +11,7 @@
 // conversation. Basis: VS Code's official webview guidance — the view is
 // stateless, the host owns the state.
 
-import type { ToolStatus, ViewAction } from "./actions.ts";
+import type { PendingMessages, ToolStatus, ViewAction } from "./actions.ts";
 
 export type MessageEntry = {
   kind: "message";
@@ -63,6 +63,7 @@ export type Snapshot = {
   totalTokens: number;
   totalCost: number;
   busy: boolean;
+  queue: PendingMessages;
 };
 
 export type Session = {
@@ -81,6 +82,10 @@ export function createSession(initial?: Snapshot): Session {
   let totalTokens = initial?.totalTokens ?? 0;
   let totalCost = initial?.totalCost ?? 0;
   let busy = initial?.busy ?? false;
+  let queue: PendingMessages = {
+    steering: [...(initial?.queue.steering ?? [])],
+    followUp: [...(initial?.queue.followUp ?? [])],
+  };
 
   function findMessage(messageId: string): MessageEntry | undefined {
     for (let i = entries.length - 1; i >= 0; i--) {
@@ -204,6 +209,10 @@ export function createSession(initial?: Snapshot): Session {
         case "busy_changed":
           busy = action.busy;
           return;
+
+        case "queue_changed":
+          queue = { steering: [...action.steering], followUp: [...action.followUp] };
+          return;
       }
     },
 
@@ -213,6 +222,7 @@ export function createSession(initial?: Snapshot): Session {
         totalTokens,
         totalCost,
         busy,
+        queue: { steering: [...queue.steering], followUp: [...queue.followUp] },
       };
     },
   };

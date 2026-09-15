@@ -7,7 +7,7 @@
 
 export { COMMANDS, commandArgument, isCommand, matchCommands } from "./commands.ts";
 export type { Command, CommandId } from "./commands.ts";
-export type { ToolStatus, ViewAction } from "./actions.ts";
+export type { PendingMessages, ToolStatus, ViewAction } from "./actions.ts";
 export {
   NAME_COLOURS,
   nameColourIndex,
@@ -18,6 +18,8 @@ export {
 export { parseClientMessage, parseServerMessage } from "./protocol.ts";
 export type {
   ClientMessage,
+  PromptStreamingBehavior,
+  RecoveredDraft,
   ModelRef,
   ProviderStatus,
   ServerMessage,

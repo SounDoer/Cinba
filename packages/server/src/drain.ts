@@ -11,7 +11,9 @@ export type DrainController = {
 };
 
 export function canProcessDuringDrain(messageType: string): boolean {
-  return messageType === "abort" || messageType === "respond_confirm";
+  return (
+    messageType === "abort" || messageType === "clear_queue" || messageType === "respond_confirm"
+  );
 }
 
 export function createDrainController(options: {
