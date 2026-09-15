@@ -1,13 +1,13 @@
 ---
 name: cinba-prod
-description: Safely sync completed commits from Cinba's clean local master branch to origin, promote the exact revision to prod, and verify the deployed Core. Use when a finished development stage is ready for production; never use it to prepare or commit unfinished work.
+description: Safely sync completed commits from Cinba's clean local master branch to origin and promote the exact revision to the prod branch. Use when a finished development stage is ready for production; never use it to prepare or commit unfinished work.
 ---
 
 # Cinba Prod
 
-Publish only work that the user has already committed. Keep judgment, previews, confirmation, and
-verification in this skill; keep the production branch mutation in the repository's tested
-`npm run promote` command.
+Publish only work that the user has already committed. Keep judgment, previews, and confirmation
+in this skill; keep the production branch mutation in the repository's tested `npm run promote`
+command. Finishing means synchronizing the remote Git branches, not observing the VPS or Core.
 
 ## Preconditions
 
@@ -21,12 +21,9 @@ Work from the Cinba repository root. Before running quality checks or changing a
 - Stop if local `master` is behind or has diverged from `origin/master`; do not pull, merge, rebase,
   force-push, or repair history.
 - Stop if `origin/prod` cannot fast-forward to the local `master` target.
-- Require `CINBA_SERVER` to identify the remote Core before publishing. Use
-  `node scripts/cinba.ts doctor` to confirm that the configured Core is reachable. Do not substitute
-  a local Core and do not query Core endpoints outside `packages/core-client`.
 
-If `origin/master`, `origin/prod`, and the healthy remote Core already report the target revision,
-report that production is current and make no remote changes.
+If `origin/master` and `origin/prod` already report the target revision, report that both remote
+branches are current and make no remote changes.
 
 ## Preview and check
 
@@ -51,17 +48,10 @@ After confirmation:
 2. Confirm that `origin/master` resolves to the target.
 3. If `origin/prod` is behind the target, run `npm run promote`. Do not reproduce its internal Git
    operations and do not push `prod` directly.
+4. Confirm that both `origin/master` and `origin/prod` resolve to the target revision.
 
 If the `master` push succeeds but promotion fails, report that partial state and stop. Never undo a
 successful push automatically. A later invocation may safely resume from the published revision.
 
-## Verify production
-
-After promotion, periodically run `node scripts/cinba.ts doctor` with the existing `CINBA_SERVER`
-configuration until the remote Core reports the full target revision. Allow up to 20 minutes for
-the VPS timer, checks, draining, and activation. Do not rerun `promote` merely because deployment is
-still pending.
-
-Report success only when the remote Core is healthy and its revision matches the target. If the
-deadline expires or the Core remains unreachable, state clearly that the Git promotion succeeded
-but deployment verification is inconclusive, including the target and last observed revision.
+Report success as soon as both remote branches match the target. Do not inspect `CINBA_SERVER`,
+query deployment or health endpoints, wait for the VPS, or claim that the running Core has changed.
