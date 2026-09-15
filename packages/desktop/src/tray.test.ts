@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createTrayBitmap, createTrayViewModel } from "./tray.ts";
+import { createCoreMenuItems, createTrayBitmap, createTrayViewModel } from "./tray.ts";
 
 test("tray icons are non-empty BGRA bitmaps with transparent corners", () => {
   for (const tone of ["stopped", "running", "busy", "error"] as const) {
@@ -17,9 +17,9 @@ test("tray icons are non-empty BGRA bitmaps with transparent corners", () => {
 
 test("a stopped Core can be started", () => {
   assert.deepEqual(createTrayViewModel({ state: "stopped", running: false, managed: false }), {
-    tooltip: "Cinba Core: stopped",
+    tooltip: "Cinba Local Core: stopped",
     iconTone: "stopped",
-    statusLabel: "Core: stopped",
+    statusLabel: "Local Core: stopped",
     detailLabels: [],
     canStart: true,
     canStop: false,
@@ -37,7 +37,7 @@ test("a managed Core exposes its details and graceful stop", () => {
     safeToStop: false,
   });
 
-  assert.equal(view.statusLabel, "Core: running");
+  assert.equal(view.statusLabel, "Local Core: running");
   assert.equal(view.iconTone, "running");
   assert.deepEqual(view.detailLabels, [
     "PID: 4517",
@@ -71,7 +71,7 @@ test("an external Core is visible but cannot be stopped", () => {
     safeToStop: true,
   });
 
-  assert.equal(view.statusLabel, "Core: external");
+  assert.equal(view.statusLabel, "Local Core: external");
   assert.equal(view.canStop, false);
 });
 
@@ -88,7 +88,7 @@ test("draining and transient operations disable both controls", () => {
 
   assert.equal(draining.iconTone, "busy");
   assert.equal(draining.canStop, false);
-  assert.equal(starting.statusLabel, "Core: starting");
+  assert.equal(starting.statusLabel, "Local Core: starting");
   assert.equal(starting.canStart, false);
 });
 
@@ -99,7 +99,33 @@ test("an error is shown without discarding the last known status", () => {
     "request timed out",
   );
 
-  assert.equal(view.statusLabel, "Core: running");
+  assert.equal(view.statusLabel, "Local Core: running");
   assert.equal(view.iconTone, "error");
   assert.deepEqual(view.detailLabels, ["Error: request timed out"]);
+});
+
+test("the Open Core menu lists local and remote profiles", () => {
+  assert.deepEqual(
+    createCoreMenuItems(
+      [
+        {
+          id: "local",
+          kind: "local",
+          label: "This PC",
+          baseUrl: "http://127.0.0.1:4517/",
+        },
+        {
+          id: "vps",
+          kind: "remote",
+          label: "VPS",
+          baseUrl: "https://cinba-vps.test/",
+        },
+      ],
+      "vps",
+    ),
+    [
+      { profileId: "local", label: "This PC", selected: false },
+      { profileId: "vps", label: "VPS", selected: true },
+    ],
+  );
 });

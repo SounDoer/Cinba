@@ -35,7 +35,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.scripts.json",
     "test": "node --test --experimental-strip-types \"packages/*/src/**/*.test.ts\" \"scripts/**/*.test.ts\"",
     "test:e2e": "node --test --experimental-strip-types \"packages/*/src/**/*.e2e.ts\"",
-    "build": "npm run build --workspace @cinba/web",
+    "build": "npm run build --workspace @cinba/web && npm run build --workspace @cinba/desktop",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e && npm run build"
   },
   "devDependencies": {

@@ -84,7 +84,7 @@ test("help aliases and doctor projects are parsed before the project shorthand",
 test("Desktop has one cross-platform product entry", () => {
   assert.deepEqual(parseCinbaCommand(["desktop"], "example"), { type: "desktop" });
   assert.match(formatHelp(), /cinba desktop/);
-  assert.match(formatHelp(), /Windows or macOS Desktop controller/);
+  assert.match(formatHelp(), /Windows or macOS multi-Core Desktop client/);
   assert.doesNotMatch(formatHelp(), /cinba tray/);
 });
 

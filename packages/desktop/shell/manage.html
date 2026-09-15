@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Manage Cores — Cinba</title>
+  </head>
+  <body class="manager-page">
+    <main class="manager">
+      <header>
+        <p class="eyebrow">Cinba Desktop</p>
+        <h1>Manage Cores</h1>
+        <p class="intro">Desktop remembers the entrances. Each Core still declares its own identity.</p>
+      </header>
+      <div id="problem" class="problem" hidden></div>
+      <button id="recover" class="danger" type="button" hidden>
+        Back up and reset profile settings
+      </button>
+      <section id="profiles" class="profile-list" aria-label="Core profiles"></section>
+      <section class="editor">
+        <h2 id="editor-title">Add remote Core</h2>
+        <form id="profile-form">
+          <input id="profile-id" type="hidden" />
+          <label>
+            <span>Name</span>
+            <input id="label" maxlength="80" placeholder="VPS" required />
+          </label>
+          <label>
+            <span>HTTPS URL</span>
+            <input id="base-url" type="url" placeholder="https://cinba-vps.example.ts.net/" required />
+          </label>
+          <div id="form-message" class="form-message" aria-live="polite"></div>
+          <div class="actions">
+            <button id="save" type="submit">Save</button>
+            <button id="test" class="secondary" type="button">Test Connection</button>
+            <button id="cancel" class="quiet" type="button" hidden>Cancel Edit</button>
+          </div>
+        </form>
+      </section>
+    </main>
+    <script type="module" src="/src/shell/manage.ts"></script>
+  </body>
+</html>

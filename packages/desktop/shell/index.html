@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cinba</title>
+  </head>
+  <body>
+    <header class="toolbar">
+      <span class="brand">Cinba</span>
+      <label class="profile-picker">
+        <span class="sr-only">Core</span>
+        <select id="profile"></select>
+      </label>
+      <span id="status-badge" class="status-badge"></span>
+      <span class="spacer"></span>
+      <button id="retry" class="secondary" type="button" hidden>Retry</button>
+      <button id="manage" class="secondary" type="button">Manage Cores…</button>
+    </header>
+    <main id="offline" class="offline" hidden>
+      <div class="offline-card">
+        <div class="offline-mark">×</div>
+        <h1 id="offline-title">Core unavailable</h1>
+        <p id="offline-message"></p>
+        <div class="actions">
+          <button id="offline-retry" type="button">Retry</button>
+          <button id="offline-manage" class="secondary" type="button">Manage Cores…</button>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="/src/shell/main.ts"></script>
+  </body>
+</html>

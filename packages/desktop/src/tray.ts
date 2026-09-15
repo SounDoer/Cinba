@@ -5,6 +5,8 @@ import {
   inspectLocalCore,
   stopLocalCore,
 } from "@cinba/core-manager";
+import type { CoreProfile } from "./profiles.ts";
+import type { CoreProfileStore } from "./profile-store.ts";
 
 const STATUS_INTERVAL_MS = 2_000;
 const STOPPED: LocalCoreStatus = { state: "stopped", running: false, managed: false };
@@ -22,9 +24,22 @@ export type TrayViewModel = {
 };
 
 export type SystemTrayController = {
-  openWindow(): Promise<void>;
+  openWindow(profileId?: string): Promise<void>;
   dispose(): void;
 };
+
+export type CoreMenuItem = { profileId: string; label: string; selected: boolean };
+
+export function createCoreMenuItems(
+  profiles: CoreProfile[],
+  selectedProfileId: string,
+): CoreMenuItem[] {
+  return profiles.map((profile) => ({
+    profileId: profile.id,
+    label: profile.label,
+    selected: profile.id === selectedProfileId,
+  }));
+}
 
 const ICON_COLORS: Record<TrayIconTone, readonly [red: number, green: number, blue: number]> = {
   stopped: [125, 133, 144],
@@ -93,9 +108,9 @@ export function createTrayViewModel(
   if (operation) {
     const action = operation === "starting" ? "starting" : "stopping";
     return {
-      tooltip: `Cinba Core: ${action}`,
+      tooltip: `Cinba Local Core: ${action}`,
       iconTone: error ? "error" : "busy",
-      statusLabel: `Core: ${action}`,
+      statusLabel: `Local Core: ${action}`,
       detailLabels,
       canStart: false,
       canStop: false,
@@ -104,9 +119,9 @@ export function createTrayViewModel(
 
   if (!status.running) {
     return {
-      tooltip: error ? "Cinba Core: status error" : "Cinba Core: stopped",
+      tooltip: error ? "Cinba Local Core: status error" : "Cinba Local Core: stopped",
       iconTone: error ? "error" : "stopped",
-      statusLabel: "Core: stopped",
+      statusLabel: "Local Core: stopped",
       detailLabels,
       canStart: true,
       canStop: false,
@@ -126,9 +141,9 @@ export function createTrayViewModel(
     iconTone = "error";
   }
   return {
-    tooltip: error ? "Cinba Core: status error" : `Cinba Core: ${state}`,
+    tooltip: error ? "Cinba Local Core: status error" : `Cinba Local Core: ${state}`,
     iconTone,
-    statusLabel: `Core: ${state}`,
+    statusLabel: `Local Core: ${state}`,
     detailLabels,
     canStart: false,
     canStop: status.managed && status.state !== "draining",
@@ -141,7 +156,10 @@ function errorMessage(error: unknown): string {
 
 /** Create the platform tray/menu-bar entry lazily so state mapping stays Node-testable. */
 export async function createSystemTrayController(options: {
-  openWindow: () => Promise<LocalCoreStatus>;
+  openWindow: (profileId?: string) => Promise<void>;
+  openManager: () => Promise<void>;
+  profiles: CoreProfileStore;
+  currentProfileId: () => string;
 }): Promise<SystemTrayController> {
   const { Menu, Tray, app, nativeImage, shell } = await import("electron");
   let status = STOPPED;
@@ -173,21 +191,37 @@ export async function createSystemTrayController(options: {
     tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: "Open Cinba", enabled: !operation, click: () => void openWindow() },
+        {
+          label: "Open Core",
+          submenu: createCoreMenuItems(options.profiles.list(), options.currentProfileId()).map(
+            (item) => ({
+              label: item.label,
+              type: "radio" as const,
+              checked: item.selected,
+              click: () => void openWindow(item.profileId),
+            }),
+          ),
+        },
+        { label: "Manage Cores…", click: () => void options.openManager() },
         { type: "separator" },
         { label: view.statusLabel, enabled: false },
         ...view.detailLabels.map((label) => ({ label, enabled: false }) as const),
         { type: "separator" },
-        { label: "Start Core", enabled: view.canStart, click: () => void startCore() },
+        { label: "Start Local Core", enabled: view.canStart, click: () => void startCore() },
         {
-          label: "Stop Core Gracefully",
+          label: "Stop Local Core Gracefully",
           enabled: view.canStop,
           click: () => void stopCore(),
         },
-        { label: "Refresh Status", enabled: !operation, click: () => void refreshStatus() },
-        { label: "Open Core Log", click: () => void openCoreLog() },
+        {
+          label: "Refresh Local Core Status",
+          enabled: !operation,
+          click: () => void refreshStatus(),
+        },
+        { label: "Open Local Core Log", click: () => void openCoreLog() },
         { type: "separator" },
         {
-          label: "Stop Core and Quit Desktop",
+          label: "Stop Local Core and Quit Desktop",
           enabled: view.canStop && !operation,
           click: () => void stopCoreAndQuit(),
         },
@@ -260,19 +294,21 @@ export async function createSystemTrayController(options: {
     }
   }
 
-  async function openWindow(): Promise<void> {
-    await runOperation("starting", options.openWindow);
+  async function openWindow(profileId?: string): Promise<void> {
+    await options.openWindow(profileId);
   }
 
   tray.on("click", () => void openWindow());
   render();
   void refreshStatus();
   const refreshTimer = setInterval(() => void refreshStatus(), STATUS_INTERVAL_MS);
+  const unsubscribeProfiles = options.profiles.subscribe(() => render());
 
   return {
     openWindow,
     dispose: () => {
       clearInterval(refreshTimer);
+      unsubscribeProfiles();
       tray.destroy();
     },
   };

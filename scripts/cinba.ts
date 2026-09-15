@@ -34,7 +34,7 @@ Usage:
 Commands:
   tui       Open the terminal client; defaults to the current project
   core      Inspect, start, or gracefully stop the shared local Core
-  desktop   Run the Windows or macOS Desktop controller
+  desktop   Run the Windows or macOS multi-Core Desktop client
   doctor    Check the runtime, checkout, project, and effective Core
   help      Show this help
 

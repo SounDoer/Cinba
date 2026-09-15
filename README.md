@@ -123,14 +123,19 @@ On Windows and macOS, the same manager is available from the Desktop controller:
 cinba desktop
 ```
 
-The command builds the Web UI, returns after starting one background Desktop instance, and opens
-Cinba. Windows places the controller in the System Tray; macOS places it in the Menu Bar. Starting
-or opening Cinba through Desktop makes the shared Stable Core persistent so it remains remotely
-available until the user stops it. The controller reports stopped, running, draining, and external
-Core states; offers graceful start and stop controls; and can open the local Core log. Closing the
-window leaves both Desktop and Core available. `Quit Desktop` exits only the controller, while
-`Stop Core and Quit Desktop` drains the Core first. Double-click `cinba-desktop.cmd` on Windows or
-`cinba-desktop.command` on macOS for the same Desktop entry without typing a Terminal command.
+The command builds the Web UI and Desktop shell, returns after starting one background Desktop
+instance, and opens Cinba. Desktop remembers local and remote HTTPS Core profiles, reopens the last
+selection, and keeps its selector and recovery controls available when that Core is offline. Each
+Core still serves its own complete, version-matched Web UI. Windows places the controller in the
+System Tray; macOS places it in the Menu Bar.
+
+Selecting the built-in Local Core starts or promotes the shared Stable Core to persistent lifetime;
+opening a remote Core never starts the local one. Local lifecycle controls report stopped, running,
+draining, and external states, offer graceful start and stop, and open the local log regardless of
+which Core the window shows. Closing the window leaves Desktop and a persistent Local Core
+available. `Quit Desktop` exits only the controller, while `Stop Local Core and Quit Desktop` drains
+the Local Core first. Double-click `cinba-desktop.cmd` on Windows or `cinba-desktop.command` on
+macOS for the same Desktop entry without typing a Terminal command.
 
 For command guidance and read-only environment diagnosis:
 
@@ -200,7 +205,7 @@ master ──► prod ──► deploy ──► releases/current ──► syst
 | `@cinba/extensions`   | Pi extensions, including the mandatory permission gate                   |
 | `@cinba/web`          | React Web interface                                                      |
 | `@cinba/tui`          | Terminal interface built with `pi-tui`                                   |
-| `@cinba/desktop`      | Electron host and Windows System Tray or macOS Menu Bar controller       |
+| `@cinba/desktop`      | Electron multi-Core client and local Core tray/menu-bar controller       |
 | `@cinba/deploy`       | Safe release preparation, activation, verification, and rollback         |
 
 Stable runtime configuration and Pi data live outside the repository in `~/.cinba` and `~/.pi`.

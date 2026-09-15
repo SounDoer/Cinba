@@ -282,6 +282,8 @@ export async function launchDesktop(): Promise<void> {
   await withLaunchLifecycle(async () => {
     console.log("[launcher] Building the web application...");
     await runToCompletion([VITE_ENTRY, "build"], WEB_ROOT);
+    console.log("[launcher] Building the Desktop shell...");
+    await runToCompletion([VITE_ENTRY, "build"], DESKTOP_ROOT);
 
     await new Promise<void>((resolve, reject) => {
       const child = spawn(process.execPath, [ELECTRON_CLI, DESKTOP_ROOT], {

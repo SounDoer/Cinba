@@ -1,0 +1,263 @@
+:root {
+  color: #17202b;
+  background: #f4f6f8;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+select,
+input {
+  font: inherit;
+}
+
+button,
+select {
+  border: 1px solid #c9d0d8;
+  border-radius: 8px;
+  background: #fff;
+  color: #17202b;
+}
+
+button {
+  cursor: pointer;
+  padding: 7px 12px;
+  background: #285cc4;
+  border-color: #285cc4;
+  color: #fff;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.secondary,
+.quiet {
+  background: #fff;
+  border-color: #c9d0d8;
+  color: #273445;
+}
+
+.quiet {
+  padding: 5px 8px;
+}
+
+.danger {
+  color: #a12c35;
+}
+
+.toolbar {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  background: rgba(250, 251, 252, 0.97);
+  border-bottom: 1px solid #dce1e6;
+}
+
+.brand {
+  font-weight: 760;
+  letter-spacing: -0.02em;
+}
+
+.profile-picker select {
+  min-width: 170px;
+  padding: 7px 30px 7px 10px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.status-badge {
+  color: #627184;
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.status-badge[data-status="online"]::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #2c9a58;
+}
+
+.offline {
+  min-height: calc(100vh - 52px);
+  padding: 64px 24px;
+}
+
+.offline-card {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 34px;
+  border: 1px solid #dce1e6;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 16px 50px rgba(26, 39, 54, 0.08);
+}
+
+.offline-mark {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #fbeaec;
+  color: #a12c35;
+  font-size: 22px;
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: 8px;
+  font-size: 25px;
+}
+
+h2 {
+  font-size: 17px;
+}
+
+.offline-card h1 {
+  margin-top: 18px;
+}
+
+.offline-card p,
+.intro,
+.profile-card span {
+  color: #657386;
+}
+
+.actions,
+.card-actions {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+
+.manager-page {
+  min-height: 100vh;
+  background: #f4f6f8;
+}
+
+.manager {
+  width: min(720px, calc(100% - 36px));
+  margin: 0 auto;
+  padding: 30px 0 44px;
+}
+
+.eyebrow {
+  margin-bottom: 4px;
+  color: #285cc4;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.profile-list {
+  display: grid;
+  gap: 10px;
+  margin: 24px 0;
+}
+
+.profile-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 16px;
+  border: 1px solid #dce1e6;
+  border-radius: 11px;
+  background: #fff;
+}
+
+.profile-card strong,
+.profile-card span {
+  display: block;
+}
+
+.profile-card span {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.editor {
+  padding: 20px;
+  border: 1px solid #dce1e6;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.editor label {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  color: #3b495b;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.editor input {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #c9d0d8;
+  border-radius: 8px;
+  color: #17202b;
+}
+
+.form-message,
+.problem {
+  min-height: 20px;
+  margin: 4px 0 12px;
+  color: #a12c35;
+  font-size: 13px;
+}
+
+.problem {
+  padding: 10px 12px;
+  border: 1px solid #efc4c8;
+  border-radius: 8px;
+  background: #fff4f5;
+}
+
+.fixed-label {
+  color: #778496;
+  font-size: 12px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
