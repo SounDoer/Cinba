@@ -44,6 +44,16 @@ export {
   createSyncStore,
   EnrollmentAuthenticationError,
   SettingsConflictError,
+  SyncMaintenanceError,
   SyncStoreUnavailableError,
 } from "./store/sync-store.ts";
 export type { SyncStore, SyncStoreOptions } from "./store/sync-store.ts";
+export {
+  backupSyncState,
+  inspectSyncState,
+  restoreSyncState,
+  syncMaintenancePath,
+} from "./services/backup-service.ts";
+export type { SyncStateStatus } from "./services/backup-service.ts";
+export { createSyncServer, defaultSyncStateDirectory, runSyncServer } from "./server.ts";
+export type { SyncServerOptions } from "./server.ts";

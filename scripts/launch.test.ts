@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { browserOpenCommand, createDevelopmentEnvironment } from "./launch.ts";
+import {
+  browserOpenCommand,
+  createDevelopmentEnvironment,
+  createSyncDevelopmentEnvironment,
+} from "./launch.ts";
 
 test("the Dev Core receives an isolated port, state directory, and Pi agent directory", () => {
   const home = resolve("example-home");
@@ -27,6 +31,15 @@ test("the Dev Core does not inherit stable web search credentials", () => {
 
   assert.equal(environment.EXA_API_KEY, undefined);
   assert.equal(environment.BRAVE_SEARCH_API_KEY, undefined);
+  assert.equal(environment.PATH, "/usr/bin");
+});
+
+test("Dev Sync uses a state directory and port isolated from stable Sync and Dev Core", () => {
+  const home = resolve("example-home");
+  const environment = createSyncDevelopmentEnvironment(home, { PATH: "/usr/bin" });
+  assert.equal(environment.CINBA_SYNC_STATE_DIR, join(home, ".cinba-sync", "dev"));
+  assert.equal(environment.CINBA_SYNC_PORT, "4519");
+  assert.equal(environment.CINBA_SYNC_PUBLIC_ORIGIN, "http://127.0.0.1:4519");
   assert.equal(environment.PATH, "/usr/bin");
 });
 

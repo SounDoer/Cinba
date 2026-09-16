@@ -38,6 +38,13 @@ export class SyncStoreUnavailableError extends Error {
   }
 }
 
+export class SyncMaintenanceError extends Error {
+  constructor() {
+    super("Sync Server is in read-only maintenance mode");
+    this.name = "SyncMaintenanceError";
+  }
+}
+
 export class SettingsConflictError extends Error {
   readonly currentSettingsRevision: number;
 
@@ -65,6 +72,7 @@ export class EnrollmentAuthenticationError extends Error {
 export type SyncStoreOptions = {
   now?: () => Date;
   atomicWrite?: AtomicWriteOptions;
+  readOnly?: () => boolean;
 };
 
 export type SyncStore = {
@@ -89,6 +97,7 @@ export type SyncStore = {
   ): Promise<void>;
   revokeCore(coreId: string): Promise<void>;
   authenticationState(): "setup-required" | "ready";
+  authenticationMarker(): string;
   localSetupCode(): string | undefined;
   verifyAdministratorPassword(password: string): boolean;
   completeAdministratorSetup(setupCode: string, password: string): Promise<boolean>;
@@ -158,6 +167,7 @@ export function createSyncStore(directory: string, options: SyncStoreOptions = {
   const now = options.now ?? (() => new Date());
   let key: Buffer | undefined;
   let state: SyncState | undefined;
+  let stateContents: string | undefined;
   let loadProblem: SyncStoreUnavailableError | undefined;
   let createdKey = false;
 
@@ -170,6 +180,7 @@ export function createSyncStore(directory: string, options: SyncStoreOptions = {
       writePrivateFileOnce(keyPath, key);
       createdKey = true;
       replaceJsonAtomically(statePath, state, parseSyncState, options.atomicWrite);
+      stateContents = readFileSync(statePath, "utf8");
     } else if (!stateExists || !keyExists) {
       throw new Error("state.json and credential-key must exist together");
     } else {
@@ -177,7 +188,8 @@ export function createSyncStore(directory: string, options: SyncStoreOptions = {
       if (key.byteLength !== 32) {
         throw new Error("credential-key has an invalid length");
       }
-      state = parseSyncState(JSON.parse(readFileSync(statePath, "utf8")) as unknown);
+      stateContents = readFileSync(statePath, "utf8");
+      state = parseSyncState(JSON.parse(stateContents) as unknown);
       for (const envelope of Object.values(state.credentials)) {
         decryptCredential(envelope, key);
       }
@@ -209,6 +221,28 @@ export function createSyncStore(directory: string, options: SyncStoreOptions = {
     if (!state || !key || loadProblem) {
       throw loadProblem ?? new SyncStoreUnavailableError();
     }
+    const diskContents = readFileSync(statePath, "utf8");
+    if (diskContents !== stateContents) {
+      const diskKey = readFileSync(keyPath);
+      if (diskKey.byteLength !== 32) {
+        throw new SyncStoreUnavailableError();
+      }
+      const diskState = parseSyncState(JSON.parse(diskContents) as unknown);
+      for (const envelope of Object.values(diskState.credentials)) {
+        decryptCredential(envelope, diskKey);
+      }
+      if (diskState.setupCodeDisplay) {
+        decryptCredential(diskState.setupCodeDisplay, diskKey);
+      }
+      for (const enrollment of diskState.enrollments) {
+        if (enrollment.credentialDelivery) {
+          decryptCredential(enrollment.credentialDelivery, diskKey);
+        }
+      }
+      key = diskKey;
+      state = diskState;
+      stateContents = diskContents;
+    }
     return { state, key };
   }
 
@@ -216,10 +250,16 @@ export function createSyncStore(directory: string, options: SyncStoreOptions = {
     parseSyncState(next);
     replaceJsonAtomically(statePath, next, parseSyncState, options.atomicWrite);
     state = next;
+    stateContents = readFileSync(statePath, "utf8");
   }
 
   function enqueue<T>(mutation: () => T): Promise<T> {
-    const result = mutationTail.then(mutation);
+    const result = mutationTail.then(() => {
+      if (options.readOnly?.()) {
+        throw new SyncMaintenanceError();
+      }
+      return mutation();
+    });
     mutationTail = result.then(
       () => undefined,
       () => undefined,
@@ -515,6 +555,10 @@ export function createSyncStore(directory: string, options: SyncStoreOptions = {
         commit(next);
       }),
     authenticationState: () => (requireState().state.administrator ? "ready" : "setup-required"),
+    authenticationMarker: () => {
+      const current = requireState().state;
+      return `${current.serverId}:${current.administrator?.digest ?? current.setupCode?.digest ?? "missing"}`;
+    },
     localSetupCode: () => {
       const current = requireState();
       return current.state.setupCodeDisplay

@@ -18,18 +18,20 @@ const CORE_ENTRY = join(REPOSITORY_ROOT, "packages", "server", "src", "index.ts"
 const TUI_ENTRY = join(REPOSITORY_ROOT, "packages", "tui", "src", "index.ts");
 const WEB_ROOT = join(REPOSITORY_ROOT, "packages", "web");
 const DESKTOP_ROOT = join(REPOSITORY_ROOT, "packages", "desktop");
+const SYNC_ENTRY = join(REPOSITORY_ROOT, "packages", "sync-server", "src", "service-entry.ts");
 const VITE_ENTRY = join(REPOSITORY_ROOT, "node_modules", "vite", "bin", "vite.js");
 const ELECTRON_CLI = join(REPOSITORY_ROOT, "node_modules", "electron", "cli.js");
 
 const STABLE_CORE_PORT = 4517;
 const DEV_CORE_PORT = 4518;
 const WEB_PORT = 5173;
+const DEV_SYNC_PORT = 4519;
 const STABLE_CORE_URL = `http://127.0.0.1:${STABLE_CORE_PORT}/`;
 const DEV_CORE_URL = `http://127.0.0.1:${DEV_CORE_PORT}/`;
 const DEV_URL = `http://127.0.0.1:${WEB_PORT}/`;
 const READY_TIMEOUT_MS = 30_000;
 
-type Mode = "start" | "desktop" | "dev" | "tui";
+type Mode = "start" | "desktop" | "dev" | "sync" | "tui";
 
 const children = new Set<ChildProcess>();
 let stopping = false;
@@ -157,6 +159,37 @@ export function createDevelopmentEnvironment(
     CINBA_SYNC_CREDENTIAL_SOURCE: "local",
     PI_CODING_AGENT_DIR: join(stateDirectory, "pi-agent"),
   };
+}
+
+export function createSyncDevelopmentEnvironment(
+  homeDirectory = homedir(),
+  environment: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  return {
+    ...environment,
+    CINBA_SYNC_HOST: "127.0.0.1",
+    CINBA_SYNC_PORT: String(DEV_SYNC_PORT),
+    CINBA_SYNC_PUBLIC_ORIGIN: `http://127.0.0.1:${DEV_SYNC_PORT}`,
+    CINBA_SYNC_STATE_DIR: join(homeDirectory, ".cinba-sync", "dev"),
+  };
+}
+
+export async function launchSyncDevelopment(): Promise<void> {
+  await withLaunchLifecycle(async () => {
+    await requireFreePort(DEV_SYNC_PORT, "Cinba development Sync service");
+    console.log("[launcher] Starting the isolated persistent Dev Sync service...");
+    const sync = run(["--watch", SYNC_ENTRY], { env: createSyncDevelopmentEnvironment() });
+    await waitUntilReachable(
+      `http://127.0.0.1:${DEV_SYNC_PORT}/health`,
+      "Cinba development Sync service",
+    );
+    console.log(`[launcher] Development Sync is ready at http://127.0.0.1:${DEV_SYNC_PORT}/`);
+    console.log("[launcher] Press Ctrl+C once to stop this development process.");
+    const code = await waitForExit(sync);
+    if (code !== 0 && !stopping) {
+      throw new Error(`Sync exited with code ${code}`);
+    }
+  });
 }
 
 async function openBrowser(url: string): Promise<void> {
@@ -304,10 +337,16 @@ export async function launchDesktop(): Promise<void> {
 }
 
 function readMode(value: string | undefined): Mode {
-  if (value === "start" || value === "desktop" || value === "dev" || value === "tui") {
+  if (
+    value === "start" ||
+    value === "desktop" ||
+    value === "dev" ||
+    value === "sync" ||
+    value === "tui"
+  ) {
     return value;
   }
-  throw new Error("usage: node scripts/launch.ts <start|desktop|dev|tui> [working-directory]");
+  throw new Error("usage: node scripts/launch.ts <start|desktop|dev|sync|tui> [working-directory]");
 }
 
 async function main(): Promise<void> {
@@ -321,6 +360,9 @@ async function main(): Promise<void> {
   }
   if (mode === "dev") {
     await launchDevelopment();
+  }
+  if (mode === "sync") {
+    await launchSyncDevelopment();
   }
   if (mode === "tui") {
     await launchTui(process.argv[3]);

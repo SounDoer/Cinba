@@ -7,6 +7,7 @@ import {
   isDirectExecution,
   parseCinbaCommand,
   runCoreCommand,
+  runSyncCommand,
 } from "./cinba.ts";
 
 test("the npm junction path is recognized as direct command execution", () => {
@@ -63,6 +64,37 @@ test("Core subcommands are parsed independently of TUI commands", () => {
   assert.throws(() => parseCinbaCommand(["tui", "one", "two"], "example"), {
     message: "run 'cinba help' for usage",
   });
+});
+
+test("Sync subcommands keep local archive options explicit", () => {
+  assert.deepEqual(parseCinbaCommand(["sync", "serve"], "example"), {
+    type: "sync",
+    action: "serve",
+  });
+  assert.deepEqual(parseCinbaCommand(["sync", "status"], "example"), {
+    type: "sync",
+    action: "status",
+  });
+  assert.deepEqual(parseCinbaCommand(["sync", "backup", "state.backup"], "example"), {
+    type: "sync",
+    action: "backup",
+    path: resolve("state.backup"),
+  });
+  assert.deepEqual(parseCinbaCommand(["sync", "restore", "state.backup", "--force"], "example"), {
+    type: "sync",
+    action: "restore",
+    path: resolve("state.backup"),
+    force: true,
+  });
+  assert.throws(() => parseCinbaCommand(["sync", "restore"], "example"), /help/);
+});
+
+test("Sync status does not initialize an absent state directory", async () => {
+  const root = resolve("missing-sync-state-for-test");
+  assert.equal(
+    await runSyncCommand({ type: "sync", action: "status" }, { CINBA_SYNC_STATE_DIR: root }),
+    "Cinba Sync: not initialized",
+  );
 });
 
 test("help aliases and doctor projects are parsed before the project shorthand", () => {

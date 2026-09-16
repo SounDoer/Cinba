@@ -19,6 +19,7 @@ import {
   CoreAuthenticationError,
   EnrollmentAuthenticationError,
   SettingsConflictError,
+  SyncMaintenanceError,
   type SyncStore,
 } from "../store/sync-store.ts";
 import { createAdministratorAuthHandler } from "./administrator-auth-routes.ts";
@@ -406,6 +407,8 @@ export function createSyncApiHandler(options: {
         sendError(response, 401, "unauthorized");
       } else if (error instanceof SettingsConflictError) {
         sendError(response, 409, "conflict");
+      } else if (error instanceof SyncMaintenanceError) {
+        sendError(response, 503, "unavailable", true);
       } else {
         sendError(response, 400, "bad_request");
       }

@@ -58,6 +58,7 @@ export class AdministratorAuthService {
   private readonly secureCookie: boolean;
   private readonly sessions: AdministratorSessions;
   private readonly attempts: AttemptLimiter;
+  private authenticationMarker: string;
 
   constructor(options: {
     store: SyncStore;
@@ -72,6 +73,16 @@ export class AdministratorAuthService {
     this.secureCookie = origin.secure;
     this.sessions = options.sessions ?? new AdministratorSessions();
     this.attempts = options.attempts ?? new AttemptLimiter();
+    this.authenticationMarker = this.store.authenticationMarker();
+  }
+
+  private refreshAuthenticationState(): void {
+    const marker = this.store.authenticationMarker();
+    if (marker !== this.authenticationMarker) {
+      this.sessions.clear();
+      this.attempts.clearAll();
+      this.authenticationMarker = marker;
+    }
   }
 
   private sameOrigin(origin: string | undefined): boolean {
@@ -86,6 +97,7 @@ export class AdministratorAuthService {
   }
 
   private success(): AuthenticationSuccess {
+    this.refreshAuthenticationState();
     const session = this.sessions.create();
     return {
       ok: true,
@@ -103,6 +115,7 @@ export class AdministratorAuthService {
   }
 
   status(cookie: string | undefined): AdministratorStatus {
+    this.refreshAuthenticationState();
     const session = this.sessions.get(sessionIdFromCookie(cookie));
     if (session) {
       return { version: 1, state: "authenticated", csrfToken: session.csrfToken };
@@ -115,6 +128,7 @@ export class AdministratorAuthService {
     password: string,
     security: RequestSecurity,
   ): Promise<AuthenticationResult> {
+    this.refreshAuthenticationState();
     if (!this.sameOrigin(security.origin)) {
       return { ok: false, status: 403, code: "forbidden" };
     }
@@ -136,6 +150,7 @@ export class AdministratorAuthService {
   }
 
   login(password: string, security: RequestSecurity): AuthenticationResult {
+    this.refreshAuthenticationState();
     if (!this.sameOrigin(security.origin)) {
       return { ok: false, status: 403, code: "forbidden" };
     }
@@ -156,6 +171,7 @@ export class AdministratorAuthService {
   authorizeWrite(
     security: RequestSecurity,
   ): AuthenticationFailure | { ok: true; sessionId: string } {
+    this.refreshAuthenticationState();
     if (!this.sameOrigin(security.origin)) {
       return { ok: false, status: 403, code: "forbidden" };
     }
@@ -173,6 +189,7 @@ export class AdministratorAuthService {
   authorizeRead(
     cookie: string | undefined,
   ): AuthenticationFailure | { ok: true; sessionId: string } {
+    this.refreshAuthenticationState();
     const sessionId = sessionIdFromCookie(cookie);
     if (!sessionId || !this.sessions.get(sessionId)) {
       return { ok: false, status: 401, code: "unauthorized" };
@@ -193,6 +210,7 @@ export class AdministratorAuthService {
     const setupCode = await this.store.resetAdministrator();
     this.sessions.clear();
     this.attempts.clearAll();
+    this.authenticationMarker = this.store.authenticationMarker();
     return setupCode;
   }
 }
