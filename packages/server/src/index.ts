@@ -43,6 +43,7 @@ import { LOCAL_SOURCES } from "./effective-settings.ts";
 import { createInstanceOverrideStore } from "./instance-override.ts";
 import { createLocalSettingsStore } from "./local-settings.ts";
 import { createProjectTrustGate } from "./project-trust-gate.ts";
+import { effectiveProviderStatuses } from "./provider-status.ts";
 import { resolveCinbaStateDirectory } from "./runtime-paths.ts";
 import { createServerRuntime } from "./server-runtime.ts";
 import { SERVICE_IDLE_TIMEOUT_MS, assessServiceIdle, readCoreLifetime } from "./service-idle.ts";
@@ -67,6 +68,7 @@ import { createWebToolsService } from "./web-tools-service.ts";
 import {
   type ClientMessage,
   type ModelRef,
+  type ProviderStatus,
   type ServerMessage,
   parseClientMessage,
 } from "@cinba/contract";
@@ -283,7 +285,19 @@ const sessions = createSessionRegistry({
   },
 });
 
-const credentials = createCredentialService({ onChanged: markCredentialsStale });
+const credentials = createCredentialService({
+  onChanged: markCredentialsStale,
+  canConfigure: () => syncConnection.get()?.sources.credentials !== "sync",
+});
+
+async function listEffectiveProviders(): Promise<ProviderStatus[]> {
+  const source = syncConnection.get()?.sources.credentials ?? "local";
+  return effectiveProviderStatuses(
+    await credentials.list(),
+    source,
+    new Set(source === "sync" ? Object.keys(sync.snapshot()?.credentials ?? {}) : []),
+  );
+}
 const webTools = createWebToolsService({
   getPrimary: () => effectiveSettings().webTools.searchPrimary,
   getSources: () => syncConnection.get()?.sources ?? LOCAL_SOURCES,
@@ -965,7 +979,7 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
 
     case "list_providers":
       // Status only: which providers are usable. Never how.
-      sendTo(socket, { type: "provider_listing", providers: await credentials.list() });
+      sendTo(socket, { type: "provider_listing", providers: await listEffectiveProviders() });
       return;
 
     case "set_api_key": {
@@ -973,7 +987,7 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
       if (current) {
         sessions.emit(current, [{ type: "notice", text: result.notice }]);
       }
-      sendTo(socket, { type: "provider_listing", providers: await credentials.list() });
+      sendTo(socket, { type: "provider_listing", providers: await listEffectiveProviders() });
       return;
     }
 
@@ -982,7 +996,7 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
       if (current) {
         sessions.emit(current, [{ type: "notice", text: result.notice }]);
       }
-      sendTo(socket, { type: "provider_listing", providers: await credentials.list() });
+      sendTo(socket, { type: "provider_listing", providers: await listEffectiveProviders() });
       return;
     }
 

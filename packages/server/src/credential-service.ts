@@ -20,6 +20,7 @@ export type CredentialService = {
 
 export type CredentialServiceOptions = {
   onChanged: () => void;
+  canConfigure?: () => boolean;
   listProviders?: () => Promise<ProviderStatus[]>;
   setApiKey?: (providerId: string, apiKey: string) => Promise<void>;
   clearCredential?: (providerId: string) => Promise<void>;
@@ -34,6 +35,9 @@ export function createCredentialService(options: CredentialServiceOptions): Cred
     list: listProviders,
 
     async configure(providerId, apiKey) {
+      if (options.canConfigure?.() === false) {
+        return { success: false, notice: "API keys are managed by Cinba Sync" };
+      }
       try {
         await setApiKey(providerId, apiKey);
         options.onChanged();

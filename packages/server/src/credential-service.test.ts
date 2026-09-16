@@ -36,6 +36,27 @@ test("a failed configuration reports the reason without announcing a change", as
   assert.equal(changes, 0);
 });
 
+test("Shared Credentials mode refuses local API keys before touching storage", async () => {
+  let stored = false;
+  let changed = false;
+  const service = createCredentialService({
+    canConfigure: () => false,
+    onChanged: () => {
+      changed = true;
+    },
+    setApiKey: async () => {
+      stored = true;
+    },
+  });
+
+  assert.deepEqual(await service.configure("deepseek", "must-not-be-stored"), {
+    success: false,
+    notice: "API keys are managed by Cinba Sync",
+  });
+  assert.equal(stored, false);
+  assert.equal(changed, false);
+});
+
 test("removing clears the credential before announcing the change", async () => {
   const calls: string[] = [];
   const service = createCredentialService({
