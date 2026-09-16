@@ -286,12 +286,24 @@ const sessions = createSessionRegistry({
 const credentials = createCredentialService({ onChanged: markCredentialsStale });
 const webTools = createWebToolsService({
   getPrimary: () => effectiveSettings().webTools.searchPrimary,
+  getSources: () => syncConnection.get()?.sources ?? LOCAL_SOURCES,
   setPrimary: (primary) => {
     localSettings.setWebSearchPrimary(primary);
     writeEffectiveWebToolsRuntime();
   },
   credentials: {
-    ...localWebCredentials,
+    getCredentialStatus: (provider) => {
+      const local = localWebCredentials.getCredentialStatus(provider);
+      if (syncConnection.get()?.sources.credentials !== "sync") {
+        return local;
+      }
+      const configured = sync.snapshot()?.credentials?.[provider] !== undefined;
+      return {
+        configured,
+        ...(configured ? { source: "sync" as const } : {}),
+        hasStoredCredential: local.hasStoredCredential,
+      };
+    },
     setApiKey: (provider, apiKey) => {
       localWebCredentials.setApiKey(provider, apiKey);
       writeEffectiveWebToolsRuntime();

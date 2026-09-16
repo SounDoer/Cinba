@@ -4,6 +4,7 @@ import type {
   WebSearchPrimary,
   WebSearchProviderId,
   WebSearchProviderStatus,
+  WebToolsConfigurationSource,
   WebToolsStatus,
 } from "@cinba/contract";
 
@@ -22,6 +23,10 @@ export type WebToolsCredentialStore = {
 export type WebToolsServiceOptions = {
   getPrimary(): WebSearchPrimary;
   setPrimary(primary: WebSearchPrimary): void;
+  getSources?(): {
+    settings: WebToolsConfigurationSource;
+    credentials: WebToolsConfigurationSource;
+  };
   credentials: WebToolsCredentialStore;
 };
 
@@ -50,6 +55,7 @@ function providerStatus(
 export function createWebToolsService(options: WebToolsServiceOptions): WebToolsService {
   function getStatus(): WebToolsStatus {
     const primary = options.getPrimary();
+    const sources = options.getSources?.() ?? { settings: "local", credentials: "local" };
     const exa = providerStatus("exa", "Exa", options.credentials.getCredentialStatus("exa"));
     const brave = providerStatus(
       "brave",
@@ -77,20 +83,31 @@ export function createWebToolsService(options: WebToolsServiceOptions): WebTools
       primary,
       effectiveOrder: preferred.filter((provider) => configured.has(provider)),
       providers,
+      settingsSource: sources.settings,
+      credentialSource: sources.credentials,
     };
   }
 
   return {
     getStatus,
     configure(provider, apiKey) {
+      if (options.getSources?.().credentials === "sync") {
+        throw new Error("Web search credentials are managed by Sync");
+      }
       options.credentials.setApiKey(provider, apiKey);
       return getStatus();
     },
     remove(provider) {
+      if (options.getSources?.().credentials === "sync") {
+        throw new Error("Web search credentials are managed by Sync");
+      }
       options.credentials.clearApiKey(provider);
       return getStatus();
     },
     choosePrimary(primary) {
+      if (options.getSources?.().settings === "sync") {
+        throw new Error("Web search settings are managed by Sync");
+      }
       options.setPrimary(primary);
       return getStatus();
     },

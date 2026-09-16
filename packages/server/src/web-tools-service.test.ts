@@ -26,6 +26,8 @@ test("status exposes credential metadata and the providers that will actually be
   assert.deepEqual(status, {
     primary: "exa",
     effectiveOrder: ["brave", "duckduckgo"],
+    settingsSource: "local",
+    credentialSource: "local",
     providers: [
       {
         id: "exa",
@@ -52,6 +54,29 @@ test("status exposes credential metadata and the providers that will actually be
     ],
   });
   assert.equal(JSON.stringify(status).includes("apiKey"), false);
+});
+
+test("shared sources report effective credentials and refuse local mutations", () => {
+  const service = createWebToolsService({
+    getPrimary: () => "auto",
+    setPrimary: () => assert.fail("must not write Local Settings"),
+    getSources: () => ({ settings: "sync", credentials: "sync" }),
+    credentials: {
+      getCredentialStatus: (provider) => ({
+        configured: provider === "exa",
+        source: provider === "exa" ? "sync" : undefined,
+        hasStoredCredential: false,
+      }),
+      setApiKey: () => assert.fail("must not write Local Credentials"),
+      clearApiKey: () => assert.fail("must not write Local Credentials"),
+    },
+  });
+
+  assert.deepEqual(service.getStatus().effectiveOrder, ["exa", "duckduckgo"]);
+  assert.equal(service.getStatus().providers[0]?.source, "sync");
+  assert.throws(() => service.configure("exa", "secret"), /managed by Sync/);
+  assert.throws(() => service.remove("exa"), /managed by Sync/);
+  assert.throws(() => service.choosePrimary("exa"), /managed by Sync/);
 });
 
 test("mutations use the credential store and immediately return fresh status", () => {
