@@ -129,13 +129,14 @@ selection, and keeps its selector and recovery controls available when that Core
 Core still serves its own complete, version-matched Web UI. Windows places the controller in the
 System Tray; macOS places it in the Menu Bar.
 
-Selecting the built-in Local Core starts or promotes the shared Stable Core to persistent lifetime;
+Selecting the built-in Local Core ensures that the shared Stable Core is running in on-demand mode;
 opening a remote Core never starts the local one. Local lifecycle controls report stopped, running,
 draining, and external states, offer graceful start and stop, and open the local log regardless of
-which Core the window shows. Closing the window leaves Desktop and a persistent Local Core
-available. `Quit Desktop` exits only the controller, while `Stop Local Core and Quit Desktop` drains
-the Local Core first. Double-click `cinba-desktop.cmd` on Windows or `cinba-desktop.command` on
-macOS for the same Desktop entry without typing a Terminal command.
+which Core the window shows. Closing the window or choosing `Quit Desktop` exits only the
+controller. The Local Core continues while another client or task is using it, then stops after the
+existing safe idle period. To stop it immediately, use `Stop Local Core Gracefully` before quitting.
+Double-click `cinba-desktop.cmd` on Windows or `cinba-desktop.command` on macOS for the same Desktop
+entry without typing a Terminal command.
 
 For command guidance and read-only environment diagnosis:
 

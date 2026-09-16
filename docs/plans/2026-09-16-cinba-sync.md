@@ -1,7 +1,8 @@
 # Cinba Sync 实施计划
 
 日期：2026-09-16  
-状态：待实施  
+状态：代码实施完成；自动化验收通过
+实机验收：仍需完成的项目见 `docs/notes/2026-09-16-cinba-sync-deployment.md`
 对应设计：`docs/specs/2026-09-16-cinba-sync-design.md`
 
 ## 目标与完成标准
