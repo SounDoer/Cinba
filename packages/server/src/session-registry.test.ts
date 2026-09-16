@@ -25,6 +25,7 @@ class FakeTransport implements Transport {
   };
   compactResult = { tokensBefore: 32_000, estimatedTokensAfter: 12_000 };
   slashCommands: unknown[] = [];
+  sessionId = "session-1";
 
   send(line: string): void {
     const command = JSON.parse(line) as {
@@ -47,7 +48,7 @@ class FakeTransport implements Transport {
     let data: unknown;
     if (command.type === "get_state") {
       data = {
-        sessionId: "session-1",
+        sessionId: this.sessionId,
         thinkingLevel: this.thinkingLevel,
         ...(this.model ? { model: this.model } : {}),
       };
@@ -137,6 +138,47 @@ test("open owns a live session and stop releases its Pi", async () => {
     registry.closeAll();
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test("credential rotation affects only subsequently launched Pi processes", async (context) => {
+  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+  context.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const first = new FakeTransport();
+  const second = new FakeTransport();
+  second.sessionId = "session-2";
+  let credential = "first-key";
+  let modelId = "model-one";
+  const launches: Array<{ providerCredential?: string; model?: { id: string } }> = [];
+  const transports = [first, second];
+  const registry = createSessionRegistry({
+    defaultModel: () => ({ provider: "test", id: modelId }),
+    resolveProviderCredential: async () => credential,
+    onActions: () => {},
+    onSnapshot: () => {},
+    launchPi: (options) => {
+      launches.push(options);
+      return {
+        pi: new PiClient(transports.shift()!),
+        failed: new Promise<undefined>(() => {}),
+      };
+    },
+  });
+  context.after(() => registry.closeAll());
+
+  await registry.open({ cwd });
+  credential = "second-key";
+  modelId = "model-two";
+  assert.equal(first.closed, false);
+  await registry.open({ cwd });
+  assert.deepEqual(
+    launches.map((launch) => launch.providerCredential),
+    ["first-key", "second-key"],
+  );
+  assert.deepEqual(
+    launches.map((launch) => launch.model?.id),
+    ["model-one", "model-two"],
+  );
+  assert.equal(first.closed, false);
 });
 
 test("open exposes Pi skills but not prompt or extension commands", async () => {

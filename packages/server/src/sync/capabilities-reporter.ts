@@ -11,7 +11,7 @@ export type CapabilitiesReporter = {
 
 export function createCapabilitiesReporter(options: {
   remote(): CapabilitiesRemote | undefined;
-  capabilities(): CoreCapabilities;
+  capabilities(): CoreCapabilities | Promise<CoreCapabilities>;
   appVersion: string;
   syncState(): { currentSyncRevision?: number; lastSyncErrorCode?: string };
 }): CapabilitiesReporter {
@@ -26,7 +26,7 @@ export function createCapabilitiesReporter(options: {
       const report: CapabilitiesReport = {
         version: 1,
         appVersion: options.appVersion,
-        capabilities: options.capabilities(),
+        capabilities: await options.capabilities(),
         ...(state.currentSyncRevision === undefined
           ? {}
           : { currentSyncRevision: state.currentSyncRevision }),

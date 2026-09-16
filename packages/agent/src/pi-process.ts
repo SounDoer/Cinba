@@ -2,6 +2,7 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { buildProviderEnvironment } from "./provider-environment.ts";
 
 export type CoreOptions = {
   cwd?: string;
@@ -11,6 +12,9 @@ export type CoreOptions = {
   extensions?: string[];
   /** Explicit per-process project trust decision made by the Cinba host. */
   projectTrusted?: boolean;
+  /** One credential already selected by the Core for this exact Provider. */
+  providerCredential?: string;
+  webToolsRuntimeConfig?: string;
 };
 
 export type SpawnPlan = {
@@ -47,7 +51,17 @@ export function buildSpawnPlan(
   return {
     args,
     // Electron's executable must behave as Node when it runs Pi's JS entrypoint.
-    env: { ...baseEnv, ELECTRON_RUN_AS_NODE: "1" },
+    env: {
+      ...buildProviderEnvironment({
+        providerId: options.provider ?? DEFAULT_PROVIDER,
+        apiKey: options.providerCredential,
+        baseEnvironment: baseEnv,
+      }),
+      ELECTRON_RUN_AS_NODE: "1",
+      ...(options.webToolsRuntimeConfig
+        ? { CINBA_WEB_TOOLS_RUNTIME_CONFIG: options.webToolsRuntimeConfig }
+        : {}),
+    },
     windowsHide: true,
   };
 }

@@ -3,13 +3,27 @@
 // Nothing here is imported by a frontend: a frontend that needed any of it
 // would be reaching past the service into the core.
 
-export { clearCredential, listProviders, setApiKey } from "./credentials.ts";
+export {
+  clearCredential,
+  listCoreCapabilities,
+  listProviders,
+  localProviderAuthType,
+  redactSecret,
+  setApiKey,
+} from "./credentials.ts";
+export type { LocalProviderAuthType } from "./credentials.ts";
 export { PiClient } from "./pi-client.ts";
 export type { CoreEvent, CoreResponse, UiReply, UiRequest, UiRequestHandler } from "./pi-client.ts";
 export { activeBranchEntries, foldSessionEntries } from "./entries.ts";
 export { createEventFolder, foldUiRequest } from "./events.ts";
 export { buildSpawnPlan, startPi } from "./pi-process.ts";
 export type { CoreOptions, SpawnPlan } from "./pi-process.ts";
+export {
+  buildProviderEnvironment,
+  localProviderEnvironmentCredential,
+  providerEnvironmentVariable,
+  PROVIDER_ENVIRONMENT,
+} from "./provider-environment.ts";
 export { inspectProjectTrust, rememberProjectTrust } from "./project-trust.ts";
 export type { ProjectTrustInspection } from "./project-trust.ts";
 export { findSession, listSessions } from "./stored-sessions.ts";

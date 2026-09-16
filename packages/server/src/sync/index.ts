@@ -21,3 +21,14 @@ export { createSnapshotCache, SnapshotCacheValidationError } from "./snapshot-ca
 export type { CachedSyncSnapshot, SnapshotCache } from "./snapshot-cache.ts";
 export { resolveSyncSettings } from "./runtime-view.ts";
 export type { SyncSettingsResolution } from "./runtime-view.ts";
+export {
+  ProviderCredentialConflictError,
+  ProviderCredentialUnsupportedError,
+  ProviderLoginRequiredError,
+  resolveProviderCredential,
+} from "./provider-access.ts";
+export {
+  resolveWebToolsRuntimeConfiguration,
+  writeWebToolsRuntimeConfiguration,
+} from "./web-tools-runtime.ts";
+export type { WebToolsRuntimeConfiguration } from "./web-tools-runtime.ts";

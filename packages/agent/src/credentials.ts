@@ -18,6 +18,57 @@
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { ProviderStatus } from "@cinba/contract";
 
+export type LocalProviderAuthType = "api_key" | "oauth";
+
+/** Inspect only redacted auth metadata; credential values never leave Pi. */
+export async function localProviderAuthType(
+  providerId: string,
+): Promise<LocalProviderAuthType | undefined> {
+  const runtime = await ModelRuntime.create();
+  const credential = (await runtime.listCredentials()).find(
+    (entry) => entry.providerId === providerId,
+  );
+  return credential?.type === "api_key" || credential?.type === "oauth"
+    ? credential.type
+    : undefined;
+}
+
+/** Non-secret Provider/model capability inventory for Sync reporting. */
+export async function listCoreCapabilities(): Promise<{
+  version: 1;
+  providers: Array<{ id: string; name: string; authKind: "api-key" | "oauth" | "other" }>;
+  models: Array<{ provider: string; id: string }>;
+}> {
+  const runtime = await ModelRuntime.create();
+  const credentials = new Map(
+    (await runtime.listCredentials()).map((credential) => [credential.providerId, credential.type]),
+  );
+  const models = await runtime.getAvailable();
+  const providerIds = new Set(models.map((model) => model.provider));
+  const authKind = (providerId: string): "api-key" | "oauth" | "other" => {
+    const type = credentials.get(providerId);
+    if (type === "oauth") {
+      return "oauth";
+    }
+    if (type === "api_key") {
+      return "api-key";
+    }
+    return "other";
+  };
+  return {
+    version: 1,
+    providers: runtime
+      .getProviders()
+      .filter((provider) => providerIds.has(provider.id))
+      .map((provider) => ({
+        id: provider.id,
+        name: provider.name || provider.id,
+        authKind: authKind(provider.id),
+      })),
+    models: models.map((model) => ({ provider: model.provider, id: model.id })),
+  };
+}
+
 // The wire type, not a copy of it: what this function reports is exactly what
 // travels, and a second definition would be free to drift into carrying a key.
 

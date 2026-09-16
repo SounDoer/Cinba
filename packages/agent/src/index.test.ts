@@ -73,6 +73,26 @@ test("the environment must carry ELECTRON_RUN_AS_NODE", () => {
   assert.equal(plan.env.PATH, "/usr/bin", "the existing environment must be preserved");
 });
 
+test("a resolved Provider credential is injected through environment, never arguments", () => {
+  const plan = buildSpawnPlan(
+    "/entry.js",
+    [GATE],
+    { provider: "openai", providerCredential: "selected-secret" },
+    { OPENAI_API_KEY: "parent-openai", ANTHROPIC_API_KEY: "parent-anthropic" },
+  );
+  assert.equal(plan.env.OPENAI_API_KEY, "selected-secret");
+  assert.equal(plan.env.ANTHROPIC_API_KEY, undefined);
+  assert.equal(plan.args.includes("selected-secret"), false);
+  assert.equal(JSON.stringify(plan.args).includes("API_KEY"), false);
+});
+
+test("Web tools receive only the Core-owned runtime configuration path", () => {
+  const plan = buildSpawnPlan("/entry.js", [GATE], {
+    webToolsRuntimeConfig: "C:/state/runtime-web-tools.json",
+  });
+  assert.equal(plan.env.CINBA_WEB_TOOLS_RUNTIME_CONFIG, "C:/state/runtime-web-tools.json");
+});
+
 test("Pi never opens its own Windows terminal window", () => {
   const plan = buildSpawnPlan("/entry.js", [GATE], {}, {});
 

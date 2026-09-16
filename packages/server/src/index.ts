@@ -22,7 +22,7 @@ import { rmSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { findSession } from "@cinba/agent";
+import { findSession, listCoreCapabilities, localProviderAuthType } from "@cinba/agent";
 import { createWebToolsCredentialStore } from "@cinba/extensions/src/web-tools/credentials.ts";
 import { IDLE_TIMEOUT_MS, assessIdle, canStopNow } from "./reclaim.ts";
 import { createLocalStateStore } from "./config.ts";
@@ -37,7 +37,7 @@ import {
 } from "./drain.ts";
 import { createHealthHandler, isSafeToRestart, normalizeRevision } from "./health.ts";
 import { createLocalCoreControlHandler } from "./local-core-control.ts";
-import { LOCAL_SOURCES, resolveEffectiveSettings } from "./effective-settings.ts";
+import { LOCAL_SOURCES } from "./effective-settings.ts";
 import { createInstanceOverrideStore } from "./instance-override.ts";
 import { createLocalSettingsStore } from "./local-settings.ts";
 import { createProjectTrustGate } from "./project-trust-gate.ts";
@@ -47,10 +47,15 @@ import { SERVICE_IDLE_TIMEOUT_MS, assessServiceIdle, readCoreLifetime } from "./
 import { type LiveSession, createSessionRegistry } from "./session-registry.ts";
 import { createStaticFileHandler } from "./static-files.ts";
 import {
+  createCapabilitiesReporter,
   createCoreSyncHttpRemote,
   createSnapshotCache,
   createSyncConnectionStore,
   createSyncCoordinator,
+  resolveProviderCredential,
+  resolveSyncSettings,
+  resolveWebToolsRuntimeConfiguration,
+  writeWebToolsRuntimeConfiguration,
 } from "./sync/index.ts";
 import { isAllowedWebSocketOrigin } from "./websocket-origin.ts";
 import { handleWebToolsMessage } from "./web-tools-messages.ts";
@@ -87,21 +92,78 @@ const localSettings = createLocalSettingsStore(join(STATE_DIRECTORY, "local-sett
 const instanceOverride = createInstanceOverrideStore(
   join(STATE_DIRECTORY, "instance-override.json"),
 );
+const localWebCredentials = createWebToolsCredentialStore(
+  join(STATE_DIRECTORY, "credentials.json"),
+  process.env,
+);
 const syncConnection = createSyncConnectionStore(join(STATE_DIRECTORY, "sync-connection.json"));
 const syncCache = createSnapshotCache(join(STATE_DIRECTORY, "sync-snapshot.json"));
+const webToolsRuntimePath = join(STATE_DIRECTORY, "runtime-web-tools.json");
 const sync = createSyncCoordinator({
   connection: syncConnection,
   cache: syncCache,
   remoteFor: createCoreSyncHttpRemote,
+  onSnapshot: () => writeEffectiveWebToolsRuntime(),
+  onStatus: (status) => {
+    if (status.state === "disconnected") {
+      writeEffectiveWebToolsRuntime();
+    }
+    void capabilities.reportIfChanged().catch(() => undefined);
+  },
+});
+const capabilities = createCapabilitiesReporter({
+  remote: () => {
+    const connection = syncConnection.get();
+    return connection?.core
+      ? createCoreSyncHttpRemote(connection.serverUrl, connection.core.credential)
+      : undefined;
+  },
+  capabilities: listCoreCapabilities,
+  appVersion: process.env.npm_package_version ?? "0.0.0",
+  syncState: () => {
+    const status = sync.status();
+    return {
+      ...(status.syncRevision === undefined ? {} : { currentSyncRevision: status.syncRevision }),
+      ...(status.errorCode === undefined ? {} : { lastSyncErrorCode: status.errorCode }),
+    };
+  },
 });
 
 function effectiveSettings() {
-  return resolveEffectiveSettings({
-    sources: LOCAL_SOURCES,
+  const connection = syncConnection.get();
+  const shared = sync.snapshot()?.settings;
+  return resolveSyncSettings({
+    sources: connection?.sources ?? LOCAL_SOURCES,
     local: localSettings.get(),
+    ...(shared
+      ? {
+          shared: {
+            defaultModel: shared.defaultModel,
+            webTools: { ...shared.webTools },
+          },
+        }
+      : {}),
     override: instanceOverride.get(),
-  });
+  }).settings;
 }
+
+function writeEffectiveWebToolsRuntime(): void {
+  const connection = syncConnection.get();
+  const credentialSource = connection?.sources.credentials ?? "local";
+  const sharedCredentials = sync.snapshot()?.credentials;
+  const settings = effectiveSettings();
+  writeWebToolsRuntimeConfiguration(
+    webToolsRuntimePath,
+    resolveWebToolsRuntimeConfiguration({
+      settings,
+      credentialSource,
+      localCredential: (provider) => localWebCredentials.getApiKey(provider),
+      sharedCredentials,
+    }),
+  );
+}
+
+writeEffectiveWebToolsRuntime();
 
 // ---- State ----
 
@@ -142,6 +204,21 @@ const projectTrust = createProjectTrustGate<WebSocket>({
 
 const sessions = createSessionRegistry({
   defaultModel: () => effectiveSettings().defaultModel,
+  webToolsRuntimeConfig: webToolsRuntimePath,
+  resolveProviderCredential: async (providerId) => {
+    const source = syncConnection.get()?.sources.credentials ?? "local";
+    return resolveProviderCredential({
+      providerId,
+      source,
+      ...(source === "sync"
+        ? {
+            sharedCredential: sync.snapshot()?.credentials?.[providerId],
+            localAuthType: await localProviderAuthType(providerId),
+          }
+        : {}),
+      environment: process.env,
+    });
+  },
   hasViewers: (sessionId) => [...viewing.values()].includes(sessionId),
   onActions: (sessionId, actions) => {
     toViewers(sessionId, { type: "actions", actions });
@@ -156,11 +233,21 @@ const sessions = createSessionRegistry({
 const credentials = createCredentialService({ onChanged: markCredentialsStale });
 const webTools = createWebToolsService({
   getPrimary: () => effectiveSettings().webTools.searchPrimary,
-  setPrimary: (primary) => localSettings.setWebSearchPrimary(primary),
-  credentials: createWebToolsCredentialStore(
-    join(STATE_DIRECTORY, "credentials.json"),
-    process.env,
-  ),
+  setPrimary: (primary) => {
+    localSettings.setWebSearchPrimary(primary);
+    writeEffectiveWebToolsRuntime();
+  },
+  credentials: {
+    ...localWebCredentials,
+    setApiKey: (provider, apiKey) => {
+      localWebCredentials.setApiKey(provider, apiKey);
+      writeEffectiveWebToolsRuntime();
+    },
+    clearApiKey: (provider) => {
+      localWebCredentials.clearApiKey(provider);
+      writeEffectiveWebToolsRuntime();
+    },
+  },
 });
 
 function safeToRestart(): boolean {
@@ -419,6 +506,8 @@ function markCredentialsStale(): void {
     session.staleCredentials = true;
   }
   void recycleStale();
+  capabilities.reset();
+  void capabilities.reportIfChanged().catch(() => undefined);
 }
 
 /**

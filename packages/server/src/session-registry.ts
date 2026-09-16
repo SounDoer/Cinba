@@ -10,6 +10,7 @@ import {
   createEventFolder,
   foldSessionEntries,
   foldUiRequest,
+  redactSecret,
   startPi,
   listSessions as storedSessions,
 } from "@cinba/agent";
@@ -62,6 +63,8 @@ export type OpenSessionOptions = {
   cwd: string;
   model?: ModelRef;
   projectTrusted?: boolean;
+  providerCredential?: string;
+  webToolsRuntimeConfig?: string;
 };
 
 export type PiLaunch = {
@@ -101,6 +104,8 @@ export type SessionRegistryOptions = {
   onUnexpectedClose?: (session: LiveSession, error: Error) => void;
   hasViewers?: (sessionId: string) => boolean;
   launchPi?: (options: OpenSessionOptions) => PiLaunch;
+  resolveProviderCredential?: (providerId: string) => Promise<string | undefined>;
+  webToolsRuntimeConfig?: string;
   flushIntervalMs?: number;
 };
 
@@ -112,13 +117,16 @@ function launchPiProcess(options: OpenSessionOptions): PiLaunch {
     model: starting?.id,
     sessionPath: options.sessionPath,
     projectTrusted: options.projectTrusted,
+    providerCredential: options.providerCredential,
+    webToolsRuntimeConfig: options.webToolsRuntimeConfig,
   });
 
   let stderrTail = "";
   child.stderr?.setEncoding("utf8");
   child.stderr?.on("data", (chunk: string) => {
-    stderrTail = `${stderrTail}${chunk}`.slice(-4_096);
-    console.error("[pi]", chunk.trimEnd());
+    const safeChunk = redactSecret(chunk, options.providerCredential ?? "");
+    stderrTail = `${stderrTail}${safeChunk}`.slice(-4_096);
+    console.error("[pi]", safeChunk.trimEnd());
   });
   child.once("close", (code, signal) => {
     if (code === 0 || signal) {
@@ -132,7 +140,10 @@ function launchPiProcess(options: OpenSessionOptions): PiLaunch {
 
   const failed = new Promise<undefined>((resolve) => {
     child.on("error", (error: Error) => {
-      console.error(`[cinba] Pi failed to start in ${options.cwd}:`, error.message);
+      console.error(
+        `[cinba] Pi failed to start in ${options.cwd}:`,
+        redactSecret(error.message, options.providerCredential ?? ""),
+      );
       resolve(undefined);
     });
   });
@@ -386,7 +397,26 @@ export function createSessionRegistry(options: SessionRegistryOptions): SessionR
       `[cinba] starting Pi in ${openOptions.cwd}${openOptions.sessionPath ? " (resuming)" : ""}`,
     );
     const starting = openOptions.model ?? options.defaultModel();
-    const launch = launchPi({ ...openOptions, model: starting });
+    let providerCredential: string | undefined;
+    try {
+      providerCredential = options.resolveProviderCredential
+        ? await options.resolveProviderCredential(starting?.provider ?? "deepseek")
+        : undefined;
+    } catch (error) {
+      console.error(
+        "[cinba] cannot start Pi because Provider authentication is unavailable:",
+        error instanceof Error ? error.message : String(error),
+      );
+      return undefined;
+    }
+    const launch = launchPi({
+      ...openOptions,
+      model: starting,
+      ...(providerCredential ? { providerCredential } : {}),
+      ...(options.webToolsRuntimeConfig
+        ? { webToolsRuntimeConfig: options.webToolsRuntimeConfig }
+        : {}),
+    });
     let state;
     try {
       state = await Promise.race([launch.pi.getState(), launch.failed]);
