@@ -34,12 +34,17 @@ export async function localProviderAuthType(
 }
 
 /** Non-secret Provider/model capability inventory for Sync reporting. */
-export async function listCoreCapabilities(): Promise<{
+export async function listCoreCapabilities(
+  runtimeApiKeys: Readonly<Record<string, string>> = {},
+): Promise<{
   version: 1;
   providers: Array<{ id: string; name: string; authKind: "api-key" | "oauth" | "other" }>;
   models: Array<{ provider: string; id: string }>;
 }> {
   const runtime = await ModelRuntime.create();
+  for (const [providerId, apiKey] of Object.entries(runtimeApiKeys)) {
+    await runtime.setRuntimeApiKey(providerId, apiKey);
+  }
   const credentials = new Map(
     (await runtime.listCredentials()).map((credential) => [credential.providerId, credential.type]),
   );

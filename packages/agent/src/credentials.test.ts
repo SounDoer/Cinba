@@ -10,7 +10,8 @@ import { join } from "node:path";
 const agentDir = mkdtempSync(join(tmpdir(), "cinba-credentials-test-")).replace(/\\/g, "/");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 
-const { clearCredential, listProviders, setApiKey } = await import("./credentials.ts");
+const { clearCredential, listCoreCapabilities, listProviders, setApiKey } =
+  await import("./credentials.ts");
 
 const FAKE_KEY = "sk-this-is-not-a-real-key-0123456789";
 
@@ -51,6 +52,18 @@ test("configured providers sort to the top, where they are worth looking at", as
   const providers = await listProviders();
   assert.equal(providers[0]?.id, "groq");
   await clearCredential("groq");
+});
+
+test("runtime API keys expose model capabilities without persisting or returning the key", async () => {
+  const capabilities = await listCoreCapabilities({ deepseek: FAKE_KEY });
+
+  assert.ok(capabilities.models.some((model) => model.provider === "deepseek"));
+  assert.ok(capabilities.providers.some((provider) => provider.id === "deepseek"));
+  assert.equal(JSON.stringify(capabilities).includes(FAKE_KEY), false);
+  assert.equal(
+    (await listProviders()).find((provider) => provider.id === "deepseek")?.configured,
+    false,
+  );
 });
 
 test("a secret is stripped from any text on its way out", async () => {
