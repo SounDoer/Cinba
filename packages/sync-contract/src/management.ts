@@ -1,0 +1,295 @@
+import {
+  type ModelRef,
+  arrayAt,
+  booleanAt,
+  integerAt,
+  modelRefAt,
+  oneOf,
+  optionalStringAt,
+  strictObject,
+  stringAt,
+  versionOne,
+} from "./schemas.ts";
+
+export type SharedSettings = {
+  version: 1;
+  defaultModel?: ModelRef;
+  webTools: { searchPrimary: "auto" | "exa" | "brave" };
+};
+
+export type SharedSettingsView = {
+  version: 1;
+  settingsRevision: number;
+  syncRevision: number;
+  settings: SharedSettings;
+};
+
+export type UpdateSharedSettingsRequest = {
+  version: 1;
+  baseSettingsRevision: number;
+  settings: SharedSettings;
+};
+
+export type CredentialStatus = {
+  version: 1;
+  provider: string;
+  configured: boolean;
+};
+
+export type CredentialStatusList = {
+  version: 1;
+  credentials: CredentialStatus[];
+  syncRevision: number;
+};
+
+export type PutCredentialRequest = { version: 1; apiKey: string };
+
+export type ConnectedCore = {
+  version: 1;
+  id: string;
+  name: string;
+  platform: "windows" | "macos" | "linux" | "other";
+  appVersion: string;
+  credentialSource: "local" | "sync";
+  revoked: boolean;
+  lastSeenAt?: string;
+  lastSyncRevision?: number;
+};
+
+export type ConnectedCoreList = { version: 1; cores: ConnectedCore[] };
+
+export type SettingsHistoryEntry = {
+  version: 1;
+  settingsRevision: number;
+  syncRevision: number;
+  createdAt: string;
+  settings: SharedSettings;
+};
+
+export type SettingsHistory = { version: 1; entries: SettingsHistoryEntry[] };
+
+export type RollbackSettingsRequest = {
+  version: 1;
+  baseSettingsRevision: number;
+  targetSettingsRevision: number;
+};
+
+export type BackupMetadata = {
+  version: 1;
+  serverId: string;
+  createdAt: string;
+  settingsRevision: number;
+  syncRevision: number;
+  connectedCoreCount: number;
+  credentialCount: number;
+};
+
+export type EnrollmentDecisionRequest = {
+  version: 1;
+  decision: "approve" | "reject";
+};
+
+export function parseSharedSettings(value: unknown, path = "settings"): SharedSettings {
+  const object = strictObject(value, ["version", "defaultModel", "webTools"], path);
+  versionOne(object, path);
+  const webTools = strictObject(object.webTools, ["searchPrimary"], `${path}.webTools`);
+  const defaultModel =
+    object.defaultModel === undefined
+      ? undefined
+      : modelRefAt(object.defaultModel, `${path}.defaultModel`);
+  return {
+    version: 1,
+    ...(defaultModel ? { defaultModel } : {}),
+    webTools: {
+      searchPrimary: oneOf(
+        webTools.searchPrimary,
+        ["auto", "exa", "brave"] as const,
+        `${path}.webTools.searchPrimary`,
+      ),
+    },
+  };
+}
+
+export function parseSharedSettingsView(value: unknown): SharedSettingsView {
+  const object = strictObject(
+    value,
+    ["version", "settingsRevision", "syncRevision", "settings"],
+    "response",
+  );
+  versionOne(object, "response");
+  return {
+    version: 1,
+    settingsRevision: integerAt(object.settingsRevision, "response.settingsRevision"),
+    syncRevision: integerAt(object.syncRevision, "response.syncRevision"),
+    settings: parseSharedSettings(object.settings, "response.settings"),
+  };
+}
+
+export function parseUpdateSharedSettingsRequest(value: unknown): UpdateSharedSettingsRequest {
+  const object = strictObject(value, ["version", "baseSettingsRevision", "settings"], "request");
+  versionOne(object, "request");
+  return {
+    version: 1,
+    baseSettingsRevision: integerAt(object.baseSettingsRevision, "request.baseSettingsRevision"),
+    settings: parseSharedSettings(object.settings, "request.settings"),
+  };
+}
+
+function parseCredentialStatusAt(value: unknown, path: string): CredentialStatus {
+  const object = strictObject(value, ["version", "provider", "configured"], path);
+  versionOne(object, path);
+  return {
+    version: 1,
+    provider: stringAt(object.provider, `${path}.provider`, 128),
+    configured: booleanAt(object.configured, `${path}.configured`),
+  };
+}
+
+export function parseCredentialStatus(value: unknown): CredentialStatus {
+  return parseCredentialStatusAt(value, "response");
+}
+
+export function parseCredentialStatusList(value: unknown): CredentialStatusList {
+  const object = strictObject(value, ["version", "credentials", "syncRevision"], "response");
+  versionOne(object, "response");
+  return {
+    version: 1,
+    credentials: arrayAt(object.credentials, "response.credentials", parseCredentialStatusAt, 256),
+    syncRevision: integerAt(object.syncRevision, "response.syncRevision"),
+  };
+}
+
+export function parsePutCredentialRequest(value: unknown): PutCredentialRequest {
+  const object = strictObject(value, ["version", "apiKey"], "request");
+  versionOne(object, "request");
+  return { version: 1, apiKey: stringAt(object.apiKey, "request.apiKey", 16_384) };
+}
+
+function parseConnectedCoreAt(value: unknown, path: string): ConnectedCore {
+  const object = strictObject(
+    value,
+    [
+      "version",
+      "id",
+      "name",
+      "platform",
+      "appVersion",
+      "credentialSource",
+      "revoked",
+      "lastSeenAt",
+      "lastSyncRevision",
+    ],
+    path,
+  );
+  versionOne(object, path);
+  const lastSyncRevision =
+    object.lastSyncRevision === undefined
+      ? undefined
+      : integerAt(object.lastSyncRevision, `${path}.lastSyncRevision`);
+  const lastSeenAt = optionalStringAt(object.lastSeenAt, `${path}.lastSeenAt`, 64);
+  return {
+    version: 1,
+    id: stringAt(object.id, `${path}.id`, 128),
+    name: stringAt(object.name, `${path}.name`, 128),
+    platform: oneOf(
+      object.platform,
+      ["windows", "macos", "linux", "other"] as const,
+      `${path}.platform`,
+    ),
+    appVersion: stringAt(object.appVersion, `${path}.appVersion`, 64),
+    credentialSource: oneOf(
+      object.credentialSource,
+      ["local", "sync"] as const,
+      `${path}.credentialSource`,
+    ),
+    revoked: booleanAt(object.revoked, `${path}.revoked`),
+    ...(lastSeenAt === undefined ? {} : { lastSeenAt }),
+    ...(lastSyncRevision === undefined ? {} : { lastSyncRevision }),
+  };
+}
+
+export function parseConnectedCoreList(value: unknown): ConnectedCoreList {
+  const object = strictObject(value, ["version", "cores"], "response");
+  versionOne(object, "response");
+  return {
+    version: 1,
+    cores: arrayAt(object.cores, "response.cores", parseConnectedCoreAt, 1_000),
+  };
+}
+
+function parseHistoryEntryAt(value: unknown, path: string): SettingsHistoryEntry {
+  const object = strictObject(
+    value,
+    ["version", "settingsRevision", "syncRevision", "createdAt", "settings"],
+    path,
+  );
+  versionOne(object, path);
+  return {
+    version: 1,
+    settingsRevision: integerAt(object.settingsRevision, `${path}.settingsRevision`),
+    syncRevision: integerAt(object.syncRevision, `${path}.syncRevision`),
+    createdAt: stringAt(object.createdAt, `${path}.createdAt`, 64),
+    settings: parseSharedSettings(object.settings, `${path}.settings`),
+  };
+}
+
+export function parseSettingsHistory(value: unknown): SettingsHistory {
+  const object = strictObject(value, ["version", "entries"], "response");
+  versionOne(object, "response");
+  return {
+    version: 1,
+    entries: arrayAt(object.entries, "response.entries", parseHistoryEntryAt, 1_000),
+  };
+}
+
+export function parseRollbackSettingsRequest(value: unknown): RollbackSettingsRequest {
+  const object = strictObject(
+    value,
+    ["version", "baseSettingsRevision", "targetSettingsRevision"],
+    "request",
+  );
+  versionOne(object, "request");
+  return {
+    version: 1,
+    baseSettingsRevision: integerAt(object.baseSettingsRevision, "request.baseSettingsRevision"),
+    targetSettingsRevision: integerAt(
+      object.targetSettingsRevision,
+      "request.targetSettingsRevision",
+    ),
+  };
+}
+
+export function parseBackupMetadata(value: unknown): BackupMetadata {
+  const object = strictObject(
+    value,
+    [
+      "version",
+      "serverId",
+      "createdAt",
+      "settingsRevision",
+      "syncRevision",
+      "connectedCoreCount",
+      "credentialCount",
+    ],
+    "response",
+  );
+  versionOne(object, "response");
+  return {
+    version: 1,
+    serverId: stringAt(object.serverId, "response.serverId", 128),
+    createdAt: stringAt(object.createdAt, "response.createdAt", 64),
+    settingsRevision: integerAt(object.settingsRevision, "response.settingsRevision"),
+    syncRevision: integerAt(object.syncRevision, "response.syncRevision"),
+    connectedCoreCount: integerAt(object.connectedCoreCount, "response.connectedCoreCount"),
+    credentialCount: integerAt(object.credentialCount, "response.credentialCount"),
+  };
+}
+
+export function parseEnrollmentDecisionRequest(value: unknown): EnrollmentDecisionRequest {
+  const object = strictObject(value, ["version", "decision"], "request");
+  versionOne(object, "request");
+  return {
+    version: 1,
+    decision: oneOf(object.decision, ["approve", "reject"] as const, "request.decision"),
+  };
+}
