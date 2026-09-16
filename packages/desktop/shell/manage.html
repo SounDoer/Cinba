@@ -7,13 +7,13 @@
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Manage Cores — Cinba</title>
+    <title>Manage Connections — Cinba</title>
   </head>
   <body class="manager-page">
     <main class="manager">
       <header>
         <p class="eyebrow">Cinba Desktop</p>
-        <h1>Manage Cores</h1>
+        <h1>Manage Connections</h1>
         <p class="intro">Desktop remembers the entrances. Each Core still declares its own identity.</p>
       </header>
       <div id="problem" class="problem" hidden></div>
@@ -21,6 +21,21 @@
         Back up and reset profile settings
       </button>
       <section id="profiles" class="profile-list" aria-label="Core profiles"></section>
+      <section class="editor">
+        <h2>Cinba Sync</h2>
+        <p class="intro">One global management service, separate from Core profiles.</p>
+        <form id="sync-form">
+          <label>
+            <span>HTTPS URL</span>
+            <input id="sync-url" type="url" placeholder="https://sync.example.ts.net/" required />
+          </label>
+          <div id="sync-message" class="form-message" aria-live="polite"></div>
+          <div class="actions">
+            <button type="submit">Save Sync</button>
+            <button id="sync-remove" class="danger quiet" type="button">Remove</button>
+          </div>
+        </form>
+      </section>
       <section class="editor">
         <h2 id="editor-title">Add remote Core</h2>
         <form id="profile-form">

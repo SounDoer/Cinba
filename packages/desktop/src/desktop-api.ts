@@ -1,8 +1,11 @@
 import type { ShellViewModel } from "./shell-view.ts";
+import type { SyncProfile } from "./sync-profile.ts";
 
 export type DesktopShellState = ShellViewModel & {
   problem?: string;
   canRecoverProfiles: boolean;
+  selectedKind: "core" | "sync";
+  syncProfile?: SyncProfile;
 };
 
 export type ProfileInput = {
@@ -17,6 +20,10 @@ export type ConnectionTestResult =
 export type CinbaDesktopApi = {
   getState(): Promise<DesktopShellState>;
   selectProfile(profileId: string): Promise<void>;
+  openSync(): Promise<void>;
+  saveSync(baseUrl: string): Promise<void>;
+  removeSync(): Promise<void>;
+  openSyncExternal(): Promise<void>;
   retry(): Promise<void>;
   openManager(): Promise<void>;
   addProfile(input: ProfileInput): Promise<void>;

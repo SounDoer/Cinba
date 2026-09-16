@@ -13,13 +13,14 @@
     <header class="toolbar">
       <span class="brand">Cinba</span>
       <label class="profile-picker">
-        <span class="sr-only">Core</span>
+        <span class="sr-only">Cores</span>
         <select id="profile"></select>
       </label>
+      <button id="sync" class="secondary" type="button" hidden>Cinba Sync</button>
       <span id="status-badge" class="status-badge"></span>
       <span class="spacer"></span>
       <button id="retry" class="secondary" type="button" hidden>Retry</button>
-      <button id="manage" class="secondary" type="button">Manage Cores…</button>
+      <button id="manage" class="secondary" type="button">Manage…</button>
     </header>
     <main id="offline" class="offline" hidden>
       <div class="offline-card">
@@ -28,7 +29,10 @@
         <p id="offline-message"></p>
         <div class="actions">
           <button id="offline-retry" type="button">Retry</button>
-          <button id="offline-manage" class="secondary" type="button">Manage Cores…</button>
+          <button id="offline-manage" class="secondary" type="button">Edit address…</button>
+          <button id="offline-external" class="secondary" type="button" hidden>
+            Open in browser
+          </button>
         </div>
       </div>
     </main>

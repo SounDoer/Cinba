@@ -53,6 +53,12 @@ button:disabled {
   color: #273445;
 }
 
+button.active {
+  border-color: #285cc4;
+  color: #285cc4;
+  box-shadow: 0 0 0 2px rgba(40, 92, 196, 0.14);
+}
+
 .quiet {
   padding: 5px 8px;
 }
