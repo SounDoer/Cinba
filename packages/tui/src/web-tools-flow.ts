@@ -71,11 +71,19 @@ export class WebToolsFlow {
   }
 
   #showMenu(): void {
+    const status = this.#status;
+    if (!status) {
+      return;
+    }
     const picker = new ChoicePicker("Web tools", [
       { value: "status", label: "View status" },
-      { value: "add", label: "Add or replace API key" },
-      { value: "remove", label: "Remove stored API key" },
-      { value: "primary", label: "Choose primary" },
+      ...(status.credentialSource === "sync"
+        ? []
+        : [
+            { value: "add", label: "Add or replace API key" },
+            { value: "remove", label: "Remove stored API key" },
+          ]),
+      ...(status.settingsSource === "sync" ? [] : [{ value: "primary", label: "Choose primary" }]),
     ]);
     picker.onAnswer = (choice) => {
       this.#host.showPrompt();
@@ -107,6 +115,9 @@ export class WebToolsFlow {
     this.#host.append("");
     this.#host.append(`${GREEN}web_search available · web_fetch available${RESET}`);
     this.#host.append(`Primary: ${status.primary}`);
+    if (status.settingsSource === "sync" || status.credentialSource === "sync") {
+      this.#host.append("Managed by Cinba Sync");
+    }
     this.#host.append(
       `Effective order: ${status.effectiveOrder.map((id) => PROVIDER_NAMES[id]).join(" → ")}`,
     );

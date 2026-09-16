@@ -142,3 +142,23 @@ test("a server error is shown without retaining or printing the submitted key", 
   assert.deepEqual(state.notices, ["Could not access web tools settings"]);
   assert.doesNotMatch(state.output.join("\n"), /secret/);
 });
+
+test("shared Web tools are visible but not locally mutable", () => {
+  const state = setup();
+  state.flow.open();
+  state.flow.onStatus({
+    ...STATUS,
+    settingsSource: "sync",
+    credentialSource: "sync",
+    providers: STATUS.providers.map((provider) =>
+      provider.id === "exa" ? { ...provider, source: "sync" } : provider,
+    ),
+  });
+
+  const rendered = state.interaction?.render(80).join("\n") ?? "";
+  assert.match(rendered, /View status/);
+  assert.doesNotMatch(rendered, /Add or replace API key|Remove stored API key|Choose primary/);
+  send(state.interaction, "\r");
+  assert.match(state.output.join("\n"), /Managed by Cinba Sync/);
+  assert.match(state.output.join("\n"), /Exa.*sync/);
+});
