@@ -75,7 +75,18 @@ test("server messages are validated before reaching a client", () => {
       ],
     },
     { type: "session_opened", sessionId: "s1" },
-    { type: "provider_listing", providers: [{ id: "test", name: "Test", configured: true }] },
+    {
+      type: "provider_listing",
+      providers: [
+        {
+          id: "test",
+          name: "Test",
+          configured: true,
+          source: "sync-api-key",
+          management: "sync",
+        },
+      ],
+    },
     { type: "core_identity", name: "home" },
     {
       type: "drafts_recovered",

@@ -23,6 +23,9 @@ export type ProviderStatus = {
   id: string;
   name: string;
   configured: boolean;
+  /** Effective non-secret credential state. Optional for compatibility with older Cores. */
+  source?: "local-api-key" | "local-oauth" | "sync-api-key" | "conflict";
+  management?: "local" | "sync";
 };
 
 export type WebSearchProviderId = "exa" | "brave" | "duckduckgo";
@@ -643,9 +646,16 @@ function isSessionSummary(value: unknown): value is SessionSummary {
 function isProviderStatus(value: unknown): value is ProviderStatus {
   return (
     isRecord(value) &&
+    hasOnlyKeys(value, ["id", "name", "configured", "source", "management"]) &&
     typeof value.id === "string" &&
     typeof value.name === "string" &&
-    typeof value.configured === "boolean"
+    typeof value.configured === "boolean" &&
+    (value.source === undefined ||
+      value.source === "local-api-key" ||
+      value.source === "local-oauth" ||
+      value.source === "sync-api-key" ||
+      value.source === "conflict") &&
+    (value.management === undefined || value.management === "local" || value.management === "sync")
   );
 }
 
