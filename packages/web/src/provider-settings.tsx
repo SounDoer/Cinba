@@ -16,6 +16,28 @@ import { useState } from "react";
 import type { ProviderStatus } from "@cinba/contract";
 import { PickerShell } from "./picker-shell.tsx";
 
+function providerSource(provider: ProviderStatus): string {
+  switch (provider.source) {
+    case "sync-api-key":
+      return "Available via Sync";
+    case "local-oauth":
+      return "Local sign-in on this Core";
+    case "local-api-key":
+      return "Local API key";
+    case "conflict":
+      return "Local API key conflicts with Shared Credentials";
+    default:
+      return provider.id;
+  }
+}
+
+function providerMarker(provider: ProviderStatus): string {
+  if (provider.configured) {
+    return "● ";
+  }
+  return provider.source === "conflict" ? "⚠ " : "";
+}
+
 export function ProviderSettings({
   providers,
   onSetApiKey,
@@ -31,9 +53,12 @@ export function ProviderSettings({
   const [draft, setDraft] = useState("");
   const [showAll, setShowAll] = useState(false);
 
-  const configured = providers?.filter((provider) => provider.configured) ?? [];
-  const rest = providers?.filter((provider) => !provider.configured) ?? [];
-  const shown = showAll ? [...configured, ...rest] : configured;
+  const managedBySync = providers?.some((provider) => provider.management === "sync") ?? false;
+  const important =
+    providers?.filter((provider) => provider.configured || provider.source === "conflict") ?? [];
+  const rest =
+    providers?.filter((provider) => !provider.configured && provider.source !== "conflict") ?? [];
+  const shown = showAll ? [...important, ...rest] : important;
 
   function save(providerId: string) {
     if (draft.trim() === "") {
@@ -48,15 +73,51 @@ export function ProviderSettings({
     setAdding(undefined);
   }
 
+  function providerActions(provider: ProviderStatus) {
+    if (provider.management !== "sync") {
+      return (
+        <>
+          <button onClick={() => setAdding(provider.id)}>
+            {provider.configured ? "Replace key" : "Add key"}
+          </button>
+          {provider.configured ? (
+            <button className="session-delete" onClick={() => onClearCredential(provider.id)}>
+              Forget
+            </button>
+          ) : null}
+        </>
+      );
+    }
+    if (provider.source === "conflict") {
+      return (
+        <button className="session-delete" onClick={() => onClearCredential(provider.id)}>
+          Remove local key
+        </button>
+      );
+    }
+    if (provider.source === "local-oauth") {
+      return (
+        <button className="session-delete" onClick={() => onClearCredential(provider.id)}>
+          Forget local sign-in
+        </button>
+      );
+    }
+    return <button disabled>Managed by Sync</button>;
+  }
+
   return (
     <PickerShell label="provider settings" onClose={onClose}>
-      <div className="picker-path">A key is stored by the core and never sent back here.</div>
+      <div className="picker-path">
+        {managedBySync
+          ? "Shared API keys are managed by Cinba Sync. Local OAuth sign-ins remain on this Core."
+          : "A key is stored by the core and never sent back here."}
+      </div>
 
       <div className="picker-list">
         {providers === undefined ? <div className="picker-item">Loading...</div> : null}
 
         {shown.map((provider) => {
-          if (adding === provider.id) {
+          if (adding === provider.id && provider.management !== "sync") {
             return (
               <div className="picker-item session-row" key={provider.id}>
                 <input
@@ -95,24 +156,17 @@ export function ProviderSettings({
             <div className="picker-item session-row" key={provider.id}>
               <span className="session-open">
                 <span className="session-title">
-                  {provider.configured ? "● " : ""}
+                  {providerMarker(provider)}
                   {provider.name}
                 </span>
-                <span className="session-meta">{provider.id}</span>
+                <span className="session-meta">{providerSource(provider)}</span>
               </span>
-              <button onClick={() => setAdding(provider.id)}>
-                {provider.configured ? "Replace key" : "Add key"}
-              </button>
-              {provider.configured ? (
-                <button className="session-delete" onClick={() => onClearCredential(provider.id)}>
-                  Forget
-                </button>
-              ) : null}
+              {providerActions(provider)}
             </div>
           );
         })}
 
-        {providers !== undefined && configured.length === 0 && !showAll ? (
+        {providers !== undefined && important.length === 0 && !showAll ? (
           <div className="picker-item">(nothing configured yet)</div>
         ) : null}
       </div>
@@ -120,7 +174,7 @@ export function ProviderSettings({
       <div className="picker-actions">
         <button onClick={onClose}>Close</button>
         <button onClick={() => setShowAll((value) => !value)}>
-          {showAll ? "Show configured only" : `Show all ${rest.length + configured.length}`}
+          {showAll ? "Show configured only" : `Show all ${rest.length + important.length}`}
         </button>
       </div>
     </PickerShell>
