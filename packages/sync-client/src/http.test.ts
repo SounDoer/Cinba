@@ -107,6 +107,30 @@ test("the HTTP client sends JSON and validates a parsed response", async () => {
   }
 });
 
+test("the HTTP client calls browser fetch with the global receiver", async () => {
+  function browserFetch(
+    this: unknown,
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<Response> {
+    assert.equal(this, globalThis);
+    return fetch(input, init);
+  }
+  const server = await fixture((_request, response) => {
+    json(response, 200, { version: 1 });
+  });
+  try {
+    const client = new SyncHttpClient(server.url, {
+      allowInsecureLoopback: true,
+      fetch: browserFetch,
+    });
+    const result = await client.json({ path: "/status", parser: (value) => value });
+    assert.equal(result.status, "ok");
+  } finally {
+    await server.close();
+  }
+});
+
 test("timeouts and caller aborts become redacted transport errors", async () => {
   const server = await fixture((_request, response) => {
     setTimeout(() => json(response, 200, { version: 1 }), 100);

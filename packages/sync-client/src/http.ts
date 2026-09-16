@@ -162,7 +162,7 @@ export class SyncHttpClient {
     this.baseUrl = normalizeSyncServerUrl(baseUrl, options);
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
-    this.fetchImplementation = options.fetch ?? fetch;
+    this.fetchImplementation = (options.fetch ?? fetch).bind(globalThis);
   }
 
   async json<T>(request: JsonRequest<T>): Promise<JsonResponse<T>> {
