@@ -107,7 +107,12 @@ const sync = createSyncCoordinator({
   connection: syncConnection,
   cache: syncCache,
   remoteFor: createCoreSyncHttpRemote,
-  onSnapshot: () => writeEffectiveWebToolsRuntime(),
+  onSnapshot: () => {
+    writeEffectiveWebToolsRuntime();
+    if (syncConnection.get()?.sources.credentials === "sync") {
+      markCredentialsStale();
+    }
+  },
   onStatus: (status) => {
     if (status.state === "disconnected") {
       writeEffectiveWebToolsRuntime();
@@ -126,7 +131,12 @@ const capabilities = createCapabilitiesReporter({
       ? createCoreSyncHttpRemote(connection.serverUrl, connection.core.credential)
       : undefined;
   },
-  capabilities: listCoreCapabilities,
+  capabilities: () => {
+    const connection = syncConnection.get();
+    return listCoreCapabilities(
+      connection?.sources.credentials === "sync" ? sync.snapshot()?.credentials : undefined,
+    );
+  },
   appVersion: process.env.npm_package_version ?? "0.0.0",
   syncState: () => {
     const status = sync.status();
@@ -403,14 +413,22 @@ const serveCoreSyncControl = createCoreSyncControlHandler({
     void waitForEnrollment();
   },
   cancel: () => {
+    const sharedCredentials = syncConnection.get()?.sources.credentials === "sync";
     enrollment.cancel();
     sync.disconnect();
     writeEffectiveWebToolsRuntime();
+    if (sharedCredentials) {
+      markCredentialsStale();
+    }
   },
   disconnect: () => {
+    const sharedCredentials = syncConnection.get()?.sources.credentials === "sync";
     enrollment.cancel();
     sync.disconnect();
     writeEffectiveWebToolsRuntime();
+    if (sharedCredentials) {
+      markCredentialsStale();
+    }
   },
   syncNow: async () => {
     if (!syncConnection.get()?.core) {
@@ -452,6 +470,9 @@ const serveCoreSyncControl = createCoreSyncControlHandler({
       sync.resetCache();
       writeEffectiveWebToolsRuntime();
       await sync.syncNow();
+      if (credentialSourceChanged && sources.credentials === "local") {
+        markCredentialsStale();
+      }
     }
   },
   updateOverride: ({ override }) => {
@@ -709,11 +730,15 @@ async function recycleStale(): Promise<void> {
   // on a provider it has no credential for, and that includes the placeholder
   // it reports when it has none at all. Getting this wrong leaves a
   // conversation with no process rather than with the wrong model.
-  const reachable = new Set(
-    (await credentials.list())
-      .filter((provider) => provider.configured)
-      .map((provider) => provider.id),
-  );
+  const connection = syncConnection.get();
+  const reachable =
+    connection?.sources.credentials === "sync"
+      ? new Set(Object.keys(sync.snapshot()?.credentials ?? {}))
+      : new Set(
+          (await credentials.list())
+            .filter((provider) => provider.configured)
+            .map((provider) => provider.id),
+        );
 
   for (const session of sessions.values()) {
     if (!session.staleCredentials) {
