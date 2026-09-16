@@ -1,7 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { SyncClientError } from "@cinba/sync-client";
-import { consumeCredentialDraft, errorMessage, manualModel, modelLabel } from "./view-model.ts";
+import {
+  SHARED_CREDENTIAL_PROVIDERS,
+  consumeCredentialDraft,
+  errorMessage,
+  manualModel,
+  modelLabel,
+} from "./view-model.ts";
+
+test("shared credential choices are unique and include model and search providers", () => {
+  const ids = SHARED_CREDENTIAL_PROVIDERS.map((provider) => provider.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.ok(ids.includes("anthropic"));
+  assert.ok(ids.includes("openai"));
+  assert.ok(ids.includes("exa"));
+  assert.ok(ids.includes("brave"));
+});
 
 test("describes revision conflicts without suggesting an overwrite", () => {
   const error = new SyncClientError({

@@ -20,6 +20,7 @@ import type {
 } from "@cinba/sync-contract";
 import {
   type Page,
+  SHARED_CREDENTIAL_PROVIDERS,
   consumeCredentialDraft,
   errorMessage,
   manualModel,
@@ -504,6 +505,8 @@ function Credentials({
 }) {
   const [provider, setProvider] = useState("");
   const [draft, setDraft] = useState("");
+  const modelProviders = SHARED_CREDENTIAL_PROVIDERS.filter((item) => item.kind === "model");
+  const searchProviders = SHARED_CREDENTIAL_PROVIDERS.filter((item) => item.kind === "search");
   function submit(event: FormEvent) {
     event.preventDefault();
     const credential = consumeCredentialDraft(draft, () => setDraft(""));
@@ -550,12 +553,23 @@ function Credentials({
         <h2>Add or replace</h2>
         <label>
           Provider
-          <input
-            value={provider}
-            onChange={(event) => setProvider(event.target.value)}
-            placeholder="anthropic"
-            required
-          />
+          <select value={provider} onChange={(event) => setProvider(event.target.value)} required>
+            <option value="">Choose a provider</option>
+            <optgroup label="Model providers">
+              {modelProviders.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name} ({item.id})
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Web search">
+              {searchProviders.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name} ({item.id})
+                </option>
+              ))}
+            </optgroup>
+          </select>
         </label>
         <label>
           API key
@@ -568,9 +582,10 @@ function Credentials({
           />
         </label>
         <p className="hint">
-          The field is cleared immediately when submitted. Existing values can never be revealed.
+          Only API keys can be shared. OAuth and subscription sign-ins stay on each Core. The key
+          field is cleared immediately when submitted, and existing values can never be revealed.
         </p>
-        <button className="primary" disabled={busy}>
+        <button className="primary" disabled={busy || !provider}>
           Store credential
         </button>
       </form>
