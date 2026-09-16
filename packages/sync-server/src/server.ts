@@ -48,9 +48,8 @@ export function createSyncServer(options: SyncServerOptions): Server {
   const administrator = new AdministratorAuthService({
     store,
     origin: options.publicOrigin,
-    cookieMode: ["127.0.0.1", "localhost", "[::1]"].includes(new URL(options.publicOrigin).hostname)
-      ? "loopback-development"
-      : "secure",
+    cookieMode:
+      new URL(options.publicOrigin).protocol === "https:" ? "secure" : "loopback-development",
   });
   const api = createSyncApiHandler({ store, administrator });
   const webRoot =
