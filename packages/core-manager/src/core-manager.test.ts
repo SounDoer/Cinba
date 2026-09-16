@@ -7,9 +7,17 @@ import { test } from "node:test";
 import type { ChildProcess } from "node:child_process";
 import type { CoreHealth } from "@cinba/core-client";
 import { createLocalCoreConfig } from "./config.ts";
-import { createCoreProcessEnvironment, ensureLocalCore, stopLocalCore } from "./core-manager.ts";
+import {
+  createCoreProcessEnvironment,
+  ensureLocalCore,
+  normalizeLocalCoreLifetime,
+  resolveLocalCoreRevision,
+  stopLocalCore,
+} from "./core-manager.ts";
 
-const HEALTH: CoreHealth = { status: "ok", revision: "unknown", safeToRestart: true };
+const REVISION = "abcdef1234567890abcdef1234567890abcdef12";
+const OLD_REVISION = "1234567890abcdef1234567890abcdef12345678";
+const HEALTH: CoreHealth = { status: "ok", revision: REVISION, safeToRestart: true };
 
 function fakeChild(pid: number): ChildProcess {
   const child = new EventEmitter() as ChildProcess;
@@ -21,7 +29,7 @@ function fakeChild(pid: number): ChildProcess {
   return child;
 }
 
-test("a Core spawned by Electron runs as Node", () => {
+test("a local Core spawned by Electron runs as the current on-demand revision", () => {
   const home = join(tmpdir(), "cinba-manager-home");
   const config = createLocalCoreConfig({ homeDirectory: home });
   const environment = createCoreProcessEnvironment(
@@ -33,10 +41,12 @@ test("a Core spawned by Electron runs as Node", () => {
       PI_CODING_AGENT_DIR: "C:\\wrong-pi",
     },
     config,
+    REVISION,
   );
 
   assert.equal(environment.ELECTRON_RUN_AS_NODE, "1");
   assert.equal(environment.CINBA_CORE_LIFETIME, "on-demand");
+  assert.equal(environment.CINBA_REVISION, REVISION);
   assert.equal(environment.CINBA_LOCAL_CONTROL_TOKEN, "secret");
   assert.equal(environment.CINBA_PORT, "4517");
   assert.equal(environment.CINBA_STATE_DIR, config.stateDirectory);
@@ -53,6 +63,7 @@ test("reuses a Core that is already healthy", async () => {
   try {
     const status = await ensureLocalCore({
       config,
+      expectedRevision: REVISION,
       probe: async () => HEALTH,
       spawnCore: () => {
         spawns += 1;
@@ -109,37 +120,7 @@ test("starts one managed Core and records its runtime", async () => {
   }
 });
 
-test("Desktop can start a persistent managed Core", async () => {
-  const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
-  const config = createLocalCoreConfig({ homeDirectory: home });
-  let spawnedLifetime: string | undefined;
-  let probes = 0;
-  try {
-    const status = await ensureLocalCore({
-      config,
-      lifetime: "persistent",
-      probe: async () => {
-        probes += 1;
-        return probes >= 3 ? HEALTH : undefined;
-      },
-      spawnCore: (_config, _token, lifetime) => {
-        spawnedLifetime = lifetime;
-        return fakeChild(4242);
-      },
-      acquireLock: async () => () => {},
-      delay: async () => {},
-    });
-
-    assert.equal(status.running, true);
-    assert.equal(status.managed, true);
-    assert.equal(status.lifetime, "persistent");
-    assert.equal(spawnedLifetime, "persistent");
-  } finally {
-    rmSync(home, { recursive: true, force: true });
-  }
-});
-
-test("Desktop promotes an existing managed on-demand Core without replacing its PID", async () => {
+test("an existing managed persistent Core is returned to on-demand", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
   const config = createLocalCoreConfig({ homeDirectory: home });
   let running = false;
@@ -147,6 +128,7 @@ test("Desktop promotes an existing managed on-demand Core without replacing its 
   try {
     await ensureLocalCore({
       config,
+      expectedRevision: REVISION,
       probe: async () => (running ? HEALTH : undefined),
       spawnCore: () => {
         running = true;
@@ -157,11 +139,11 @@ test("Desktop promotes an existing managed on-demand Core without replacing its 
 
     const status = await ensureLocalCore({
       config,
-      lifetime: "persistent",
+      expectedRevision: REVISION,
       probe: async () => HEALTH,
       requestStatus: async () => ({
         status: "ok",
-        lifetime: "on-demand",
+        lifetime: "persistent",
         pid: process.pid,
         clientCount: 1,
         safeToStop: true,
@@ -173,9 +155,216 @@ test("Desktop promotes an existing managed on-demand Core without replacing its 
       },
     });
 
-    assert.equal(requestedLifetime, "persistent");
-    assert.equal(status.pid, process.pid);
-    assert.equal(status.lifetime, "persistent");
+    assert.equal(status.running, true);
+    assert.equal(status.managed, true);
+    assert.equal(status.lifetime, "on-demand");
+    assert.equal(requestedLifetime, "on-demand");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("the local revision is the normalized checkout commit", () => {
+  assert.equal(
+    resolveLocalCoreRevision("C:\\cinba", (root) => {
+      assert.equal(root, "C:\\cinba");
+      return `${REVISION.toUpperCase()}\n`;
+    }),
+    REVISION,
+  );
+});
+
+test("normalizing lifetime never starts a stopped Core", async () => {
+  const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
+  const config = createLocalCoreConfig({ homeDirectory: home });
+  try {
+    assert.deepEqual(await normalizeLocalCoreLifetime({ config, probe: async () => undefined }), {
+      state: "stopped",
+      running: false,
+      managed: false,
+    });
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("a safe managed Core from an old revision is restarted", async () => {
+  const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
+  const config = createLocalCoreConfig({ homeDirectory: home });
+  let running = false;
+  let revision = OLD_REVISION;
+  let stopRequests = 0;
+  let spawns = 0;
+  try {
+    await ensureLocalCore({
+      config,
+      expectedRevision: OLD_REVISION,
+      probe: async () => (running ? { status: "ok", revision, safeToRestart: true } : undefined),
+      spawnCore: () => {
+        running = true;
+        return fakeChild(process.pid);
+      },
+      delay: async () => {},
+    });
+
+    const status = await ensureLocalCore({
+      config,
+      expectedRevision: REVISION,
+      probe: async () => (running ? { status: "ok", revision, safeToRestart: true } : undefined),
+      requestStatus: async () => ({
+        status: "ok",
+        lifetime: "on-demand",
+        pid: process.pid,
+        clientCount: 1,
+        safeToStop: true,
+        draining: false,
+      }),
+      requestStop: async () => {
+        stopRequests += 1;
+        running = false;
+        return true;
+      },
+      spawnCore: () => {
+        spawns += 1;
+        revision = REVISION;
+        running = true;
+        return fakeChild(process.pid);
+      },
+      delay: async () => {},
+    });
+
+    assert.equal(status.health?.revision, REVISION);
+    assert.equal(stopRequests, 1);
+    assert.equal(spawns, 1);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("a busy managed Core from an old revision is not stopped", async () => {
+  const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
+  const config = createLocalCoreConfig({ homeDirectory: home });
+  let running = false;
+  let stopRequests = 0;
+  let requestedLifetime: string | undefined;
+  try {
+    await ensureLocalCore({
+      config,
+      expectedRevision: OLD_REVISION,
+      probe: async () =>
+        running ? { status: "ok", revision: OLD_REVISION, safeToRestart: false } : undefined,
+      spawnCore: () => {
+        running = true;
+        return fakeChild(process.pid);
+      },
+      delay: async () => {},
+    });
+
+    await assert.rejects(
+      ensureLocalCore({
+        config,
+        expectedRevision: REVISION,
+        probe: async () => ({ status: "ok", revision: OLD_REVISION, safeToRestart: false }),
+        requestStatus: async () => ({
+          status: "ok",
+          lifetime: "persistent",
+          pid: process.pid,
+          clientCount: 0,
+          safeToStop: false,
+          draining: false,
+        }),
+        requestLifetime: async (_url, _token, lifetime) => {
+          requestedLifetime = lifetime;
+          return true;
+        },
+        requestStop: async () => {
+          stopRequests += 1;
+          return true;
+        },
+      }),
+      /busy.*old revision/i,
+    );
+    assert.equal(stopRequests, 0);
+    assert.equal(requestedLifetime, "on-demand");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("an external Core from another revision is never stopped or replaced", async () => {
+  const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
+  const config = createLocalCoreConfig({ homeDirectory: home });
+  let stops = 0;
+  let spawns = 0;
+  try {
+    await assert.rejects(
+      ensureLocalCore({
+        config,
+        expectedRevision: REVISION,
+        probe: async () => ({ status: "ok", revision: OLD_REVISION, safeToRestart: true }),
+        requestStop: async () => {
+          stops += 1;
+          return true;
+        },
+        spawnCore: () => {
+          spawns += 1;
+          return fakeChild(42);
+        },
+      }),
+      /different Cinba Core revision/i,
+    );
+    assert.deepEqual({ stops, spawns }, { stops: 0, spawns: 0 });
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("a draining managed Core finishes before one replacement is started", async () => {
+  const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
+  const config = createLocalCoreConfig({ homeDirectory: home });
+  let running = false;
+  let draining = false;
+  let spawns = 0;
+  try {
+    await ensureLocalCore({
+      config,
+      expectedRevision: REVISION,
+      probe: async () => (running ? HEALTH : undefined),
+      spawnCore: () => {
+        running = true;
+        return fakeChild(process.pid);
+      },
+      delay: async () => {},
+    });
+    draining = true;
+
+    const status = await ensureLocalCore({
+      config,
+      expectedRevision: REVISION,
+      probe: async () => (running ? HEALTH : undefined),
+      requestStatus: async () => ({
+        status: "ok",
+        lifetime: "on-demand",
+        pid: process.pid,
+        clientCount: 0,
+        safeToStop: true,
+        draining,
+      }),
+      requestStop: async () => {
+        running = false;
+        return true;
+      },
+      spawnCore: () => {
+        spawns += 1;
+        draining = false;
+        running = true;
+        return fakeChild(process.pid);
+      },
+      delay: async () => {},
+    });
+
+    assert.equal(status.state, "running");
+    assert.equal(spawns, 1);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -189,6 +378,7 @@ test("rechecks health after taking the lock", async () => {
   try {
     const status = await ensureLocalCore({
       config,
+      expectedRevision: REVISION,
       probe: async () => {
         probes += 1;
         return probes === 1 ? undefined : HEALTH;
@@ -207,13 +397,14 @@ test("rechecks health after taking the lock", async () => {
   }
 });
 
-test("Desktop promotes an on-demand Core discovered after taking the start lock", async () => {
+test("reuses an on-demand Core discovered after taking the start lock", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
   const config = createLocalCoreConfig({ homeDirectory: home });
   try {
     let running = false;
     await ensureLocalCore({
       config,
+      expectedRevision: REVISION,
       probe: async () => (running ? HEALTH : undefined),
       spawnCore: () => {
         running = true;
@@ -223,10 +414,10 @@ test("Desktop promotes an on-demand Core discovered after taking the start lock"
     });
 
     let probes = 0;
-    let promoted = false;
+    let lifetimeRequests = 0;
     const status = await ensureLocalCore({
       config,
-      lifetime: "persistent",
+      expectedRevision: REVISION,
       probe: async () => {
         probes += 1;
         return probes === 1 ? undefined : HEALTH;
@@ -240,14 +431,14 @@ test("Desktop promotes an on-demand Core discovered after taking the start lock"
         draining: false,
       }),
       requestLifetime: async () => {
-        promoted = true;
+        lifetimeRequests += 1;
         return true;
       },
       acquireLock: async () => () => {},
     });
 
-    assert.equal(promoted, true);
-    assert.equal(status.lifetime, "persistent");
+    assert.equal(lifetimeRequests, 0);
+    assert.equal(status.lifetime, "on-demand");
     assert.equal(status.pid, process.pid);
   } finally {
     rmSync(home, { recursive: true, force: true });
@@ -261,6 +452,7 @@ test("concurrent callers produce only one Core process", async () => {
   let spawns = 0;
   const options = {
     config,
+    expectedRevision: REVISION,
     probe: async () => (healthy ? HEALTH : undefined),
     spawnCore: () => {
       spawns += 1;
@@ -289,6 +481,7 @@ test("a managed Core is asked to stop gracefully", async () => {
   try {
     await ensureLocalCore({
       config,
+      expectedRevision: REVISION,
       probe: async () => (running ? HEALTH : undefined),
       spawnCore: () => {
         running = true;

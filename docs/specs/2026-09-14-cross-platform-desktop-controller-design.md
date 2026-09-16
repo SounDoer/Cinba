@@ -2,7 +2,11 @@
 
 日期：2026-09-14
 
-状态：实施中
+状态：历史设计；本机 persistent 生命周期已由
+`2026-09-16-desktop-local-core-lifecycle-design.md` 取代
+
+> 本文记录 Desktop 跨平台控制器的形成过程。第 2、3、7 节中的 Desktop persistent 与退出语义
+> 不再是当前规则；现在所有 manager-owned 本机 Core 均为 on-demand。
 
 ## 1. 产品形态
 

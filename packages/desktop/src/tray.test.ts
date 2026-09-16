@@ -49,7 +49,7 @@ test("a managed Core exposes its details and graceful stop", () => {
   assert.equal(view.canStop, true);
 });
 
-test("a persistent Core explains that only the user stops it", () => {
+test("a legacy persistent Core is identified instead of presented as normal availability", () => {
   const view = createTrayViewModel({
     state: "running",
     running: true,
@@ -58,7 +58,7 @@ test("a persistent Core explains that only the user stops it", () => {
     safeToStop: true,
   });
 
-  assert.deepEqual(view.detailLabels, ["Availability: until you stop the Core"]);
+  assert.deepEqual(view.detailLabels, ["Availability: legacy persistent mode"]);
   assert.equal(view.canStop, true);
 });
 

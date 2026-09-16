@@ -2,7 +2,7 @@ import {
   type LocalCoreStatus,
   createLocalCoreConfig,
   ensureLocalCore,
-  inspectLocalCore,
+  normalizeLocalCoreLifetime,
   stopLocalCore,
 } from "@cinba/core-manager";
 import type { CoreProfile } from "./profiles.ts";
@@ -94,7 +94,7 @@ export function createTrayViewModel(
   if (status.managed && status.lifetime) {
     detailLabels.push(
       status.lifetime === "persistent"
-        ? "Availability: until you stop the Core"
+        ? "Availability: legacy persistent mode"
         : "Availability: stops after 10 idle minutes",
     );
   }
@@ -219,12 +219,6 @@ export async function createSystemTrayController(options: {
           click: () => void refreshStatus(),
         },
         { label: "Open Local Core Log", click: () => void openCoreLog() },
-        { type: "separator" },
-        {
-          label: "Stop Local Core and Quit Desktop",
-          enabled: view.canStop && !operation,
-          click: () => void stopCoreAndQuit(),
-        },
         { label: "Quit Desktop", click: () => app.quit() },
       ]),
     );
@@ -236,7 +230,7 @@ export async function createSystemTrayController(options: {
     }
     refreshInFlight = true;
     try {
-      status = await inspectLocalCore();
+      status = await normalizeLocalCoreLifetime();
       recentError = undefined;
     } catch (error) {
       recentError = errorMessage(error);
@@ -267,18 +261,11 @@ export async function createSystemTrayController(options: {
   }
 
   async function startCore(): Promise<void> {
-    await runOperation("starting", () => ensureLocalCore({ lifetime: "persistent" }));
+    await runOperation("starting", ensureLocalCore);
   }
 
   async function stopCore(): Promise<void> {
     await runOperation("stopping", stopLocalCore);
-  }
-
-  async function stopCoreAndQuit(): Promise<void> {
-    await stopCore();
-    if (!recentError && !status.running) {
-      app.quit();
-    }
   }
 
   async function openCoreLog(): Promise<void> {

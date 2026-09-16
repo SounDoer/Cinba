@@ -70,7 +70,7 @@ export function createDesktopWindowController(profiles: CoreProfileStore): Deskt
 
   const navigator = createCoreNavigator({
     ensureLocal: async () => {
-      await ensureLocalCore({ lifetime: "persistent" });
+      await ensureLocalCore();
     },
     probe: async (baseUrl) => Boolean(await probeCore(baseUrl)),
     load: async (baseUrl) => {

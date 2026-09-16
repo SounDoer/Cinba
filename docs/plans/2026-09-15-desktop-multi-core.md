@@ -4,6 +4,10 @@
 状态：代码已完成；Windows 视觉验收与 macOS 双 Core 实机验收待完成  
 对应设计：`docs/specs/2026-09-15-desktop-multi-core-design.md`
 
+> 2026-09-16 后续修正：本文中的本机 persistent 与组合退出验收已由
+> `docs/specs/2026-09-16-desktop-local-core-lifecycle-design.md` 取代；Profile、窗口隔离和远程
+> Core 边界继续有效。
+
 ## 目标与完成标准
 
 把现有“打开窗口就启动 `127.0.0.1:4517`”的 Desktop 改成独立于任一 Core 的客户端外壳：
@@ -201,7 +205,7 @@ type WindowState =
 抽出打开策略：
 
 ```text
-Local  → ensureLocalCore(persistent) → probe → load
+Local  → ensureLocalCore(on-demand) → probe → load
 Remote → probe                      → load
 ```
 
@@ -381,7 +385,7 @@ Local Core
 - 现有 2 秒轮询仍只探测 Local Core，不轮询所有远程 Core；
 - `starting`/`stopping` 操作只禁用 Local 控制，不应阻止用户打开 Remote Profile；
 - tooltip 和错误文字明确指向 Local Core，不能让查看 VPS 时显示成在控制 VPS；
-- `Stop Local Core and Quit Desktop` 保留现有 graceful 语义。
+- 普通 `Quit Desktop` 不停止其它客户端；需要立即停止时使用独立的 graceful stop。
 
 这一步需要把当前 tray 中用一个 `operation` 包住 `openWindow()` 的结构拆开：打开 Remote 不属于
 `starting`，打开 Local 才可能触发 ensure。窗口导航错误与 Local 生命周期错误分别保存和呈现。
@@ -444,7 +448,7 @@ Electron 窗口行为不能只靠 mock。自动化全绿后，在 Windows 和 Ho
 3. 切到 VPS，确认没有因为切换额外启动 Local Core；
 4. 页面中 Core identity 与 VPS 一致；
 5. 关闭 VPS 或使用不可达测试地址，确认 shell、选择器和 Manage Cores 仍可用；
-6. 切回 Local，确认按需启动并提升为 persistent；
+6. 切回 Local，确认按需启动且保持 on-demand；
 7. 关闭窗口后旧 WebSocket 断开，tray 仍存在；
 8. 重启 Desktop，确认恢复上次 Profile；
 9. 外链进入系统浏览器，远程页面不能替换 shell；
@@ -457,8 +461,8 @@ Electron 窗口行为不能只靠 mock。自动化全绿后，在 Windows 和 Ho
 3. 添加并打开 VPS Profile，Home Mac Core 不被无条件启动；
 4. Mac 睡眠/网络切换后的离线与 Retry 状态可恢复；
 5. Profile 文件、窗口选择和 Menu Bar 清单在重启后保持；
-6. 关闭主窗口不会退出 Desktop 或停止 persistent Local Core；
-7. `Stop Local Core and Quit Desktop` 仍走 draining，而不是强杀。
+6. 关闭主窗口不会退出 Desktop；Local Core 无客户端后按安全空闲规则退出；
+7. `Stop Local Core Gracefully` 仍走 draining，而不是强杀；普通退出不留下 persistent Core。
 
 测试期间保存用户原有 `desktop.json`，结束后恢复；不得覆盖真实 Profile 或 Core 配置。
 

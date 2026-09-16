@@ -194,7 +194,7 @@ Profile 不保存 Tailscale 凭据、Cinba token 或证书例外。网络认证�
 
 ```text
 open(local)
-→ ensureLocalCore({ lifetime: "persistent" })
+→ ensureLocalCore()（本机 on-demand）
 → 加载 http://127.0.0.1:4517/
 
 open(remote)

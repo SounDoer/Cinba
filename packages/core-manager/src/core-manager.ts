@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   closeSync,
@@ -45,21 +45,18 @@ export type LocalCoreStatus = {
 
 export type EnsureLocalCoreOptions = {
   config?: LocalCoreConfig;
-  lifetime?: "persistent" | "on-demand";
+  expectedRevision?: string;
   readyTimeoutMs?: number;
   pollIntervalMs?: number;
   probe?: (baseUrl: string) => Promise<CoreHealth | undefined>;
   requestStatus?: (baseUrl: string, token: string) => Promise<LocalCoreControlStatus | undefined>;
-  spawnCore?: (
-    config: LocalCoreConfig,
-    controlToken: string,
-    lifetime: "persistent" | "on-demand",
-  ) => ChildProcess;
+  spawnCore?: (config: LocalCoreConfig, controlToken: string, revision: string) => ChildProcess;
   requestLifetime?: (
     baseUrl: string,
     token: string,
     lifetime: "persistent" | "on-demand",
   ) => Promise<boolean>;
+  requestStop?: (baseUrl: string, token: string) => Promise<boolean>;
   acquireLock?: (path: string) => Promise<() => void>;
   delay?: (milliseconds: number) => Promise<void>;
 };
@@ -74,6 +71,11 @@ export type StopLocalCoreOptions = {
   delay?: (milliseconds: number) => Promise<void>;
 };
 
+export type NormalizeLocalCoreOptions = Pick<
+  EnsureLocalCoreOptions,
+  "config" | "probe" | "requestStatus" | "requestLifetime"
+>;
+
 const DEFAULT_READY_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_INTERVAL_MS = 100;
 
@@ -81,7 +83,7 @@ export function createCoreProcessEnvironment(
   controlToken: string,
   environment: NodeJS.ProcessEnv = process.env,
   config = createLocalCoreConfig(),
-  lifetime: "persistent" | "on-demand" = "on-demand",
+  revision = resolveLocalCoreRevision(config.repositoryRoot),
 ): NodeJS.ProcessEnv {
   const stableEnvironment = { ...environment };
   delete stableEnvironment.CINBA_DEFAULT_CORE_NAME;
@@ -90,12 +92,31 @@ export function createCoreProcessEnvironment(
     // process.execPath is electron.exe when Desktop calls the manager. Without
     // this, Electron loads serverEntry as an app and stays alive after Core stops.
     ELECTRON_RUN_AS_NODE: "1",
-    CINBA_CORE_LIFETIME: lifetime,
+    CINBA_CORE_LIFETIME: "on-demand",
+    CINBA_REVISION: revision,
     CINBA_LOCAL_CONTROL_TOKEN: controlToken,
     CINBA_PORT: "4517",
     CINBA_STATE_DIR: config.stateDirectory,
     PI_CODING_AGENT_DIR: config.piAgentDirectory,
   };
+}
+
+/** Resolve the source checkout identity advertised by a manager-owned local Core. */
+export function resolveLocalCoreRevision(
+  repositoryRoot: string,
+  readRevision: (root: string) => string = (root) =>
+    execFileSync("git", ["rev-parse", "--verify", "HEAD^{commit}"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "inherit"],
+      windowsHide: true,
+    }),
+): string {
+  const revision = readRevision(repositoryRoot).trim().toLowerCase();
+  if (!/^[0-9a-f]{40}$/.test(revision)) {
+    throw new Error("The local Cinba checkout did not resolve to a full Git revision");
+  }
+  return revision;
 }
 
 function processIsAlive(pid: number): boolean {
@@ -175,7 +196,7 @@ function removeControl(config: LocalCoreConfig, pid: number): void {
 function defaultSpawnCore(
   config: LocalCoreConfig,
   controlToken: string,
-  lifetime: "persistent" | "on-demand" = "on-demand",
+  revision: string,
 ): ChildProcess {
   mkdirSync(config.stateDirectory, { recursive: true });
   const log = openSync(config.logPath, "a", 0o600);
@@ -183,7 +204,7 @@ function defaultSpawnCore(
     const child = spawn(process.execPath, [config.serverEntry], {
       cwd: config.repositoryRoot,
       detached: true,
-      env: createCoreProcessEnvironment(controlToken, process.env, config, lifetime),
+      env: createCoreProcessEnvironment(controlToken, process.env, config, revision),
       stdio: ["ignore", log, log],
       windowsHide: true,
     });
@@ -231,15 +252,12 @@ export async function inspectLocalCore(
   };
 }
 
-async function ensureRequestedLifetime(
+async function ensureOnDemandLifetime(
   status: LocalCoreStatus,
-  lifetime: "persistent" | "on-demand",
   config: LocalCoreConfig,
   requestLifetime: NonNullable<EnsureLocalCoreOptions["requestLifetime"]>,
 ): Promise<LocalCoreStatus> {
-  // Persistent dominates on-demand. A normal CLI client must not shorten a
-  // Desktop-managed Core's availability, while Desktop may promote one in place.
-  if (!status.managed || status.lifetime !== "on-demand" || lifetime !== "persistent") {
+  if (!status.managed || status.lifetime !== "persistent") {
     return status;
   }
 
@@ -247,11 +265,28 @@ async function ensureRequestedLifetime(
   if (
     !control ||
     control.pid !== status.pid ||
-    !(await requestLifetime(config.baseUrl, control.token, "persistent"))
+    !(await requestLifetime(config.baseUrl, control.token, "on-demand"))
   ) {
-    throw new Error("The running Cinba Core could not be kept persistently available");
+    throw new Error("The running Cinba Core could not be returned to on-demand availability");
   }
-  return { ...status, lifetime: "persistent" };
+  return { ...status, lifetime: "on-demand" };
+}
+
+/** Return a running manager-owned local Core to on-demand without starting one. */
+export async function normalizeLocalCoreLifetime(
+  options: NormalizeLocalCoreOptions = {},
+): Promise<LocalCoreStatus> {
+  const config = options.config ?? createLocalCoreConfig();
+  const status = await inspectLocalCore(
+    config,
+    options.probe ?? probeCoreHealth,
+    options.requestStatus ?? requestLocalCoreStatus,
+  );
+  return await ensureOnDemandLifetime(
+    status,
+    config,
+    options.requestLifetime ?? requestLocalCoreLifetime,
+  );
 }
 
 /** Ensure the one shared local Core is healthy, starting it in the background when absent. */
@@ -262,22 +297,63 @@ export async function ensureLocalCore(
   const probe = options.probe ?? probeCoreHealth;
   const statusRequest = options.requestStatus ?? requestLocalCoreStatus;
   const lifetimeRequest = options.requestLifetime ?? requestLocalCoreLifetime;
-  const lifetime = options.lifetime ?? "on-demand";
-  const existing = await inspectLocalCore(config, probe, statusRequest);
-  if (existing.running) {
-    return await ensureRequestedLifetime(existing, lifetime, config, lifetimeRequest);
+  const expectedRevision =
+    options.expectedRevision ?? resolveLocalCoreRevision(config.repositoryRoot);
+  let existing = await inspectLocalCore(config, probe, statusRequest);
+  existing = await ensureOnDemandLifetime(existing, config, lifetimeRequest);
+  if (
+    existing.running &&
+    existing.state !== "draining" &&
+    existing.health?.revision === expectedRevision
+  ) {
+    return existing;
+  }
+  if (existing.running && existing.health?.revision !== expectedRevision) {
+    if (!existing.managed) {
+      throw new Error("A different Cinba Core revision is using the local address");
+    }
+    if (existing.safeToStop === false || existing.health?.safeToRestart === false) {
+      throw new Error("The local Core is busy on an old revision; retry after its work finishes");
+    }
   }
 
   const release = await (options.acquireLock ?? acquireStartLock)(config.startLockPath);
   try {
-    const foundInsideLock = await inspectLocalCore(config, probe, statusRequest);
+    let foundInsideLock = await inspectLocalCore(config, probe, statusRequest);
+    foundInsideLock = await ensureOnDemandLifetime(foundInsideLock, config, lifetimeRequest);
+    if (
+      foundInsideLock.running &&
+      foundInsideLock.state !== "draining" &&
+      foundInsideLock.health?.revision === expectedRevision
+    ) {
+      return foundInsideLock;
+    }
     if (foundInsideLock.running) {
-      return await ensureRequestedLifetime(foundInsideLock, lifetime, config, lifetimeRequest);
+      if (foundInsideLock.health?.revision !== expectedRevision && !foundInsideLock.managed) {
+        throw new Error("A different Cinba Core revision is using the local address");
+      }
+      if (
+        foundInsideLock.health?.revision !== expectedRevision &&
+        (foundInsideLock.safeToStop === false || foundInsideLock.health?.safeToRestart === false)
+      ) {
+        throw new Error("The local Core is busy on an old revision; retry after its work finishes");
+      }
+      const stopped = await stopLocalCore({
+        config,
+        probe,
+        requestStatus: statusRequest,
+        requestStop: options.requestStop,
+        delay: options.delay,
+        pollIntervalMs: options.pollIntervalMs,
+      });
+      if (stopped.running) {
+        throw new Error("The local Core is draining; retry after its current work finishes");
+      }
     }
 
     mkdirSync(config.stateDirectory, { recursive: true });
     const controlToken = randomUUID();
-    const child = (options.spawnCore ?? defaultSpawnCore)(config, controlToken, lifetime);
+    const child = (options.spawnCore ?? defaultSpawnCore)(config, controlToken, expectedRevision);
     if (child.pid === undefined) {
       throw new Error("The Cinba Core process did not report a PID");
     }
@@ -314,7 +390,7 @@ export async function ensureLocalCore(
           running: true,
           managed: true,
           pid,
-          lifetime,
+          lifetime: "on-demand",
           safeToStop: health.safeToRestart,
           health,
         };
