@@ -18,6 +18,7 @@
 
 import type { WebSocket } from "ws";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { normalizeSyncServerUrl } from "@cinba/sync-client";
 import { rmSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
@@ -37,6 +38,7 @@ import {
 } from "./drain.ts";
 import { createHealthHandler, isSafeToRestart, normalizeRevision } from "./health.ts";
 import { createLocalCoreControlHandler } from "./local-core-control.ts";
+import { createCoreSyncControlHandler } from "./sync-control.ts";
 import { LOCAL_SOURCES } from "./effective-settings.ts";
 import { createInstanceOverrideStore } from "./instance-override.ts";
 import { createLocalSettingsStore } from "./local-settings.ts";
@@ -49,6 +51,8 @@ import { createStaticFileHandler } from "./static-files.ts";
 import {
   createCapabilitiesReporter,
   createCoreSyncHttpRemote,
+  createEnrollmentCoordinator,
+  createEnrollmentHttpRemote,
   createSnapshotCache,
   createSyncConnectionStore,
   createSyncCoordinator,
@@ -111,6 +115,10 @@ const sync = createSyncCoordinator({
     void capabilities.reportIfChanged().catch(() => undefined);
   },
 });
+const enrollment = createEnrollmentCoordinator({
+  store: syncConnection,
+  remoteFor: createEnrollmentHttpRemote,
+});
 const capabilities = createCapabilitiesReporter({
   remote: () => {
     const connection = syncConnection.get();
@@ -161,6 +169,41 @@ function writeEffectiveWebToolsRuntime(): void {
       sharedCredentials,
     }),
   );
+}
+
+function corePlatform(): "windows" | "macos" | "linux" | "other" {
+  if (process.platform === "win32") {
+    return "windows";
+  }
+  if (process.platform === "darwin") {
+    return "macos";
+  }
+  if (process.platform === "linux") {
+    return "linux";
+  }
+  return "other";
+}
+
+async function waitForEnrollment(): Promise<void> {
+  try {
+    const result = await enrollment.wait();
+    if (result?.status === "approved") {
+      sync.stop();
+      await sync.start();
+      await capabilities.reportIfChanged();
+      writeEffectiveWebToolsRuntime();
+    } else if (result?.status === "rejected" || result?.status === "expired") {
+      sync.disconnect();
+      writeEffectiveWebToolsRuntime();
+    }
+  } catch (error) {
+    if ((error as { name?: string }).name !== "AbortError") {
+      console.error(
+        "[cinba] Sync enrollment polling failed:",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
 }
 
 writeEffectiveWebToolsRuntime();
@@ -287,12 +330,144 @@ const serveLocalCoreControl = createLocalCoreControlHandler({
     console.log(`[cinba] Core lifetime changed to ${lifetime}`);
   },
 });
+const serveCoreSyncControl = createCoreSyncControlHandler({
+  view: () => {
+    const connection = syncConnection.get();
+    const status = sync.status();
+    const snapshot = sync.snapshot();
+    const sources = connection?.sources ?? LOCAL_SOURCES;
+    const resolution = resolveSyncSettings({
+      sources,
+      local: localSettings.get(),
+      ...(snapshot?.settings
+        ? {
+            shared: {
+              defaultModel: snapshot.settings.defaultModel,
+              webTools: { ...snapshot.settings.webTools },
+            },
+          }
+        : {}),
+      override: instanceOverride.get(),
+    });
+    return {
+      version: 1,
+      state: connection?.pending ? "pending" : status.state,
+      sources,
+      effectiveSettingsSource: resolution.source,
+      ...(connection
+        ? { serverUrl: connection.serverUrl, managementUrl: `${connection.serverUrl}/` }
+        : {}),
+      ...(connection?.pending ? { enrollmentExpiresAt: connection.pending.expiresAt } : {}),
+      ...(status.lastSuccessAt ? { lastSuccessAt: status.lastSuccessAt } : {}),
+      ...(status.syncRevision === undefined ? {} : { syncRevision: status.syncRevision }),
+      ...(snapshot ? { settingsRevision: snapshot.settingsRevision } : {}),
+      ...(status.errorCode ? { errorCode: status.errorCode } : {}),
+      ...(status.action ? { action: status.action } : {}),
+      ...(snapshot
+        ? {
+            shared: {
+              ...(snapshot.settings.defaultModel
+                ? { defaultModel: { ...snapshot.settings.defaultModel } }
+                : {}),
+              webTools: { ...snapshot.settings.webTools },
+            },
+          }
+        : {}),
+      override: instanceOverride.get(),
+      effective: {
+        ...(resolution.settings.defaultModel
+          ? { defaultModel: { ...resolution.settings.defaultModel } }
+          : {}),
+        webTools: { ...resolution.settings.webTools },
+      },
+    };
+  },
+  connect: async ({ serverUrl, sources }) => {
+    if (syncConnection.get()) {
+      throw new Error("A Sync connection already exists");
+    }
+    const normalizedServerUrl = normalizeSyncServerUrl(serverUrl, {
+      allowInsecureLoopback: true,
+    });
+    await enrollment.begin({
+      serverUrl: normalizedServerUrl,
+      sources,
+      request: {
+        version: 1,
+        name: localState.get().coreName,
+        platform: corePlatform(),
+        appVersion: process.env.npm_package_version ?? "0.0.0",
+        credentialSource: sources.credentials,
+      },
+    });
+    void waitForEnrollment();
+  },
+  cancel: () => {
+    enrollment.cancel();
+    sync.disconnect();
+    writeEffectiveWebToolsRuntime();
+  },
+  disconnect: () => {
+    enrollment.cancel();
+    sync.disconnect();
+    writeEffectiveWebToolsRuntime();
+  },
+  syncNow: async () => {
+    if (!syncConnection.get()?.core) {
+      throw new Error("No connected Sync Core exists");
+    }
+    await sync.syncNow();
+  },
+  updateSources: async ({ sources }) => {
+    const connection = syncConnection.get();
+    if (!connection) {
+      throw new Error("No Sync connection exists");
+    }
+    if (connection.pending) {
+      throw new Error("Cancel the pending enrollment before changing sources");
+    }
+    const credentialSourceChanged = connection.sources.credentials !== sources.credentials;
+    if (credentialSourceChanged) {
+      await createCoreSyncHttpRemote(
+        connection.serverUrl,
+        connection.core!.credential,
+      ).updateCredentialSource(sources.credentials);
+    }
+    try {
+      syncConnection.setSources(sources);
+    } catch (error) {
+      if (credentialSourceChanged) {
+        try {
+          await createCoreSyncHttpRemote(
+            connection.serverUrl,
+            connection.core!.credential,
+          ).updateCredentialSource(connection.sources.credentials);
+        } catch {
+          console.error("[cinba] could not roll back the remote credential source");
+        }
+      }
+      throw error;
+    }
+    if (connection.core) {
+      sync.resetCache();
+      writeEffectiveWebToolsRuntime();
+      await sync.syncNow();
+    }
+  },
+  updateOverride: ({ override }) => {
+    instanceOverride.replace(override);
+    writeEffectiveWebToolsRuntime();
+  },
+});
 
 async function serveHttp(request: IncomingMessage, response: ServerResponse): Promise<void> {
   if (serveHealth(request, response)) {
     return;
   }
   if (serveLocalCoreControl(request, response)) {
+    return;
+  }
+  if (await serveCoreSyncControl(request, response)) {
     return;
   }
   if (await serveDeploymentStatus(request, response)) {
@@ -974,6 +1149,9 @@ export function startService(): void {
     .start()
     .then(async (address) => {
       await sync.start();
+      if (syncConnection.get()?.pending) {
+        void waitForEnrollment();
+      }
       const currentState = localState.get();
       const currentSettings = effectiveSettings();
       console.log(

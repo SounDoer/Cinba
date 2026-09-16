@@ -51,3 +51,25 @@ export type {
 } from "./session.ts";
 export { isThinkingLevel, THINKING_LEVELS } from "./thinking.ts";
 export type { ThinkingLevel, ThinkingState } from "./thinking.ts";
+export {
+  CORE_SYNC_ROUTES,
+  parseConnectCoreSyncRequest,
+  parseCoreSyncOperationAccepted,
+  parseCoreSyncSources,
+  parseCoreSyncView,
+  parseUpdateCoreInstanceOverrideRequest,
+  parseUpdateCoreSyncSourcesRequest,
+} from "./sync.ts";
+export type {
+  ConnectCoreSyncRequest,
+  CoreInstanceOverride,
+  CoreSyncOperationAccepted,
+  CoreSyncSettings,
+  CoreSyncSources,
+  CoreSyncState,
+  CoreSyncView,
+  SyncCredentialSource,
+  SyncSettingsSource,
+  UpdateCoreInstanceOverrideRequest,
+  UpdateCoreSyncSourcesRequest,
+} from "./sync.ts";

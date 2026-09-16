@@ -29,6 +29,7 @@ export type SyncConnectionStore = {
     enrollment: PendingSyncEnrollment;
   }): void;
   approve(core: ConnectedSyncCore): void;
+  setSources(sources: SourceSelection): void;
   disconnect(): void;
   problem(): StoredJsonError | undefined;
 };
@@ -142,6 +143,12 @@ export function createSyncConnectionStore(path: string): SyncConnectionStore {
         sources: { ...connection.sources },
         core: { ...core },
       });
+    },
+    setSources: (sources) => {
+      if (!connection) {
+        throw new Error("No Sync connection exists");
+      }
+      commit({ ...connection, sources: { ...sources } });
     },
     disconnect: () => {
       if (loadProblem) {

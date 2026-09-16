@@ -10,6 +10,7 @@ import {
   parseCapabilitiesReport,
   parseConnectedCoreList,
   parseCoreCapabilities,
+  parseCorePreferencesRequest,
   parseCoreReportAccepted,
   parseCredentialStatus,
   parseCredentialStatusList,
@@ -251,6 +252,7 @@ const validDocuments: Array<[string, Parser<unknown>, unknown]> = [
     },
   ],
   ["Core report response", parseCoreReportAccepted, { version: 1, accepted: true }],
+  ["Core preferences", parseCorePreferencesRequest, { version: 1, credentialSource: "sync" }],
   [
     "Error response",
     parseSyncErrorResponse,

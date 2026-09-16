@@ -8,6 +8,7 @@ export type InstanceOverrideStore = {
   get(): InstanceOverride;
   setDefaultModel(model: ModelRef | undefined): void;
   setWebSearchPrimary(primary: WebSearchPrimary | undefined): void;
+  replace(override: InstanceOverride): void;
   reset(): void;
   problem(): StoredJsonError | undefined;
 };
@@ -80,6 +81,7 @@ export function createInstanceOverrideStore(path: string): InstanceOverrideStore
         ...(state.defaultModel ? { defaultModel: { ...state.defaultModel } } : {}),
         ...(searchPrimary ? { webTools: { searchPrimary } } : {}),
       }),
+    replace: (override) => commit(parseOverride(serialize(override))),
     reset: () => commit({}),
     problem: () => loadProblem,
   };

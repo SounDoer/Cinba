@@ -4,6 +4,7 @@ import {
   SYNC_ROUTES,
   type SyncErrorCode,
   parseCapabilitiesReport,
+  parseCorePreferencesRequest,
   parseEnrollmentDecisionRequest,
   parseEnrollmentRequest,
   parsePutCredentialRequest,
@@ -167,6 +168,17 @@ async function handleCoreRoute(
       return true;
     }
     await store.reportCapabilities(credential, parseCapabilitiesReport(await readJson(request)));
+    sendJson(response, 200, { version: 1, accepted: true });
+    return true;
+  }
+  if (path === SYNC_ROUTES.core.preferences && request.method === "PUT") {
+    const credential = bearer(request, "Bearer");
+    if (!credential) {
+      sendError(response, 401, "unauthorized");
+      return true;
+    }
+    const preferences = parseCorePreferencesRequest(await readJson(request));
+    await store.updateCoreCredentialSource(credential, preferences.credentialSource);
     sendJson(response, 200, { version: 1, accepted: true });
     return true;
   }

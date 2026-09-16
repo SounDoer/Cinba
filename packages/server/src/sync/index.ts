@@ -17,6 +17,7 @@ export type {
 export { createEnrollmentCoordinator } from "./enrollment-coordinator.ts";
 export type { EnrollmentCoordinator, EnrollmentRemote } from "./enrollment-coordinator.ts";
 export { createCoreSyncHttpRemote, createEnrollmentHttpRemote } from "./http-remotes.ts";
+export type { CorePreferencesRemote } from "./http-remotes.ts";
 export { createSnapshotCache, SnapshotCacheValidationError } from "./snapshot-cache.ts";
 export type { CachedSyncSnapshot, SnapshotCache } from "./snapshot-cache.ts";
 export { resolveSyncSettings } from "./runtime-view.ts";

@@ -83,6 +83,10 @@ export type SyncStore = {
   decideEnrollment(enrollmentId: string, decision: "approve" | "reject"): Promise<void>;
   reportCapabilities(coreCredential: string, report: CapabilitiesReport): Promise<void>;
   snapshotForCore(coreCredential: string): Promise<SyncSnapshot>;
+  updateCoreCredentialSource(
+    coreCredential: string,
+    credentialSource: "local" | "sync",
+  ): Promise<void>;
   revokeCore(coreId: string): Promise<void>;
   authenticationState(): "setup-required" | "ready";
   localSetupCode(): string | undefined;
@@ -488,6 +492,16 @@ export function createSyncStore(directory: string, options: SyncStoreOptions = {
           settings: structuredClone(current.state.settings),
           ...(credentials ? { credentials } : {}),
         };
+      }),
+    updateCoreCredentialSource: (credential, credentialSource) =>
+      enqueue(() => {
+        const current = requireState();
+        const core = authenticateCore(current.state, credential);
+        const next = cloneState(current.state);
+        const target = next.cores.find((candidate) => candidate.id === core.id)!;
+        target.credentialSource = credentialSource;
+        target.lastSeenAt = now().toISOString();
+        commit(next);
       }),
     revokeCore: (coreId) =>
       enqueue(() => {

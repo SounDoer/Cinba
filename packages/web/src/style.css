@@ -609,3 +609,40 @@ button:disabled {
   gap: 0.5rem;
   justify-content: flex-end;
 }
+
+.sync-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  overflow-y: auto;
+}
+.sync-panel p {
+  margin: 0;
+}
+.sync-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.sync-panel input,
+.sync-panel select {
+  padding: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+}
+.sync-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.muted {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.settings-error {
+  color: #ef7777;
+}

@@ -17,6 +17,7 @@ import { ThinkingPicker } from "./thinking-picker.tsx";
 import { SessionPicker } from "./session-picker.tsx";
 import { ProviderSettings } from "./provider-settings.tsx";
 import { WebToolsSettings } from "./web-tools-settings.tsx";
+import { SyncSettings } from "./sync-settings.tsx";
 import { StatusBar } from "./status-bar.tsx";
 import { useCore } from "./use-core.ts";
 import { PickerShell } from "./picker-shell.tsx";
@@ -25,7 +26,7 @@ import { PickerShell } from "./picker-shell.tsx";
 const CORE_COLOURS = ["#3b6fd4", "#2e9166", "#b4642a", "#8b4bc4", "#b03a52", "#2b7f96"];
 
 type ActiveOverlay =
-  "project" | "model" | "thinking" | "session" | "provider" | "webtools" | "help" | null;
+  "project" | "model" | "thinking" | "session" | "provider" | "webtools" | "sync" | "help" | null;
 type EditTarget = { sessionId: string; userMessageIndex: number; text: string };
 
 export function App({ serverUrl }: { serverUrl: string }) {
@@ -89,6 +90,9 @@ export function App({ serverUrl }: { serverUrl: string }) {
           return true;
         }
         return false;
+      case "sync":
+        setActiveOverlay("sync");
+        return true;
       case "help":
         setActiveOverlay("help");
         return true;
@@ -170,6 +174,9 @@ export function App({ serverUrl }: { serverUrl: string }) {
         >
           Web tools
         </button>
+        <button onClick={() => setActiveOverlay("sync")} disabled={!core.connected}>
+          Sync
+        </button>
       </header>
 
       <main id="transcript">
@@ -244,6 +251,10 @@ export function App({ serverUrl }: { serverUrl: string }) {
           onSetPrimary={core.setWebSearchPrimary}
           onClose={() => setActiveOverlay(null)}
         />
+      ) : null}
+
+      {activeOverlay === "sync" ? (
+        <SyncSettings serverUrl={serverUrl} onClose={() => setActiveOverlay(null)} />
       ) : null}
 
       {activeOverlay === "session" ? (

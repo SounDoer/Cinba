@@ -24,6 +24,7 @@ export type SyncCoordinator = {
   syncNow(): Promise<CoreSyncStatus>;
   status(): CoreSyncStatus;
   snapshot(): SyncSnapshot | undefined;
+  resetCache(): void;
   disconnect(): void;
 };
 
@@ -198,6 +199,11 @@ export function createSyncCoordinator(options: {
     syncNow,
     status: () => ({ ...currentStatus }),
     snapshot: () => (current ? structuredClone(current) : undefined),
+    resetCache: () => {
+      options.cache.clear();
+      current = undefined;
+      lastSuccessAt = undefined;
+    },
     disconnect: () => {
       stopped = true;
       if (timer) {

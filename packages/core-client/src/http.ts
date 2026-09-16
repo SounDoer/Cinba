@@ -7,6 +7,7 @@ export type HttpRequestInit = {
   method?: string;
   headers?: Record<string, string>;
   signal?: unknown;
+  body?: string;
 };
 
 export type HttpFetcher = (input: string, init?: HttpRequestInit) => Promise<HttpResponse>;

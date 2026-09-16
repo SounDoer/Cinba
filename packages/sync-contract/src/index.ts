@@ -2,6 +2,7 @@ export {
   parseCapabilitiesReport,
   parseCoreCapabilities,
   parseCoreReportAccepted,
+  parseCorePreferencesRequest,
   parseEnrollmentCreated,
   parseEnrollmentRequest,
   parseEnrollmentStatus,
@@ -11,6 +12,7 @@ export type {
   CapabilitiesReport,
   CoreCapabilities,
   CorePlatform,
+  CorePreferencesRequest,
   CoreReportAccepted,
   CredentialSource,
   EnrollmentCreated,
@@ -89,5 +91,6 @@ export const SYNC_ROUTES = {
     enrollments: "/api/core/enrollments",
     snapshot: "/api/core/snapshot",
     capabilities: "/api/core/capabilities",
+    preferences: "/api/core/preferences",
   },
 } as const;

@@ -1,5 +1,6 @@
 import {
   type CapabilitiesReport,
+  type CorePreferencesRequest,
   type CoreReportAccepted,
   type EnrollmentCreated,
   type EnrollmentRequest,
@@ -93,6 +94,22 @@ export class CoreSyncClient {
         path: SYNC_ROUTES.core.capabilities,
         method: "PUT",
         body: report,
+        parser: parseCoreReportAccepted,
+        headers: this.headers(),
+        signal,
+      }),
+    );
+  }
+
+  async updateCredentialSource(
+    credentialSource: CorePreferencesRequest["credentialSource"],
+    signal?: AbortSignal,
+  ): Promise<CoreReportAccepted> {
+    return valueFrom(
+      await this.http.json({
+        path: SYNC_ROUTES.core.preferences,
+        method: "PUT",
+        body: { version: 1, credentialSource } satisfies CorePreferencesRequest,
         parser: parseCoreReportAccepted,
         headers: this.headers(),
         signal,

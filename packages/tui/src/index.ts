@@ -48,7 +48,7 @@ import {
   sessionSubtitle,
   sessionTitle,
 } from "@cinba/contract";
-import { CoreClient } from "@cinba/core-client";
+import { CoreClient, CoreSyncControlClient } from "@cinba/core-client";
 import {
   BLUE,
   BOLD,
@@ -65,6 +65,7 @@ import { Transcript } from "./transcript.ts";
 import { PromptInput } from "./prompt-input.ts";
 import { ProviderFlow } from "./provider-flow.ts";
 import { WebToolsFlow } from "./web-tools-flow.ts";
+import { SyncFlow } from "./sync-flow.ts";
 
 /**
  * Which core to talk to. Nothing here starts one: the service has to be running.
@@ -641,6 +642,17 @@ const coreClient = new CoreClient(SERVER_URL, {
   },
 });
 
+const syncFlow = new SyncFlow(new CoreSyncControlClient(SERVER_URL), {
+  append: (line) => transcript.append(line),
+  showInteraction: (component) => {
+    setBottom(component);
+    tui.setFocus(component);
+  },
+  showPrompt,
+  requestRender: () => tui.requestRender(),
+  showNotice: (text) => applyAction({ type: "notice", text }),
+});
+
 const providerFlow = new ProviderFlow(coreClient, {
   append: (line) => transcript.append(line),
   showInteraction: (component) => {
@@ -754,6 +766,10 @@ function runCommand(command: Command, line: string): void {
 
     case "webtools":
       webToolsFlow.open();
+      return;
+
+    case "sync":
+      void syncFlow.open();
       return;
 
     case "help":

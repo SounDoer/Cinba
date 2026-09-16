@@ -3,6 +3,7 @@ import {
   type Focusable,
   SelectList,
   matchesKey,
+  truncateToWidth,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { BOLD, DIM, MAGENTA, RESET, SELECT_THEME, YELLOW } from "./theme.ts";
@@ -122,6 +123,44 @@ export class SecretInput implements Component, Focusable {
       ...wrapTextWithAnsi(`${YELLOW}${BOLD}${this.#label}${RESET}`, width),
       `${DIM}(nothing is echoed; Enter to save, Esc to cancel)${RESET}`,
       `> ${"*".repeat(Math.min(this.#value.length, Math.max(width - 4, 0)))}`,
+    ];
+  }
+}
+
+export class TextInput implements Component, Focusable {
+  #value = "";
+  #label: string;
+  focused = false;
+  onAnswer?: (value: string | undefined) => void;
+
+  constructor(label: string, initial = "") {
+    this.#label = label;
+    this.#value = initial;
+  }
+
+  handleInput(data: string): void {
+    if (matchesKey(data, "escape")) {
+      return this.onAnswer?.(undefined);
+    }
+    if (matchesKey(data, "enter") || matchesKey(data, "return")) {
+      return this.onAnswer?.(this.#value.trim() || undefined);
+    }
+    if (matchesKey(data, "backspace")) {
+      this.#value = this.#value.slice(0, -1);
+      return;
+    }
+    if (data.length > 0 && !data.startsWith("\x1b") && data >= " ") {
+      this.#value += data;
+    }
+  }
+
+  invalidate(): void {}
+
+  render(width: number): string[] {
+    return [
+      ...wrapTextWithAnsi(`${YELLOW}${BOLD}${this.#label}${RESET}`, width),
+      truncateToWidth(`> ${this.#value}`, width),
+      `${DIM}Enter to save, Esc to cancel${RESET}`,
     ];
   }
 }

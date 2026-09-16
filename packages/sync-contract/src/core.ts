@@ -63,6 +63,7 @@ export type CapabilitiesReport = {
 };
 
 export type CoreReportAccepted = { version: 1; accepted: true };
+export type CorePreferencesRequest = { version: 1; credentialSource: CredentialSource };
 
 function parseProviderAt(value: unknown, path: string): ProviderCapability {
   const object = strictObject(value, ["id", "name", "authKind"], path);
@@ -213,4 +214,17 @@ export function parseCoreReportAccepted(value: unknown): CoreReportAccepted {
     throw new Error("response.accepted: expected true");
   }
   return { version: 1, accepted: true };
+}
+
+export function parseCorePreferencesRequest(value: unknown): CorePreferencesRequest {
+  const object = strictObject(value, ["version", "credentialSource"], "request");
+  versionOne(object, "request");
+  return {
+    version: 1,
+    credentialSource: oneOf(
+      object.credentialSource,
+      ["local", "sync"] as const,
+      "request.credentialSource",
+    ),
+  };
 }

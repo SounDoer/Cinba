@@ -22,6 +22,7 @@ export type CommandId =
   | "providers"
   | "login"
   | "logout"
+  | "sync"
   | "webtools"
   | "help";
 
@@ -91,6 +92,7 @@ export const COMMANDS: readonly Command[] = [
     name: "thinking",
     summary: "set reasoning effort for this conversation",
   },
+  { source: "cinba", id: "sync", name: "sync", summary: "manage Sync for this Core" },
   {
     source: "cinba",
     id: "webtools",

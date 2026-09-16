@@ -194,6 +194,17 @@ test("typed clients complete enrollment, configuration, synchronization, and rev
       Object.hasOwn((await forced.json()) as Record<string, unknown>, "credentials"),
       false,
     );
+    await localCore.updateCredentialSource("sync");
+    const sharedAfterUpdate = await localCore.snapshot();
+    assert.equal(sharedAfterUpdate.status, "updated");
+    if (sharedAfterUpdate.status === "updated") {
+      assert.deepEqual(sharedAfterUpdate.snapshot.credentials, { deepseek: apiKey });
+    }
+    assert.equal(
+      (await management.cores()).cores.find((core) => core.id === localApproval.coreId)
+        ?.credentialSource,
+      "sync",
+    );
     await localCore.report({
       version: 1,
       appVersion: "2.0.0",

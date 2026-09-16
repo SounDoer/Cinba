@@ -53,6 +53,15 @@ test("enrollment persists pending state and an approval authenticates after rest
     id: "core-id",
     credential: "core-credential",
   });
+  store.setSources({ settings: "sync", credentials: "sync" });
+  assert.deepEqual(createSyncConnectionStore(path).get()?.sources, {
+    settings: "sync",
+    credentials: "sync",
+  });
+  assert.deepEqual(createSyncConnectionStore(path).get()?.core, {
+    id: "core-id",
+    credential: "core-credential",
+  });
 });
 
 test("rejection, cancellation, and disconnect delete only Sync connection state", async (context) => {

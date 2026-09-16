@@ -1,6 +1,8 @@
 // Public entry point for clients that connect to a running Cinba Core.
 
 export { CoreClient } from "./core-client.ts";
+export { CoreSyncControlClient, CoreSyncControlError, coreHttpOrigin } from "./sync-control.ts";
+export type { CoreSyncControlClientOptions } from "./sync-control.ts";
 export {
   requestLocalCoreLifetime,
   requestLocalCoreStatus,
