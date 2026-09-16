@@ -3,6 +3,8 @@ import {
   type ConnectedCoreList,
   type CredentialStatusList,
   type EnrollmentDecisionRequest,
+  type ModelCatalog,
+  type PendingEnrollmentList,
   type PutCredentialRequest,
   type RollbackSettingsRequest,
   SYNC_ROUTES,
@@ -12,6 +14,8 @@ import {
   parseBackupMetadata,
   parseConnectedCoreList,
   parseCredentialStatusList,
+  parseModelCatalog,
+  parsePendingEnrollmentList,
   parseSettingsHistory,
   parseSharedSettingsView,
 } from "@cinba/sync-contract";
@@ -125,6 +129,40 @@ export class ManagementSyncClient {
         path: `${SYNC_ROUTES.management.enrollments}/${encodeURIComponent(enrollmentId)}`,
         method: "POST",
         body: request,
+        parser: parseConnectedCoreList,
+        headers: this.headers(),
+        signal,
+      }),
+    );
+  }
+
+  async enrollments(signal?: AbortSignal): Promise<PendingEnrollmentList> {
+    return valueFrom(
+      await this.http.json({
+        path: SYNC_ROUTES.management.enrollments,
+        parser: parsePendingEnrollmentList,
+        headers: this.headers(),
+        signal,
+      }),
+    );
+  }
+
+  async models(signal?: AbortSignal): Promise<ModelCatalog> {
+    return valueFrom(
+      await this.http.json({
+        path: SYNC_ROUTES.management.models,
+        parser: parseModelCatalog,
+        headers: this.headers(),
+        signal,
+      }),
+    );
+  }
+
+  async revokeCore(coreId: string, signal?: AbortSignal): Promise<ConnectedCoreList> {
+    return valueFrom(
+      await this.http.json({
+        path: `${SYNC_ROUTES.management.cores}/${encodeURIComponent(coreId)}/revoke`,
+        method: "POST",
         parser: parseConnectedCoreList,
         headers: this.headers(),
         signal,

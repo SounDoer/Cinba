@@ -327,6 +327,7 @@ test("typed clients keep management, enrollment, and Core authorization on separ
     );
     await core.report({
       version: 1,
+      appVersion: "0.0.0",
       capabilities: { version: 1, providers: [], models: [] },
     });
 

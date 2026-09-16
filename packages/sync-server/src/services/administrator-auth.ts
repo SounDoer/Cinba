@@ -169,6 +169,16 @@ export class AdministratorAuthService {
     return { ok: true, sessionId };
   }
 
+  authorizeRead(
+    cookie: string | undefined,
+  ): AuthenticationFailure | { ok: true; sessionId: string } {
+    const sessionId = sessionIdFromCookie(cookie);
+    if (!sessionId || !this.sessions.get(sessionId)) {
+      return { ok: false, status: 401, code: "unauthorized" };
+    }
+    return { ok: true, sessionId };
+  }
+
   logout(security: RequestSecurity): AuthenticationFailure | { ok: true; setCookie: string } {
     const authorization = this.authorizeWrite(security);
     if (!authorization.ok) {

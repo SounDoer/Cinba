@@ -19,6 +19,8 @@ export {
 } from "./security/sessions.ts";
 export type { AdministratorSession, AdministratorSessionsOptions } from "./security/sessions.ts";
 export { createAdministratorAuthHandler } from "./routes/administrator-auth-routes.ts";
+export { createSyncApiHandler } from "./routes/sync-api-routes.ts";
+export type { SyncAccessLog } from "./routes/sync-api-routes.ts";
 export { AdministratorAuthService } from "./services/administrator-auth.ts";
 export type {
   AuthenticationFailure,
@@ -37,7 +39,9 @@ export type {
   SyncState,
 } from "./store/schema.ts";
 export {
+  CoreAuthenticationError,
   createSyncStore,
+  EnrollmentAuthenticationError,
   SettingsConflictError,
   SyncStoreUnavailableError,
 } from "./store/sync-store.ts";

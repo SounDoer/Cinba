@@ -56,6 +56,7 @@ export type SyncSnapshot = {
 
 export type CapabilitiesReport = {
   version: 1;
+  appVersion: string;
   capabilities: CoreCapabilities;
   currentSyncRevision?: number;
   lastSyncErrorCode?: string;
@@ -184,7 +185,7 @@ export function parseSyncSnapshot(value: unknown): SyncSnapshot {
 export function parseCapabilitiesReport(value: unknown): CapabilitiesReport {
   const object = strictObject(
     value,
-    ["version", "capabilities", "currentSyncRevision", "lastSyncErrorCode"],
+    ["version", "appVersion", "capabilities", "currentSyncRevision", "lastSyncErrorCode"],
     "request",
   );
   versionOne(object, "request");
@@ -198,6 +199,7 @@ export function parseCapabilitiesReport(value: unknown): CapabilitiesReport {
       : stringAt(object.lastSyncErrorCode, "request.lastSyncErrorCode", 128);
   return {
     version: 1,
+    appVersion: stringAt(object.appVersion, "request.appVersion", 64),
     capabilities: parseCoreCapabilities(object.capabilities, "request.capabilities"),
     ...(currentSyncRevision === undefined ? {} : { currentSyncRevision }),
     ...(lastSyncErrorCode === undefined ? {} : { lastSyncErrorCode }),

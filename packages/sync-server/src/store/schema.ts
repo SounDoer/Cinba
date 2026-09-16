@@ -39,6 +39,9 @@ export type StoredEnrollment = {
   createdAt: string;
   expiresAt: string;
   secretHash: SecretHash;
+  status: "pending" | "approved" | "rejected";
+  coreId?: string;
+  credentialDelivery?: CredentialEnvelope;
 };
 
 export type SyncState = {
@@ -263,9 +266,29 @@ function parseEnrollment(value: unknown, path: string): StoredEnrollment {
       "createdAt",
       "expiresAt",
       "secretHash",
+      "status",
+      "coreId",
+      "credentialDelivery",
     ],
     path,
   );
+  const status = oneOf(
+    object.status,
+    ["pending", "approved", "rejected"] as const,
+    `${path}.status`,
+  );
+  const coreId =
+    object.coreId === undefined ? undefined : stringAt(object.coreId, `${path}.coreId`, 128);
+  const credentialDelivery =
+    object.credentialDelivery === undefined
+      ? undefined
+      : parseCredentialEnvelope(object.credentialDelivery, `${path}.credentialDelivery`);
+  if (
+    (status === "approved" && (!coreId || !credentialDelivery)) ||
+    (status !== "approved" && (coreId || credentialDelivery))
+  ) {
+    throw new SyncStateSchemaError(path, "enrollment status fields are inconsistent");
+  }
   return {
     id: stringAt(object.id, `${path}.id`, 128),
     name: stringAt(object.name, `${path}.name`, 128),
@@ -283,6 +306,9 @@ function parseEnrollment(value: unknown, path: string): StoredEnrollment {
     createdAt: stringAt(object.createdAt, `${path}.createdAt`, 64),
     expiresAt: stringAt(object.expiresAt, `${path}.expiresAt`, 64),
     secretHash: parseSecretHash(object.secretHash, `${path}.secretHash`),
+    status,
+    ...(coreId ? { coreId } : {}),
+    ...(credentialDelivery ? { credentialDelivery } : {}),
   };
 }
 

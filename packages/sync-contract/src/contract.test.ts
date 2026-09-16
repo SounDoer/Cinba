@@ -17,6 +17,8 @@ import {
   parseEnrollmentDecisionRequest,
   parseEnrollmentRequest,
   parseEnrollmentStatus,
+  parseModelCatalog,
+  parsePendingEnrollmentList,
   parsePutCredentialRequest,
   parseRollbackSettingsRequest,
   parseSettingsHistory,
@@ -135,6 +137,39 @@ const validDocuments: Array<[string, Parser<unknown>, unknown]> = [
   ],
   ["Enrollment decision", parseEnrollmentDecisionRequest, { version: 1, decision: "approve" }],
   [
+    "Pending enrollment list",
+    parsePendingEnrollmentList,
+    {
+      version: 1,
+      enrollments: [
+        {
+          version: 1,
+          id: "enrollment-1",
+          name: "Studio",
+          platform: "windows",
+          appVersion: "0.0.0",
+          credentialSource: "sync",
+          createdAt: "2026-09-16T00:00:00.000Z",
+          expiresAt: "2026-09-16T00:10:00.000Z",
+        },
+      ],
+    },
+  ],
+  [
+    "Model catalog",
+    parseModelCatalog,
+    {
+      version: 1,
+      models: [
+        {
+          model: { provider: "deepseek", id: "deepseek-chat" },
+          supportedCoreIds: ["core-1"],
+          unsupportedCoreIds: ["core-2"],
+        },
+      ],
+    },
+  ],
+  [
     "Core capabilities",
     parseCoreCapabilities,
     {
@@ -191,6 +226,7 @@ const validDocuments: Array<[string, Parser<unknown>, unknown]> = [
     parseCapabilitiesReport,
     {
       version: 1,
+      appVersion: "0.0.0",
       capabilities: { version: 1, providers: [], models: [] },
       currentSyncRevision: 3,
     },

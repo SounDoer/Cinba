@@ -54,6 +54,7 @@ export type ConnectedCore = {
   revoked: boolean;
   lastSeenAt?: string;
   lastSyncRevision?: number;
+  lastSyncErrorCode?: string;
 };
 
 export type ConnectedCoreList = { version: 1; cores: ConnectedCore[] };
@@ -88,6 +89,27 @@ export type EnrollmentDecisionRequest = {
   version: 1;
   decision: "approve" | "reject";
 };
+
+export type PendingEnrollment = {
+  version: 1;
+  id: string;
+  name: string;
+  platform: "windows" | "macos" | "linux" | "other";
+  appVersion: string;
+  credentialSource: "local" | "sync";
+  createdAt: string;
+  expiresAt: string;
+};
+
+export type PendingEnrollmentList = { version: 1; enrollments: PendingEnrollment[] };
+
+export type ModelCandidate = {
+  model: ModelRef;
+  supportedCoreIds: string[];
+  unsupportedCoreIds: string[];
+};
+
+export type ModelCatalog = { version: 1; models: ModelCandidate[] };
 
 export type AdministratorStatus = {
   version: 1;
@@ -201,6 +223,7 @@ function parseConnectedCoreAt(value: unknown, path: string): ConnectedCore {
       "revoked",
       "lastSeenAt",
       "lastSyncRevision",
+      "lastSyncErrorCode",
     ],
     path,
   );
@@ -210,6 +233,11 @@ function parseConnectedCoreAt(value: unknown, path: string): ConnectedCore {
       ? undefined
       : integerAt(object.lastSyncRevision, `${path}.lastSyncRevision`);
   const lastSeenAt = optionalStringAt(object.lastSeenAt, `${path}.lastSeenAt`, 64);
+  const lastSyncErrorCode = optionalStringAt(
+    object.lastSyncErrorCode,
+    `${path}.lastSyncErrorCode`,
+    128,
+  );
   return {
     version: 1,
     id: stringAt(object.id, `${path}.id`, 128),
@@ -228,6 +256,7 @@ function parseConnectedCoreAt(value: unknown, path: string): ConnectedCore {
     revoked: booleanAt(object.revoked, `${path}.revoked`),
     ...(lastSeenAt === undefined ? {} : { lastSeenAt }),
     ...(lastSyncRevision === undefined ? {} : { lastSyncRevision }),
+    ...(lastSyncErrorCode === undefined ? {} : { lastSyncErrorCode }),
   };
 }
 
@@ -314,6 +343,78 @@ export function parseEnrollmentDecisionRequest(value: unknown): EnrollmentDecisi
   return {
     version: 1,
     decision: oneOf(object.decision, ["approve", "reject"] as const, "request.decision"),
+  };
+}
+
+function parsePendingEnrollmentAt(value: unknown, path: string): PendingEnrollment {
+  const object = strictObject(
+    value,
+    [
+      "version",
+      "id",
+      "name",
+      "platform",
+      "appVersion",
+      "credentialSource",
+      "createdAt",
+      "expiresAt",
+    ],
+    path,
+  );
+  versionOne(object, path);
+  return {
+    version: 1,
+    id: stringAt(object.id, `${path}.id`, 128),
+    name: stringAt(object.name, `${path}.name`, 128),
+    platform: oneOf(
+      object.platform,
+      ["windows", "macos", "linux", "other"] as const,
+      `${path}.platform`,
+    ),
+    appVersion: stringAt(object.appVersion, `${path}.appVersion`, 64),
+    credentialSource: oneOf(
+      object.credentialSource,
+      ["local", "sync"] as const,
+      `${path}.credentialSource`,
+    ),
+    createdAt: stringAt(object.createdAt, `${path}.createdAt`, 64),
+    expiresAt: stringAt(object.expiresAt, `${path}.expiresAt`, 64),
+  };
+}
+
+export function parsePendingEnrollmentList(value: unknown): PendingEnrollmentList {
+  const object = strictObject(value, ["version", "enrollments"], "response");
+  versionOne(object, "response");
+  return {
+    version: 1,
+    enrollments: arrayAt(
+      object.enrollments,
+      "response.enrollments",
+      parsePendingEnrollmentAt,
+      1_000,
+    ),
+  };
+}
+
+function parseStringArray(value: unknown, path: string): string[] {
+  return arrayAt(value, path, (entry, entryPath) => stringAt(entry, entryPath, 128), 10_000);
+}
+
+function parseModelCandidateAt(value: unknown, path: string): ModelCandidate {
+  const object = strictObject(value, ["model", "supportedCoreIds", "unsupportedCoreIds"], path);
+  return {
+    model: modelRefAt(object.model, `${path}.model`),
+    supportedCoreIds: parseStringArray(object.supportedCoreIds, `${path}.supportedCoreIds`),
+    unsupportedCoreIds: parseStringArray(object.unsupportedCoreIds, `${path}.unsupportedCoreIds`),
+  };
+}
+
+export function parseModelCatalog(value: unknown): ModelCatalog {
+  const object = strictObject(value, ["version", "models"], "response");
+  versionOne(object, "response");
+  return {
+    version: 1,
+    models: arrayAt(object.models, "response.models", parseModelCandidateAt, 10_000),
   };
 }
 

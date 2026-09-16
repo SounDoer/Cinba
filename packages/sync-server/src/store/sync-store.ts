@@ -2,7 +2,14 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import {
+  type CapabilitiesReport,
+  type ConnectedCoreList,
   type CredentialStatus,
+  type EnrollmentCreated,
+  type EnrollmentRequest,
+  type EnrollmentStatus,
+  type ModelCatalog,
+  type PendingEnrollmentList,
   type SharedSettings,
   type SharedSettingsView,
   type SyncSnapshot,
@@ -41,6 +48,20 @@ export class SettingsConflictError extends Error {
   }
 }
 
+export class CoreAuthenticationError extends Error {
+  constructor() {
+    super("Core credential is invalid or revoked");
+    this.name = "CoreAuthenticationError";
+  }
+}
+
+export class EnrollmentAuthenticationError extends Error {
+  constructor() {
+    super("Enrollment credential is invalid");
+    this.name = "EnrollmentAuthenticationError";
+  }
+}
+
 export type SyncStoreOptions = {
   now?: () => Date;
   atomicWrite?: AtomicWriteOptions;
@@ -54,6 +75,15 @@ export type SyncStore = {
   credential(provider: string): string | undefined;
   snapshot(includeCredentials: boolean): SyncSnapshot;
   history(): SyncState["history"];
+  pendingEnrollments(): PendingEnrollmentList;
+  connectedCores(): ConnectedCoreList;
+  modelCatalog(): ModelCatalog;
+  createEnrollment(request: EnrollmentRequest): Promise<EnrollmentCreated>;
+  enrollmentStatus(enrollmentId: string, secret: string): Promise<EnrollmentStatus>;
+  decideEnrollment(enrollmentId: string, decision: "approve" | "reject"): Promise<void>;
+  reportCapabilities(coreCredential: string, report: CapabilitiesReport): Promise<void>;
+  snapshotForCore(coreCredential: string): Promise<SyncSnapshot>;
+  revokeCore(coreId: string): Promise<void>;
   authenticationState(): "setup-required" | "ready";
   localSetupCode(): string | undefined;
   verifyAdministratorPassword(password: string): boolean;
@@ -114,6 +144,10 @@ function validateProvider(provider: string): string {
   return trimmed;
 }
 
+function coreCredential(coreId: string): string {
+  return `${coreId}.${randomBytes(32).toString("base64url")}`;
+}
+
 export function createSyncStore(directory: string, options: SyncStoreOptions = {}): SyncStore {
   const statePath = join(directory, "state.json");
   const keyPath = join(directory, "credential-key");
@@ -145,6 +179,11 @@ export function createSyncStore(directory: string, options: SyncStoreOptions = {
       }
       if (state.setupCodeDisplay) {
         decryptCredential(state.setupCodeDisplay, key);
+      }
+      for (const enrollment of state.enrollments) {
+        if (enrollment.credentialDelivery) {
+          decryptCredential(enrollment.credentialDelivery, key);
+        }
       }
     }
   } catch {
@@ -193,6 +232,34 @@ export function createSyncStore(directory: string, options: SyncStoreOptions = {
     };
   }
 
+  function authenticateCore(current: SyncState, credential: string) {
+    const separator = credential.indexOf(".");
+    const coreId = separator > 0 ? credential.slice(0, separator) : "";
+    const core = current.cores.find((candidate) => candidate.id === coreId);
+    if (!core || core.revokedAt || !verifySecret(credential, core.tokenHash)) {
+      throw new CoreAuthenticationError();
+    }
+    return core;
+  }
+
+  function connectedCores(current: SyncState): ConnectedCoreList {
+    return {
+      version: 1,
+      cores: current.cores.map((core) => ({
+        version: 1,
+        id: core.id,
+        name: core.name,
+        platform: core.platform,
+        appVersion: core.appVersion,
+        credentialSource: core.credentialSource,
+        revoked: core.revokedAt !== undefined,
+        ...(core.lastSeenAt ? { lastSeenAt: core.lastSeenAt } : {}),
+        ...(core.lastSyncRevision === undefined ? {} : { lastSyncRevision: core.lastSyncRevision }),
+        ...(core.lastSyncErrorCode ? { lastSyncErrorCode: core.lastSyncErrorCode } : {}),
+      })),
+    };
+  }
+
   return {
     problem: () => loadProblem,
     serverId: () => requireState().state.serverId,
@@ -225,6 +292,214 @@ export function createSyncStore(directory: string, options: SyncStoreOptions = {
       };
     },
     history: () => structuredClone(requireState().state.history),
+    pendingEnrollments: () => {
+      const current = requireState().state;
+      const currentTime = now().getTime();
+      return {
+        version: 1,
+        enrollments: current.enrollments
+          .filter(
+            (enrollment) =>
+              enrollment.status === "pending" &&
+              new Date(enrollment.expiresAt).getTime() > currentTime,
+          )
+          .map((enrollment) => ({
+            version: 1,
+            id: enrollment.id,
+            name: enrollment.name,
+            platform: enrollment.platform,
+            appVersion: enrollment.appVersion,
+            credentialSource: enrollment.credentialSource,
+            createdAt: enrollment.createdAt,
+            expiresAt: enrollment.expiresAt,
+          })),
+      };
+    },
+    connectedCores: () => connectedCores(requireState().state),
+    modelCatalog: () => {
+      const cores = requireState().state.cores.filter((core) => !core.revokedAt);
+      const coreIds = cores.map((core) => core.id);
+      const models = new Map<string, { provider: string; id: string }>();
+      for (const core of cores) {
+        for (const model of core.capabilities?.models ?? []) {
+          models.set(`${model.provider}\u0000${model.id}`, model);
+        }
+      }
+      return {
+        version: 1,
+        models: [...models.values()]
+          .toSorted((left, right) =>
+            `${left.provider}/${left.id}`.localeCompare(`${right.provider}/${right.id}`),
+          )
+          .map((model) => {
+            const supportedCoreIds = cores
+              .filter((core) =>
+                (core.capabilities?.models ?? []).some(
+                  (candidate) => candidate.provider === model.provider && candidate.id === model.id,
+                ),
+              )
+              .map((core) => core.id);
+            return {
+              model: { ...model },
+              supportedCoreIds,
+              unsupportedCoreIds: coreIds.filter((id) => !supportedCoreIds.includes(id)),
+            };
+          }),
+      };
+    },
+    createEnrollment: (request) =>
+      enqueue(() => {
+        const current = requireState();
+        const id = randomUUID();
+        const secret = randomBytes(32).toString("base64url");
+        const createdAt = now();
+        const expiresAt = new Date(createdAt.getTime() + 10 * 60_000);
+        const next = cloneState(current.state);
+        next.enrollments.push({
+          id,
+          name: request.name,
+          platform: request.platform,
+          appVersion: request.appVersion,
+          credentialSource: request.credentialSource,
+          createdAt: createdAt.toISOString(),
+          expiresAt: expiresAt.toISOString(),
+          secretHash: hashSecret(secret),
+          status: "pending",
+        });
+        commit(next);
+        return {
+          version: 1,
+          enrollmentId: id,
+          enrollmentSecret: secret,
+          expiresAt: expiresAt.toISOString(),
+        };
+      }),
+    enrollmentStatus: (enrollmentId, secret) =>
+      enqueue(() => {
+        const current = requireState();
+        const enrollment = current.state.enrollments.find(
+          (candidate) => candidate.id === enrollmentId,
+        );
+        if (!enrollment || !verifySecret(secret, enrollment.secretHash)) {
+          throw new EnrollmentAuthenticationError();
+        }
+        if (new Date(enrollment.expiresAt).getTime() <= now().getTime()) {
+          const next = cloneState(current.state);
+          next.enrollments = next.enrollments.filter((candidate) => candidate.id !== enrollmentId);
+          commit(next);
+          return { version: 1, status: "expired" };
+        }
+        if (enrollment.status === "pending") {
+          return { version: 1, status: "pending" };
+        }
+        const next = cloneState(current.state);
+        next.enrollments = next.enrollments.filter((candidate) => candidate.id !== enrollmentId);
+        if (enrollment.status === "rejected") {
+          commit(next);
+          return { version: 1, status: "rejected" };
+        }
+        const credential = decryptCredential(enrollment.credentialDelivery!, current.key);
+        commit(next);
+        return {
+          version: 1,
+          status: "approved",
+          coreId: enrollment.coreId!,
+          coreCredential: credential,
+        };
+      }),
+    decideEnrollment: (enrollmentId, decision) =>
+      enqueue(() => {
+        const current = requireState();
+        const index = current.state.enrollments.findIndex(
+          (candidate) => candidate.id === enrollmentId,
+        );
+        const enrollment = current.state.enrollments[index];
+        if (
+          !enrollment ||
+          enrollment.status !== "pending" ||
+          new Date(enrollment.expiresAt).getTime() <= now().getTime()
+        ) {
+          throw new Error("Pending enrollment does not exist");
+        }
+        const next = cloneState(current.state);
+        const nextEnrollment = next.enrollments[index]!;
+        if (decision === "reject") {
+          nextEnrollment.status = "rejected";
+          commit(next);
+          return;
+        }
+        const coreId = randomUUID();
+        const credential = coreCredential(coreId);
+        next.cores.push({
+          id: coreId,
+          name: enrollment.name,
+          platform: enrollment.platform,
+          appVersion: enrollment.appVersion,
+          credentialSource: enrollment.credentialSource,
+          createdAt: now().toISOString(),
+          tokenHash: hashSecret(credential),
+        });
+        nextEnrollment.status = "approved";
+        nextEnrollment.coreId = coreId;
+        nextEnrollment.credentialDelivery = encryptCredential(credential, current.key);
+        commit(next);
+      }),
+    reportCapabilities: (credential, report) =>
+      enqueue(() => {
+        const current = requireState();
+        const core = authenticateCore(current.state, credential);
+        const next = cloneState(current.state);
+        const target = next.cores.find((candidate) => candidate.id === core.id)!;
+        target.appVersion = report.appVersion;
+        target.capabilities = structuredClone(report.capabilities);
+        target.lastSeenAt = now().toISOString();
+        if (report.currentSyncRevision !== undefined) {
+          target.lastSyncRevision = report.currentSyncRevision;
+        }
+        if (report.lastSyncErrorCode === undefined) {
+          delete target.lastSyncErrorCode;
+        } else {
+          target.lastSyncErrorCode = report.lastSyncErrorCode;
+        }
+        commit(next);
+      }),
+    snapshotForCore: (credential) =>
+      enqueue(() => {
+        const current = requireState();
+        const core = authenticateCore(current.state, credential);
+        const next = cloneState(current.state);
+        const target = next.cores.find((candidate) => candidate.id === core.id)!;
+        target.lastSeenAt = now().toISOString();
+        target.lastSyncRevision = current.state.syncRevision;
+        commit(next);
+        const credentials =
+          core.credentialSource === "sync"
+            ? Object.fromEntries(
+                Object.entries(current.state.credentials).map(([provider, envelope]) => [
+                  provider,
+                  decryptCredential(envelope, current.key),
+                ]),
+              )
+            : undefined;
+        return {
+          version: 1,
+          syncRevision: current.state.syncRevision,
+          settingsRevision: current.state.settingsRevision,
+          settings: structuredClone(current.state.settings),
+          ...(credentials ? { credentials } : {}),
+        };
+      }),
+    revokeCore: (coreId) =>
+      enqueue(() => {
+        const current = requireState().state;
+        const next = cloneState(current);
+        const core = next.cores.find((candidate) => candidate.id === coreId);
+        if (!core || core.revokedAt) {
+          throw new Error("Connected Core does not exist or is already revoked");
+        }
+        core.revokedAt = now().toISOString();
+        commit(next);
+      }),
     authenticationState: () => (requireState().state.administrator ? "ready" : "setup-required"),
     localSetupCode: () => {
       const current = requireState();
