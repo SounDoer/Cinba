@@ -21,6 +21,7 @@ export type { AdministratorSession, AdministratorSessionsOptions } from "./secur
 export { createAdministratorAuthHandler } from "./routes/administrator-auth-routes.ts";
 export { createSyncApiHandler } from "./routes/sync-api-routes.ts";
 export type { SyncAccessLog } from "./routes/sync-api-routes.ts";
+export { createSyncWebStaticHandler } from "./routes/sync-web-static.ts";
 export { AdministratorAuthService } from "./services/administrator-auth.ts";
 export type {
   AuthenticationFailure,

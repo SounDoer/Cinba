@@ -8,6 +8,7 @@ import {
   type PutCredentialRequest,
   type RollbackSettingsRequest,
   SYNC_ROUTES,
+  type ServerOverview,
   type SettingsHistory,
   type SharedSettingsView,
   type UpdateSharedSettingsRequest,
@@ -16,6 +17,7 @@ import {
   parseCredentialStatusList,
   parseModelCatalog,
   parsePendingEnrollmentList,
+  parseServerOverview,
   parseSettingsHistory,
   parseSharedSettingsView,
 } from "@cinba/sync-contract";
@@ -36,6 +38,17 @@ export class ManagementSyncClient {
       "X-Cinba-CSRF": this.authorization.csrfToken,
       ...(this.authorization.cookieHeader ? { Cookie: this.authorization.cookieHeader } : {}),
     };
+  }
+
+  async overview(signal?: AbortSignal): Promise<ServerOverview> {
+    return valueFrom(
+      await this.http.json({
+        path: SYNC_ROUTES.management.overview,
+        parser: parseServerOverview,
+        headers: this.headers(),
+        signal,
+      }),
+    );
   }
 
   async settings(signal?: AbortSignal): Promise<SharedSettingsView> {

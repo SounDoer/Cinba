@@ -114,6 +114,17 @@ export type ModelCatalog = { version: 1; models: ModelCandidate[] };
 export type AdministratorStatus = {
   version: 1;
   state: "setup-required" | "ready" | "authenticated";
+  csrfToken?: string;
+};
+
+export type ServerOverview = {
+  version: 1;
+  serverId: string;
+  settingsRevision: number;
+  syncRevision: number;
+  connectedCoreCount: number;
+  pendingEnrollmentCount: number;
+  recentSyncErrors: Array<{ coreId: string; coreName: string; code: string }>;
 };
 
 export type AdministratorSetupRequest = {
@@ -419,14 +430,61 @@ export function parseModelCatalog(value: unknown): ModelCatalog {
 }
 
 export function parseAdministratorStatus(value: unknown): AdministratorStatus {
-  const object = strictObject(value, ["version", "state"], "response");
+  const object = strictObject(value, ["version", "state", "csrfToken"], "response");
+  versionOne(object, "response");
+  const state = oneOf(
+    object.state,
+    ["setup-required", "ready", "authenticated"] as const,
+    "response.state",
+  );
+  const csrfToken = optionalStringAt(object.csrfToken, "response.csrfToken", 512);
+  if ((state === "authenticated") !== (csrfToken !== undefined)) {
+    throw new Error("response.csrfToken: required only for authenticated state");
+  }
+  return {
+    version: 1,
+    state,
+    ...(csrfToken ? { csrfToken } : {}),
+  };
+}
+
+export function parseServerOverview(value: unknown): ServerOverview {
+  const object = strictObject(
+    value,
+    [
+      "version",
+      "serverId",
+      "settingsRevision",
+      "syncRevision",
+      "connectedCoreCount",
+      "pendingEnrollmentCount",
+      "recentSyncErrors",
+    ],
+    "response",
+  );
   versionOne(object, "response");
   return {
     version: 1,
-    state: oneOf(
-      object.state,
-      ["setup-required", "ready", "authenticated"] as const,
-      "response.state",
+    serverId: stringAt(object.serverId, "response.serverId", 128),
+    settingsRevision: integerAt(object.settingsRevision, "response.settingsRevision"),
+    syncRevision: integerAt(object.syncRevision, "response.syncRevision"),
+    connectedCoreCount: integerAt(object.connectedCoreCount, "response.connectedCoreCount"),
+    pendingEnrollmentCount: integerAt(
+      object.pendingEnrollmentCount,
+      "response.pendingEnrollmentCount",
+    ),
+    recentSyncErrors: arrayAt(
+      object.recentSyncErrors,
+      "response.recentSyncErrors",
+      (entry, path) => {
+        const error = strictObject(entry, ["coreId", "coreName", "code"], path);
+        return {
+          coreId: stringAt(error.coreId, `${path}.coreId`, 128),
+          coreName: stringAt(error.coreName, `${path}.coreName`, 128),
+          code: stringAt(error.code, `${path}.code`, 128),
+        };
+      },
+      1_000,
     ),
   };
 }

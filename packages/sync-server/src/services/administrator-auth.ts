@@ -103,8 +103,9 @@ export class AdministratorAuthService {
   }
 
   status(cookie: string | undefined): AdministratorStatus {
-    if (this.sessions.get(sessionIdFromCookie(cookie))) {
-      return { version: 1, state: "authenticated" };
+    const session = this.sessions.get(sessionIdFromCookie(cookie));
+    if (session) {
+      return { version: 1, state: "authenticated", csrfToken: session.csrfToken };
     }
     return { version: 1, state: this.store.authenticationState() };
   }

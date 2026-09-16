@@ -71,6 +71,15 @@ test("administrator HTTP routes distinguish setup, authenticated, logout, and re
     assert.match(setup.headers.get("set-cookie") ?? "", /HttpOnly; SameSite=Strict/);
     assert.doesNotMatch(setup.headers.get("set-cookie") ?? "", /; Secure/);
 
+    const restored = await fetch(`${origin}/api/management/auth/status`, {
+      headers: { Cookie: cookie },
+    });
+    assert.deepEqual(await restored.json(), {
+      version: 1,
+      state: "authenticated",
+      csrfToken: setupBody.csrfToken,
+    });
+
     const missingCsrf = await fetch(`${origin}/api/management/auth/logout`, {
       method: "POST",
       headers: { Origin: origin, Cookie: cookie },

@@ -21,6 +21,7 @@ import {
   parsePendingEnrollmentList,
   parsePutCredentialRequest,
   parseRollbackSettingsRequest,
+  parseServerOverview,
   parseSettingsHistory,
   parseSharedSettings,
   parseSharedSettingsView,
@@ -37,6 +38,11 @@ const settings = {
 
 const validDocuments: Array<[string, Parser<unknown>, unknown]> = [
   ["Administrator status", parseAdministratorStatus, { version: 1, state: "setup-required" }],
+  [
+    "Authenticated administrator status",
+    parseAdministratorStatus,
+    { version: 1, state: "authenticated", csrfToken: "csrf-token" },
+  ],
   [
     "Administrator setup",
     parseAdministratorSetupRequest,
@@ -58,6 +64,19 @@ const validDocuments: Array<[string, Parser<unknown>, unknown]> = [
     },
   ],
   ["Shared Settings", parseSharedSettings, settings],
+  [
+    "Server overview",
+    parseServerOverview,
+    {
+      version: 1,
+      serverId: "server-id",
+      settingsRevision: 2,
+      syncRevision: 3,
+      connectedCoreCount: 1,
+      pendingEnrollmentCount: 0,
+      recentSyncErrors: [{ coreId: "core-id", coreName: "Core", code: "offline" }],
+    },
+  ],
   [
     "Shared Settings view",
     parseSharedSettingsView,

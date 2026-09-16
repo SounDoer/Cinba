@@ -1,0 +1,20 @@
+{
+  "name": "@cinba/sync-web",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@cinba/sync-client": "*",
+    "@cinba/sync-contract": "*",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.1",
+    "vite": "^8.2.2"
+  }
+}

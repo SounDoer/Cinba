@@ -149,6 +149,16 @@ test("typed clients complete enrollment, configuration, synchronization, and rev
     );
     assert.equal(sharedCoreView?.appVersion, "1.0.0");
     assert.equal(sharedCoreView?.lastSyncErrorCode, "previous_failure");
+    const overview = await management.overview();
+    assert.equal(overview.serverId, store.serverId());
+    assert.equal(overview.connectedCoreCount, 1);
+    assert.deepEqual(overview.recentSyncErrors, [
+      {
+        coreId: sharedApproval.coreId,
+        coreName: "Shared Core",
+        code: "previous_failure",
+      },
+    ]);
 
     const localEnrollment = await enrollments.create({
       version: 1,
@@ -240,6 +250,10 @@ test("typed clients complete enrollment, configuration, synchronization, and rev
     if (cleared.status === "updated") {
       assert.deepEqual(cleared.snapshot.credentials, {});
     }
+    const backup = await management.backupMetadata();
+    assert.equal(backup.serverId, store.serverId());
+    assert.equal(backup.connectedCoreCount, 2);
+    assert.equal(backup.credentialCount, 0);
 
     const history = await management.history();
     assert.deepEqual(

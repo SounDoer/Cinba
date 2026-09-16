@@ -173,6 +173,56 @@ async function handleCoreRoute(
   return false;
 }
 
+function handleManagementSummaryRoute(
+  path: string,
+  request: IncomingMessage,
+  response: ServerResponse,
+  store: SyncStore,
+  requireRead: () => boolean,
+): boolean {
+  if (path === SYNC_ROUTES.management.overview && request.method === "GET") {
+    if (!requireRead()) {
+      return true;
+    }
+    const settings = store.settings();
+    const cores = store.connectedCores().cores;
+    sendJson(response, 200, {
+      version: 1,
+      serverId: store.serverId(),
+      settingsRevision: settings.settingsRevision,
+      syncRevision: settings.syncRevision,
+      connectedCoreCount: cores.filter((core) => !core.revoked).length,
+      pendingEnrollmentCount: store.pendingEnrollments().enrollments.length,
+      recentSyncErrors: cores
+        .filter((core) => !core.revoked && core.lastSyncErrorCode)
+        .map((core) => ({
+          coreId: core.id,
+          coreName: core.name,
+          code: core.lastSyncErrorCode,
+        })),
+    });
+    return true;
+  }
+  if (path === SYNC_ROUTES.management.backupMetadata && request.method === "GET") {
+    if (!requireRead()) {
+      return true;
+    }
+    const settings = store.settings();
+    const history = store.history();
+    sendJson(response, 200, {
+      version: 1,
+      serverId: store.serverId(),
+      createdAt: history.at(-1)?.createdAt ?? new Date(0).toISOString(),
+      settingsRevision: settings.settingsRevision,
+      syncRevision: settings.syncRevision,
+      connectedCoreCount: store.connectedCores().cores.filter((core) => !core.revoked).length,
+      credentialCount: store.credentialStatuses().length,
+    });
+    return true;
+  }
+  return false;
+}
+
 export function createSyncApiHandler(options: {
   store: SyncStore;
   administrator: AdministratorAuthService;
@@ -208,6 +258,9 @@ export function createSyncApiHandler(options: {
 
     try {
       if (await handleCoreRoute(path, request, response, options.store)) {
+        return;
+      }
+      if (handleManagementSummaryRoute(path, request, response, options.store, requireRead)) {
         return;
       }
 
@@ -332,7 +385,6 @@ export function createSyncApiHandler(options: {
         );
         return;
       }
-
       sendError(response, 404, "not_found");
     } catch (error) {
       if (
