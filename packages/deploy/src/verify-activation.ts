@@ -2,6 +2,7 @@ import type { DeploymentFailure } from "./status.ts";
 import { startCoreService, stopCoreService } from "./core-service.ts";
 import { removeCurrentRelease, switchCurrentRelease } from "./switch-release.ts";
 import { verifyCoreConnection, waitForHealthyRevision } from "./verify.ts";
+import { refreshSyncService } from "./sync-service.ts";
 
 type VerificationOptions = {
   releasesRoot: string;
@@ -19,6 +20,7 @@ type VerificationDependencies = {
   removeCurrent: typeof removeCurrentRelease;
   waitForHealth: typeof waitForHealthyRevision;
   verifyConnection: typeof verifyCoreConnection;
+  refreshSync: typeof refreshSyncService;
 };
 
 const DEFAULT_DEPENDENCIES: VerificationDependencies = {
@@ -28,6 +30,7 @@ const DEFAULT_DEPENDENCIES: VerificationDependencies = {
   removeCurrent: removeCurrentRelease,
   waitForHealth: waitForHealthyRevision,
   verifyConnection: verifyCoreConnection,
+  refreshSync: refreshSyncService,
 };
 
 async function verifyRevision(
@@ -37,6 +40,7 @@ async function verifyRevision(
 ): Promise<void> {
   await dependencies.waitForHealth({ url: options.healthUrl, expectedRevision: revision });
   await dependencies.verifyConnection({ url: options.webSocketUrl });
+  await dependencies.refreshSync();
 }
 
 async function restorePreviousRelease(

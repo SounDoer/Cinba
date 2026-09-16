@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createSyncServer, runSyncServer } from "./server.ts";
+import { assertLoopbackSyncHost, createSyncServer, runSyncServer } from "./server.ts";
 import { syncMaintenancePath } from "./services/backup-service.ts";
 
 test("the standalone Sync server serves health, API, and the same-origin web application", async () => {
@@ -47,6 +47,43 @@ test("the standalone Sync server serves health, API, and the same-origin web app
     });
     assert.equal(mutation.status, 503);
     unlinkSync(lock);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("Sync refuses public binds and HTTPS mode requires the expected proxy headers", async () => {
+  assert.throws(() => assertLoopbackSyncHost("0.0.0.0"), /loopback/);
+  const root = mkdtempSync(join(tmpdir(), "cinba-sync-proxy-"));
+  const webRoot = join(root, "web");
+  mkdirSync(webRoot);
+  writeFileSync(join(webRoot, "index.html"), "Sync");
+  const server = createSyncServer({
+    stateDirectory: join(root, "state"),
+    host: "127.0.0.1",
+    port: 0,
+    publicOrigin: "https://sync.example.ts.net",
+    webRoot,
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("expected TCP address");
+  }
+  const origin = `http://127.0.0.1:${address.port}`;
+  try {
+    assert.equal((await fetch(origin)).status, 400);
+    assert.equal(
+      (
+        await fetch(origin, {
+          headers: {
+            "X-Forwarded-Proto": "https",
+            "X-Forwarded-Host": "sync.example.ts.net",
+          },
+        })
+      ).status,
+      200,
+    );
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }

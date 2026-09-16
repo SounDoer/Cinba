@@ -1,0 +1,23 @@
+[Unit]
+Description=Cinba Sync Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/current
+Environment=PATH=%h/.local/node/bin:/usr/local/bin:/usr/bin:/bin
+Environment=CINBA_SYNC_HOST=127.0.0.1
+Environment=CINBA_SYNC_PORT=4518
+Environment=CINBA_SYNC_STATE_DIR=%h/.cinba-sync
+EnvironmentFile=-%h/.config/cinba/sync.env
+ExecStart=%h/.local/node/bin/node %h/current/scripts/cinba.ts sync serve
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

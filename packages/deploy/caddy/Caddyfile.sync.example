@@ -1,0 +1,4 @@
+sync.example.ts.net {
+	bind tailscale0
+	reverse_proxy 127.0.0.1:4518
+}

@@ -55,5 +55,10 @@ export {
   syncMaintenancePath,
 } from "./services/backup-service.ts";
 export type { SyncStateStatus } from "./services/backup-service.ts";
-export { createSyncServer, defaultSyncStateDirectory, runSyncServer } from "./server.ts";
+export {
+  assertLoopbackSyncHost,
+  createSyncServer,
+  defaultSyncStateDirectory,
+  runSyncServer,
+} from "./server.ts";
 export type { SyncServerOptions } from "./server.ts";

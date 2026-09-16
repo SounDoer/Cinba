@@ -29,7 +29,16 @@ export function defaultSyncStateDirectory(environment: NodeJS.ProcessEnv = proce
   return join(homedir(), ".cinba-sync");
 }
 
+export function assertLoopbackSyncHost(host: string): void {
+  if (!new Set(["127.0.0.1", "localhost", "::1", "[::1]"]).has(host.toLowerCase())) {
+    throw new Error(
+      "Sync Server must bind to loopback and be exposed through an HTTPS reverse proxy",
+    );
+  }
+}
+
 export function createSyncServer(options: SyncServerOptions): Server {
+  assertLoopbackSyncHost(options.host);
   const store = createSyncStore(options.stateDirectory, {
     readOnly: () => existsSync(syncMaintenancePath(options.stateDirectory)),
   });
@@ -55,6 +64,17 @@ export function createSyncServer(options: SyncServerOptions): Server {
       response.end(JSON.stringify({ version: 1, status: "ok", serverId: store.serverId() }));
       return;
     }
+    const publicUrl = new URL(options.publicOrigin);
+    if (
+      publicUrl.protocol === "https:" &&
+      (request.headers["x-forwarded-proto"] !== "https" ||
+        request.headers["x-forwarded-host"] !== publicUrl.host)
+    ) {
+      response
+        .writeHead(400, { "Content-Type": "application/json", "Cache-Control": "no-store" })
+        .end(JSON.stringify({ version: 1, error: "invalid_reverse_proxy" }));
+      return;
+    }
     if (path === "/api" || path.startsWith("/api/")) {
       await api(request, response);
       return;
@@ -70,6 +90,7 @@ export async function runSyncServer(
   options: SyncServerOptions,
   signals: Pick<EventEmitter, "once"> = process,
 ): Promise<void> {
+  assertLoopbackSyncHost(options.host);
   const server = createSyncServer(options);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);

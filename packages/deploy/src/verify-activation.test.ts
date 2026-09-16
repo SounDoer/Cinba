@@ -55,6 +55,9 @@ function fakes(
           throw new Error("connection failed");
         }
       },
+      async refreshSync() {
+        events.push("sync");
+      },
     },
   };
 }
@@ -62,7 +65,7 @@ function fakes(
 test("a new core must pass both revision health and a WebSocket connection", async () => {
   const fake = fakes();
   assert.deepEqual(await verifyActivatedRelease(BASE, fake.dependencies), { kind: "succeeded" });
-  assert.deepEqual(fake.events, ["start", `health:${TARGET}`, "websocket"]);
+  assert.deepEqual(fake.events, ["start", `health:${TARGET}`, "websocket", "sync"]);
 });
 
 test("an unhealthy target is replaced by a verified previous release", async () => {
@@ -78,6 +81,7 @@ test("an unhealthy target is replaced by a verified previous release", async () 
     "start",
     `health:${CURRENT}`,
     "websocket",
+    "sync",
   ]);
 });
 
@@ -92,6 +96,7 @@ test("a target that cannot start is classified separately and rolled back", asyn
     "start",
     `health:${CURRENT}`,
     "websocket",
+    "sync",
   ]);
 });
 
