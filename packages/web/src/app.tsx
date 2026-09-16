@@ -254,7 +254,12 @@ export function App({ serverUrl }: { serverUrl: string }) {
       ) : null}
 
       {activeOverlay === "sync" ? (
-        <SyncSettings serverUrl={serverUrl} onClose={() => setActiveOverlay(null)} />
+        <SyncSettings
+          serverUrl={serverUrl}
+          models={core.models}
+          requestModels={core.listModels}
+          onClose={() => setActiveOverlay(null)}
+        />
       ) : null}
 
       {activeOverlay === "session" ? (

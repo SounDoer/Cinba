@@ -4,6 +4,7 @@ import type {
   CoreInstanceOverride,
   CoreSyncSources,
   CoreSyncView,
+  ModelRef,
   WebSearchPrimary,
 } from "@cinba/contract";
 import { PickerShell } from "./picker-shell.tsx";
@@ -12,7 +13,7 @@ const SOURCE_OPTIONS: { value: string; sources: CoreSyncSources; label: string }
   {
     value: "local/local",
     sources: { settings: "local", credentials: "local" },
-    label: "Local settings + local credentials (Dev default)",
+    label: "Local settings + local credentials",
   },
   {
     value: "sync/local",
@@ -41,7 +42,46 @@ function modelLabel(model: CoreSyncView["effective"]["defaultModel"]): string {
   return model ? `${model.provider}/${model.id}` : "Pi default";
 }
 
-export function SyncSettings({ serverUrl, onClose }: { serverUrl: string; onClose(): void }) {
+function hasOverride(override: CoreInstanceOverride): boolean {
+  return override.defaultModel !== undefined || override.webTools?.searchPrimary !== undefined;
+}
+
+function modelValue(model: ModelRef): string {
+  return JSON.stringify([model.provider, model.id]);
+}
+
+function effectiveSourceLabel(source: CoreSyncView["effectiveSettingsSource"]): string {
+  switch (source) {
+    case "sync":
+      return "Shared settings";
+    case "local-fallback":
+      return "Local settings (Sync unavailable)";
+    default:
+      return "Local settings";
+  }
+}
+
+function settingOriginLabel(
+  customized: boolean,
+  effectiveSource: CoreSyncView["effectiveSettingsSource"],
+): string {
+  if (customized) {
+    return "customized for this Core";
+  }
+  return effectiveSource === "sync" ? "shared setting" : "local setting";
+}
+
+export function SyncSettings({
+  serverUrl,
+  models,
+  requestModels,
+  onClose,
+}: {
+  serverUrl: string;
+  models: ModelRef[] | undefined;
+  requestModels(): boolean;
+  onClose(): void;
+}) {
   const client = useMemo(() => new CoreSyncControlClient(serverUrl), [serverUrl]);
   const [view, setView] = useState<CoreSyncView>();
   const [error, setError] = useState<string>();
@@ -55,6 +95,7 @@ export function SyncSettings({ serverUrl, onClose }: { serverUrl: string; onClos
   const [provider, setProvider] = useState("");
   const [modelId, setModelId] = useState("");
   const [searchPrimary, setSearchPrimary] = useState<WebSearchPrimary | "shared">("shared");
+  const [settingsMode, setSettingsMode] = useState<"shared" | "custom">("shared");
 
   const reload = useCallback(async () => {
     try {
@@ -64,6 +105,7 @@ export function SyncSettings({ serverUrl, onClose }: { serverUrl: string; onClos
       setProvider(next.override.defaultModel?.provider ?? "");
       setModelId(next.override.defaultModel?.id ?? "");
       setSearchPrimary(next.override.webTools?.searchPrimary ?? "shared");
+      setSettingsMode(hasOverride(next.override) ? "custom" : "shared");
     } catch (caught) {
       setError(errorText(caught));
     }
@@ -74,6 +116,9 @@ export function SyncSettings({ serverUrl, onClose }: { serverUrl: string; onClos
     // oxlint-disable-next-line react/set-state-in-effect
     void reload();
   }, [reload]);
+  useEffect(() => {
+    requestModels();
+  }, [requestModels]);
   useEffect(() => {
     if (view?.state !== "pending") {
       return;
@@ -98,6 +143,10 @@ export function SyncSettings({ serverUrl, onClose }: { serverUrl: string; onClos
   }
 
   async function saveOverride(): Promise<void> {
+    if (settingsMode === "shared") {
+      await run(() => client.updateOverride({}));
+      return;
+    }
     if (Boolean(provider.trim()) !== Boolean(modelId.trim())) {
       setError("Both provider and model ID are required for a model override");
       return;
@@ -108,8 +157,17 @@ export function SyncSettings({ serverUrl, onClose }: { serverUrl: string; onClos
         : {}),
       ...(searchPrimary === "shared" ? {} : { webTools: { searchPrimary } }),
     };
+    if (!hasOverride(override)) {
+      setError("Choose at least one setting to customize for this Core");
+      return;
+    }
     await run(() => client.updateOverride(override));
   }
+
+  const overrideActive = view ? hasOverride(view.override) : false;
+  const selectedModel = provider && modelId ? modelValue({ provider, id: modelId }) : "";
+  const selectedModelIsAvailable =
+    selectedModel === "" || models?.some((model) => modelValue(model) === selectedModel) === true;
 
   return (
     <PickerShell label="Sync for this Core" onClose={onClose}>
@@ -172,53 +230,129 @@ export function SyncSettings({ serverUrl, onClose }: { serverUrl: string; onClos
 
           <hr />
           <p>
-            Effective source: <strong>{view.effectiveSettingsSource}</strong>
+            Effective source: <strong>{effectiveSourceLabel(view.effectiveSettingsSource)}</strong>
           </p>
           <p>
             Default model: <strong>{modelLabel(view.effective.defaultModel)}</strong>
-            {view.override.defaultModel ? " (Core override)" : " (base setting)"}
+            {` (${settingOriginLabel(view.override.defaultModel !== undefined, view.effectiveSettingsSource)})`}
           </p>
           <p>
             Web Search: <strong>{view.effective.webTools.searchPrimary}</strong>
-            {view.override.webTools?.searchPrimary ? " (Core override)" : " (base setting)"}
+            {` (${settingOriginLabel(view.override.webTools?.searchPrimary !== undefined, view.effectiveSettingsSource)})`}
           </p>
-          {view.shared ? (
+          {view.sources.settings === "sync" && view.shared ? (
             <p className="muted">
               Shared: {modelLabel(view.shared.defaultModel)} · Web Search{" "}
               {view.shared.webTools.searchPrimary}
             </p>
           ) : null}
 
-          <label>
-            Override model provider
-            <input value={provider} onChange={(event) => setProvider(event.target.value)} />
-          </label>
-          <label>
-            Override model ID
-            <input value={modelId} onChange={(event) => setModelId(event.target.value)} />
-          </label>
-          <label>
-            Web Search override
-            <select
-              value={searchPrimary}
-              onChange={(event) =>
-                setSearchPrimary(event.target.value as WebSearchPrimary | "shared")
-              }
-            >
-              <option value="shared">Use base setting</option>
-              <option value="auto">Auto</option>
-              <option value="exa">Exa</option>
-              <option value="brave">Brave</option>
-            </select>
-          </label>
-          <div className="sync-actions">
-            <button disabled={busy} onClick={() => void saveOverride()}>
-              Save Core override
-            </button>
-            <button disabled={busy} onClick={() => void run(() => client.updateOverride({}))}>
-              Reset to shared
-            </button>
-          </div>
+          <hr />
+          <p>
+            <strong>Settings for this Core</strong>
+          </p>
+          {view.sources.settings === "sync" ? (
+            <>
+              <p className="muted">
+                Follow shared settings by default, or keep explicit exceptions only on this Core.
+              </p>
+              <label>
+                Behavior
+                <select
+                  value={settingsMode}
+                  disabled={busy}
+                  onChange={(event) => setSettingsMode(event.target.value as "shared" | "custom")}
+                >
+                  <option value="shared">Follow shared settings</option>
+                  <option value="custom">Customize this Core</option>
+                </select>
+              </label>
+              {settingsMode === "custom" ? (
+                <>
+                  <label>
+                    Default model
+                    <select
+                      value={selectedModel}
+                      disabled={busy || models === undefined}
+                      onChange={(event) => {
+                        if (event.target.value === "") {
+                          setProvider("");
+                          setModelId("");
+                          return;
+                        }
+                        const [nextProvider, nextModelId] = JSON.parse(event.target.value) as [
+                          string,
+                          string,
+                        ];
+                        setProvider(nextProvider);
+                        setModelId(nextModelId);
+                      }}
+                    >
+                      <option value="">Use shared default model</option>
+                      {!selectedModelIsAvailable ? (
+                        <option value={selectedModel}>
+                          {provider} / {modelId} (currently unavailable)
+                        </option>
+                      ) : null}
+                      {models?.map((model) => (
+                        <option key={modelValue(model)} value={modelValue(model)}>
+                          {model.provider} / {model.id}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Web Search
+                    <select
+                      value={searchPrimary}
+                      disabled={busy}
+                      onChange={(event) =>
+                        setSearchPrimary(event.target.value as WebSearchPrimary | "shared")
+                      }
+                    >
+                      <option value="shared">Use shared setting</option>
+                      <option value="auto">Auto</option>
+                      <option value="exa">Exa</option>
+                      <option value="brave">Brave</option>
+                    </select>
+                  </label>
+                </>
+              ) : null}
+              {settingsMode === "custom" || overrideActive ? (
+                <div className="sync-actions">
+                  <button disabled={busy} onClick={() => void saveOverride()}>
+                    {settingsMode === "shared"
+                      ? "Follow shared settings again"
+                      : "Save settings for this Core"}
+                  </button>
+                </div>
+              ) : (
+                <p className="muted">This Core is following shared settings.</p>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="muted">
+                Local settings already belong only to this Core, so no additional override is
+                needed.
+              </p>
+              {overrideActive ? (
+                <>
+                  <p className="settings-error">
+                    A previously saved Core override is still active over Local Settings.
+                  </p>
+                  <div className="sync-actions">
+                    <button
+                      disabled={busy}
+                      onClick={() => void run(() => client.updateOverride({}))}
+                    >
+                      Clear Core override
+                    </button>
+                  </div>
+                </>
+              ) : null}
+            </>
+          )}
           {view.managementUrl ? (
             <a href={view.managementUrl} target="_blank" rel="noreferrer">
               Open Sync management
