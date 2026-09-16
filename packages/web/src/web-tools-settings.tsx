@@ -6,6 +6,13 @@ import type {
 } from "@cinba/contract";
 import { PickerShell } from "./picker-shell.tsx";
 
+function credentialActionLabel(managedBySync: boolean, available: boolean): string {
+  if (managedBySync) {
+    return "Managed by Sync";
+  }
+  return available ? "Replace key" : "Add key";
+}
+
 export function WebToolsSettings({
   status,
   error,
@@ -49,8 +56,12 @@ export function WebToolsSettings({
   return (
     <PickerShell label="web tools settings" onClose={onClose}>
       <div className="picker-path">
-        web_search and web_fetch are always available. API keys are stored by this core and never
-        sent back.
+        web_search and web_fetch are always available.{" "}
+        {status?.credentialSource === "sync" ? (
+          <>Shared API keys are managed by Cinba Sync.</>
+        ) : (
+          <>API keys are stored by this core and never sent back.</>
+        )}
       </div>
 
       {error ? <div className="picker-item">{error}</div> : null}
@@ -68,7 +79,7 @@ export function WebToolsSettings({
             {(["auto", "exa", "brave"] as const).map((primary) => (
               <button
                 key={primary}
-                disabled={pending || status.primary === primary}
+                disabled={pending || status.primary === primary || status.settingsSource === "sync"}
                 onClick={() => choosePrimary(primary)}
               >
                 {status.primary === primary ? "● " : ""}
@@ -76,6 +87,12 @@ export function WebToolsSettings({
               </button>
             ))}
           </div>
+
+          {status.settingsSource === "sync" ? (
+            <div className="picker-path">
+              Primary search is managed by Sync. Use the Sync panel for a Core override.
+            </div>
+          ) : null}
 
           <div className="picker-list">
             {status.providers.map((provider) => {
@@ -145,10 +162,13 @@ export function WebToolsSettings({
                         : ""}
                     </span>
                   </span>
-                  <button disabled={pending} onClick={() => setAdding(providerId)}>
-                    {provider.available ? "Replace key" : "Add key"}
+                  <button
+                    disabled={pending || status.credentialSource === "sync"}
+                    onClick={() => setAdding(providerId)}
+                  >
+                    {credentialActionLabel(status.credentialSource === "sync", provider.available)}
                   </button>
-                  {provider.hasStoredCredential ? (
+                  {provider.hasStoredCredential && status.credentialSource !== "sync" ? (
                     <button
                       className="session-delete"
                       disabled={pending}
