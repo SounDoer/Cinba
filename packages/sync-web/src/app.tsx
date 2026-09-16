@@ -19,10 +19,12 @@ import type {
   SharedSettingsView,
 } from "@cinba/sync-contract";
 import {
+  MANUAL_MODEL_SELECTION,
   type Page,
   SHARED_CREDENTIAL_PROVIDERS,
   consumeCredentialDraft,
   errorMessage,
+  initialModelSelection,
   manualModel,
   modelLabel,
 } from "./view-model.ts";
@@ -408,11 +410,48 @@ function Settings({
   const current = data.settings.settings.defaultModel;
   const [provider, setProvider] = useState(current?.provider ?? "");
   const [modelId, setModelId] = useState(current?.id ?? "");
+  const [modelSelection, setModelSelection] = useState(() =>
+    initialModelSelection(current, data.models.models),
+  );
   const [search, setSearch] = useState(data.settings.settings.webTools.searchPrimary);
   const connected = data.cores.cores.filter((core) => !core.revoked).length;
+  const manualModelFields =
+    modelSelection === MANUAL_MODEL_SELECTION ? (
+      <>
+        <div className="two-columns">
+          <label>
+            Provider
+            <input
+              value={provider}
+              onChange={(event) => setProvider(event.target.value)}
+              placeholder="anthropic"
+              required
+            />
+          </label>
+          <label>
+            Model ID
+            <input
+              value={modelId}
+              onChange={(event) => setModelId(event.target.value)}
+              placeholder="claude-sonnet"
+              required
+            />
+          </label>
+        </div>
+        <p className="hint">
+          Manual IDs are an advanced fallback for models no connected Core has reported.
+        </p>
+      </>
+    ) : null;
+  const emptyCatalogHint =
+    modelSelection !== MANUAL_MODEL_SELECTION && data.models.models.length === 0 ? (
+      <p className="hint">
+        Connect a Core first and its supported models will appear in this list.
+      </p>
+    ) : null;
   function submit(event: FormEvent) {
     event.preventDefault();
-    const selected = manualModel(provider, modelId);
+    const selected = modelSelection ? manualModel(provider, modelId) : undefined;
     void save({
       version: 1,
       ...(selected ? { defaultModel: selected } : {}),
@@ -432,16 +471,30 @@ function Settings({
         <span className="source">Source · Sync Server</span>
       </div>
       <label>
-        Suggested model
+        Default model
         <select
-          value={current ? `${provider}\0${modelId}` : ""}
+          value={modelSelection}
           onChange={(event) => {
-            const [nextProvider, nextId] = event.target.value.split("\0");
+            const nextSelection = event.target.value;
+            setModelSelection(nextSelection);
+            if (nextSelection === "") {
+              setProvider("");
+              setModelId("");
+              return;
+            }
+            if (nextSelection === MANUAL_MODEL_SELECTION) {
+              if (modelSelection !== MANUAL_MODEL_SELECTION) {
+                setProvider("");
+                setModelId("");
+              }
+              return;
+            }
+            const [nextProvider, nextId] = nextSelection.split("\0");
             setProvider(nextProvider ?? "");
             setModelId(nextId ?? "");
           }}
         >
-          <option value="">Manual or no default</option>
+          <option value="">No shared default</option>
           {data.models.models.map((candidate) => (
             <option
               key={`${candidate.model.provider}/${candidate.model.id}`}
@@ -450,29 +503,14 @@ function Settings({
               {modelLabel(candidate, connected)}
             </option>
           ))}
+          {data.models.models.length === 0 ? (
+            <option disabled>Connect a Core to discover models</option>
+          ) : null}
+          <option value={MANUAL_MODEL_SELECTION}>Enter a model manually…</option>
         </select>
       </label>
-      <div className="two-columns">
-        <label>
-          Provider
-          <input
-            value={provider}
-            onChange={(event) => setProvider(event.target.value)}
-            placeholder="anthropic"
-          />
-        </label>
-        <label>
-          Model ID
-          <input
-            value={modelId}
-            onChange={(event) => setModelId(event.target.value)}
-            placeholder="claude-sonnet"
-          />
-        </label>
-      </div>
-      <p className="hint">
-        Manual provider/model IDs are allowed even when no connected Core reports them.
-      </p>
+      {manualModelFields}
+      {emptyCatalogHint}
       <label>
         Primary web search
         <select

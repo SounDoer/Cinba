@@ -53,6 +53,23 @@ export const SHARED_CREDENTIAL_PROVIDERS = [
   kind: "model" | "search";
 }>;
 
+export const MANUAL_MODEL_SELECTION = "__manual__";
+
+export function initialModelSelection(
+  current: ModelRef | undefined,
+  candidates: ModelCandidate[],
+): string {
+  if (!current) {
+    return "";
+  }
+  return candidates.some(
+    (candidate) =>
+      candidate.model.provider === current.provider && candidate.model.id === current.id,
+  )
+    ? `${current.provider}\0${current.id}`
+    : MANUAL_MODEL_SELECTION;
+}
+
 export function errorMessage(error: unknown): string {
   if (error instanceof SyncClientError) {
     if (error.status === 401) {

@@ -2,12 +2,33 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { SyncClientError } from "@cinba/sync-client";
 import {
+  MANUAL_MODEL_SELECTION,
   SHARED_CREDENTIAL_PROVIDERS,
   consumeCredentialDraft,
   errorMessage,
+  initialModelSelection,
   manualModel,
   modelLabel,
 } from "./view-model.ts";
+
+test("model selection distinguishes no default, reported models, and manual fallback", () => {
+  const candidates = [
+    {
+      model: { provider: "anthropic", id: "claude" },
+      supportedCoreIds: ["one"],
+      unsupportedCoreIds: [],
+    },
+  ];
+  assert.equal(initialModelSelection(undefined, candidates), "");
+  assert.equal(
+    initialModelSelection({ provider: "anthropic", id: "claude" }, candidates),
+    "anthropic\0claude",
+  );
+  assert.equal(
+    initialModelSelection({ provider: "custom", id: "model" }, candidates),
+    MANUAL_MODEL_SELECTION,
+  );
+});
 
 test("shared credential choices are unique and include model and search providers", () => {
   const ids = SHARED_CREDENTIAL_PROVIDERS.map((provider) => provider.id);
