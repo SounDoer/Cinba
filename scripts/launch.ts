@@ -153,6 +153,8 @@ export function createDevelopmentEnvironment(
     CINBA_DEFAULT_CORE_NAME: `${machineName} Dev`,
     CINBA_PORT: String(DEV_CORE_PORT),
     CINBA_STATE_DIR: stateDirectory,
+    CINBA_SYNC_SETTINGS_SOURCE: "sync",
+    CINBA_SYNC_CREDENTIAL_SOURCE: "local",
     PI_CODING_AGENT_DIR: join(stateDirectory, "pi-agent"),
   };
 }

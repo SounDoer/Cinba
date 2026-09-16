@@ -7,15 +7,32 @@ export type RuntimeCredentialResolver = {
   get(providerId: string): string | undefined;
 };
 
+export class MissingSharedCredentialError extends Error {
+  readonly providerId: string;
+
+  constructor(providerId: string) {
+    super(`Shared credential is unavailable for provider ${providerId}`);
+    this.name = "MissingSharedCredentialError";
+    this.providerId = providerId;
+  }
+}
+
 export function createRuntimeCredentialResolver(options: {
   sources: SourceSelection;
   local: CredentialLookup;
   shared?: CredentialLookup;
 }): RuntimeCredentialResolver {
   assertSupportedSources(options.sources);
-  if (options.sources.credentials === "sync" && !options.shared) {
-    throw new Error("Shared Credentials are not available");
+  if (options.sources.credentials === "local") {
+    return { get: (providerId) => options.local(providerId) };
   }
-  const lookup = options.sources.credentials === "local" ? options.local : options.shared!;
-  return { get: (providerId) => lookup(providerId) };
+  return {
+    get: (providerId) => {
+      const credential = options.shared?.(providerId);
+      if (credential === undefined) {
+        throw new MissingSharedCredentialError(providerId);
+      }
+      return credential;
+    },
+  };
 }

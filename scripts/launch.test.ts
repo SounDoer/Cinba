@@ -12,6 +12,8 @@ test("the Dev Core receives an isolated port, state directory, and Pi agent dire
   assert.equal(environment.CINBA_CORE_LIFETIME, "persistent");
   assert.equal(environment.CINBA_DEFAULT_CORE_NAME, "workstation Dev");
   assert.equal(environment.CINBA_STATE_DIR, stateDirectory);
+  assert.equal(environment.CINBA_SYNC_SETTINGS_SOURCE, "sync");
+  assert.equal(environment.CINBA_SYNC_CREDENTIAL_SOURCE, "local");
   assert.equal(environment.PI_CODING_AGENT_DIR, join(stateDirectory, "pi-agent"));
   assert.equal(environment.PATH, "/usr/bin");
 });

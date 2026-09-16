@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createRuntimeCredentialResolver } from "./runtime-credentials.ts";
+import {
+  MissingSharedCredentialError,
+  createRuntimeCredentialResolver,
+} from "./runtime-credentials.ts";
 
 test("Runtime Credentials return only the requested Local provider key", () => {
   const requested: string[] = [];
@@ -27,12 +30,14 @@ test("Shared Credentials require Sync Settings and an explicit lookup", () => {
       }),
     /Local Settings cannot use Shared Credentials/,
   );
-  assert.throws(
-    () =>
-      createRuntimeCredentialResolver({
-        sources: { settings: "sync", credentials: "sync" },
-        local: () => undefined,
-      }),
-    /Shared Credentials are not available/,
-  );
+  let localReads = 0;
+  const missing = createRuntimeCredentialResolver({
+    sources: { settings: "sync", credentials: "sync" },
+    local: () => {
+      localReads += 1;
+      return "must-not-fallback";
+    },
+  });
+  assert.throws(() => missing.get("deepseek"), MissingSharedCredentialError);
+  assert.equal(localReads, 0);
 });

@@ -13,6 +13,8 @@
     "@cinba/contract": "*",
     "@cinba/deploy": "*",
     "@cinba/extensions": "*",
+    "@cinba/sync-client": "*",
+    "@cinba/sync-contract": "*",
     "ws": "^8.21.3"
   }
 }

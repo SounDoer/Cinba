@@ -46,6 +46,12 @@ import { createServerRuntime } from "./server-runtime.ts";
 import { SERVICE_IDLE_TIMEOUT_MS, assessServiceIdle, readCoreLifetime } from "./service-idle.ts";
 import { type LiveSession, createSessionRegistry } from "./session-registry.ts";
 import { createStaticFileHandler } from "./static-files.ts";
+import {
+  createCoreSyncHttpRemote,
+  createSnapshotCache,
+  createSyncConnectionStore,
+  createSyncCoordinator,
+} from "./sync/index.ts";
 import { isAllowedWebSocketOrigin } from "./websocket-origin.ts";
 import { handleWebToolsMessage } from "./web-tools-messages.ts";
 import { createWebToolsService } from "./web-tools-service.ts";
@@ -81,6 +87,13 @@ const localSettings = createLocalSettingsStore(join(STATE_DIRECTORY, "local-sett
 const instanceOverride = createInstanceOverrideStore(
   join(STATE_DIRECTORY, "instance-override.json"),
 );
+const syncConnection = createSyncConnectionStore(join(STATE_DIRECTORY, "sync-connection.json"));
+const syncCache = createSnapshotCache(join(STATE_DIRECTORY, "sync-snapshot.json"));
+const sync = createSyncCoordinator({
+  connection: syncConnection,
+  cache: syncCache,
+  remoteFor: createCoreSyncHttpRemote,
+});
 
 function effectiveSettings() {
   return resolveEffectiveSettings({
@@ -857,6 +870,7 @@ export function startService(): void {
         }
       }
       console.log(`[cinba] shutting down, reclaiming ${sessions.size} Pi child process(es)`);
+      sync.stop();
       sessions.closeAll();
       await runtime.stop();
     },
@@ -869,7 +883,8 @@ export function startService(): void {
   });
   void runtime
     .start()
-    .then((address) => {
+    .then(async (address) => {
+      await sync.start();
       const currentState = localState.get();
       const currentSettings = effectiveSettings();
       console.log(
