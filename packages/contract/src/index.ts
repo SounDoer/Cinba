@@ -37,6 +37,7 @@ export type {
   WebSearchPrimary,
   WebSearchProviderId,
   WebSearchProviderStatus,
+  WebToolsConfigurationSource,
   WebToolsStatus,
 } from "./protocol.ts";
 export { createSession, sameTranscript } from "./session.ts";

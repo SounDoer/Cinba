@@ -328,12 +328,14 @@ test("web tools status is strictly validated and never carries credentials", () 
     status: {
       primary: "auto",
       effectiveOrder: ["exa", "brave", "duckduckgo"],
+      settingsSource: "sync",
+      credentialSource: "sync",
       providers: [
         {
           id: "exa",
           name: "Exa",
           available: true,
-          source: "stored",
+          source: "sync",
           hasStoredCredential: true,
           bestEffort: false,
         },
@@ -371,6 +373,10 @@ test("web tools status is strictly validated and never carries credentials", () 
   );
   assert.equal(
     parseServerMessage({ ...message, status: { ...message.status, effectiveOrder: ["google"] } }),
+    undefined,
+  );
+  assert.equal(
+    parseServerMessage({ ...message, status: { ...message.status, credentialSource: "remote" } }),
     undefined,
   );
 });

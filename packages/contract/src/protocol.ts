@@ -28,7 +28,8 @@ export type ProviderStatus = {
 export type WebSearchProviderId = "exa" | "brave" | "duckduckgo";
 export type WebSearchCredentialProviderId = "exa" | "brave";
 export type WebSearchPrimary = "auto" | "exa" | "brave";
-export type WebSearchCredentialSource = "environment" | "stored";
+export type WebSearchCredentialSource = "environment" | "stored" | "sync";
+export type WebToolsConfigurationSource = "local" | "sync";
 
 export type WebSearchProviderStatus = {
   id: WebSearchProviderId;
@@ -43,6 +44,9 @@ export type WebToolsStatus = {
   primary: WebSearchPrimary;
   effectiveOrder: WebSearchProviderId[];
   providers: WebSearchProviderStatus[];
+  /** Optional only for compatibility with a Core from before Sync source reporting. */
+  settingsSource?: WebToolsConfigurationSource;
+  credentialSource?: WebToolsConfigurationSource;
 };
 
 export type SessionSummary = {
@@ -659,7 +663,10 @@ function isWebSearchProviderStatus(value: unknown): value is WebSearchProviderSt
     isWebSearchProviderId(value.id) &&
     typeof value.name === "string" &&
     typeof value.available === "boolean" &&
-    (value.source === undefined || value.source === "environment" || value.source === "stored") &&
+    (value.source === undefined ||
+      value.source === "environment" ||
+      value.source === "stored" ||
+      value.source === "sync") &&
     typeof value.hasStoredCredential === "boolean" &&
     typeof value.bestEffort === "boolean"
   );
@@ -668,8 +675,20 @@ function isWebSearchProviderStatus(value: unknown): value is WebSearchProviderSt
 function isWebToolsStatus(value: unknown): value is WebToolsStatus {
   return (
     isRecord(value) &&
-    hasOnlyKeys(value, ["primary", "effectiveOrder", "providers"]) &&
+    hasOnlyKeys(value, [
+      "primary",
+      "effectiveOrder",
+      "providers",
+      "settingsSource",
+      "credentialSource",
+    ]) &&
     isWebSearchPrimary(value.primary) &&
+    (value.settingsSource === undefined ||
+      value.settingsSource === "local" ||
+      value.settingsSource === "sync") &&
+    (value.credentialSource === undefined ||
+      value.credentialSource === "local" ||
+      value.credentialSource === "sync") &&
     Array.isArray(value.effectiveOrder) &&
     value.effectiveOrder.every(isWebSearchProviderId) &&
     Array.isArray(value.providers) &&
