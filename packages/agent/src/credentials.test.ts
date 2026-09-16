@@ -66,6 +66,18 @@ test("runtime API keys expose model capabilities without persisting or returning
   );
 });
 
+test("Shared Credentials capabilities exclude conflicting local API-key models", async () => {
+  await setApiKey("groq", FAKE_KEY);
+  const capabilities = await listCoreCapabilities({ deepseek: "shared-not-a-real-key" });
+
+  assert.ok(capabilities.models.some((model) => model.provider === "deepseek"));
+  assert.equal(
+    capabilities.models.some((model) => model.provider === "groq"),
+    false,
+  );
+  await clearCredential("groq");
+});
+
 test("a secret is stripped from any text on its way out", async () => {
   const { redactSecret } = await import("./credentials.ts");
 

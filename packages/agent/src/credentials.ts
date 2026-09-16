@@ -20,6 +20,16 @@ import type { ProviderStatus } from "@cinba/contract";
 
 export type LocalProviderAuthType = "api_key" | "oauth";
 
+function localProviderSource(type: unknown): ProviderStatus["source"] {
+  if (type === "api_key") {
+    return "local-api-key";
+  }
+  if (type === "oauth") {
+    return "local-oauth";
+  }
+  return undefined;
+}
+
 /** Inspect only redacted auth metadata; credential values never leave Pi. */
 export async function localProviderAuthType(
   providerId: string,
@@ -35,20 +45,33 @@ export async function localProviderAuthType(
 
 /** Non-secret Provider/model capability inventory for Sync reporting. */
 export async function listCoreCapabilities(
-  runtimeApiKeys: Readonly<Record<string, string>> = {},
+  runtimeApiKeys?: Readonly<Record<string, string>>,
 ): Promise<{
   version: 1;
   providers: Array<{ id: string; name: string; authKind: "api-key" | "oauth" | "other" }>;
   models: Array<{ provider: string; id: string }>;
 }> {
   const runtime = await ModelRuntime.create();
-  for (const [providerId, apiKey] of Object.entries(runtimeApiKeys)) {
+  const localCredentials = new Map(
+    (await runtime.listCredentials()).map((credential) => [credential.providerId, credential.type]),
+  );
+  for (const [providerId, apiKey] of Object.entries(runtimeApiKeys ?? {})) {
     await runtime.setRuntimeApiKey(providerId, apiKey);
   }
   const credentials = new Map(
     (await runtime.listCredentials()).map((credential) => [credential.providerId, credential.type]),
   );
-  const models = await runtime.getAvailable();
+  const available = await runtime.getAvailable();
+  const models =
+    runtimeApiKeys === undefined
+      ? available
+      : available.filter((model) => {
+          const localType = localCredentials.get(model.provider);
+          return (
+            localType === "oauth" ||
+            (localType !== "api_key" && runtimeApiKeys[model.provider] !== undefined)
+          );
+        });
   const providerIds = new Set(models.map((model) => model.provider));
   const authKind = (providerId: string): "api-key" | "oauth" | "other" => {
     const type = credentials.get(providerId);
@@ -83,15 +106,20 @@ export async function listCoreCapabilities(
  */
 export async function listProviders(): Promise<ProviderStatus[]> {
   const runtime = await ModelRuntime.create();
+  const credentials = new Map(
+    (await runtime.listCredentials()).map((credential) => [credential.providerId, credential.type]),
+  );
 
   return runtime
     .getProviders()
     .map((provider) => {
       const { id, name } = provider as { id: string; name?: string };
+      const source = localProviderSource(credentials.get(id));
       return {
         id,
         name: name || id,
         configured: runtime.hasConfiguredAuth(id),
+        ...(source ? { source } : {}),
       };
     })
     .toSorted((a, b) => {
