@@ -170,7 +170,7 @@ test("setting a key persists it while broadcasting only redacted status", async 
   assert.equal([...firstInbox.raw, ...secondInbox.raw].join("\n").includes(FAKE_KEY), false);
 });
 
-test("changing primary broadcasts to both clients and persists in ordinary config", async () => {
+test("changing primary broadcasts to both clients and persists in Local Settings", async () => {
   send(first, { type: "set_web_search_primary", primary: "brave" });
   const [toFirst, toSecond] = await Promise.all([
     nextOfType(firstInbox, "web_tools_status"),
@@ -178,13 +178,15 @@ test("changing primary broadcasts to both clients and persists in ordinary confi
   ]);
   const firstStatus = toFirst.status as { primary: string };
   const secondStatus = toSecond.status as { primary: string };
-  const config = JSON.parse(readFileSync(join(stateDirectory, "config.json"), "utf8")) as {
-    webSearchPrimary?: string;
+  const settings = JSON.parse(
+    readFileSync(join(stateDirectory, "local-settings.json"), "utf8"),
+  ) as {
+    webTools?: { searchPrimary?: string };
   };
 
   assert.equal(firstStatus.primary, "brave");
   assert.equal(secondStatus.primary, "brave");
-  assert.equal(config.webSearchPrimary, "brave");
+  assert.equal(settings.webTools?.searchPrimary, "brave");
 });
 
 test("clearing removes only the selected stored key", async () => {

@@ -18,7 +18,7 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import WebSocket from "ws";
@@ -185,6 +185,11 @@ test("and the conversation can be switched onto one of them", async () => {
   send({ type: "set_model", provider: target.provider, modelId: target.id });
   const changed = await nextOfType("model_changed");
   assert.deepEqual(changed.model, { provider: target.provider, id: target.id });
+  assert.equal(
+    existsSync(join(home, ".cinba", "local-settings.json")),
+    false,
+    "a session model selection must not become a persisted default",
+  );
 });
 
 test("removing that key leaves the conversation alive rather than on a model it cannot reach", async () => {

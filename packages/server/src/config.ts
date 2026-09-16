@@ -1,98 +1,91 @@
-// Persistent settings for one Cinba service.
-// This module owns both their in-memory state and their on-disk representation.
+// Persistent local facts for one Core instance. User preferences live in
+// local-settings.json and instance-override.json, never in this store.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-import type { ModelRef, WebSearchPrimary } from "@cinba/contract";
+import { existsSync } from "node:fs";
+import type { WebSearchPrimary } from "@cinba/contract";
+import { type StoredJsonError, loadStoredJson, writeAtomicJson } from "./atomic-json-store.ts";
 
-export type CinbaConfig = {
+export type LocalState = {
   cwd: string;
-  model: ModelRef | undefined;
   lastSessionId: string | undefined;
   coreName: string;
-  webSearchPrimary: WebSearchPrimary;
 };
 
-export type ConfigStore = {
-  /** Return a copy so callers cannot bypass update() and persistence. */
-  get(): CinbaConfig;
-  /** Change memory and persist the complete current state as one operation. */
-  update(changes: Partial<CinbaConfig>): void;
+export type LocalStateStore = {
+  get(): LocalState;
+  update(changes: Partial<LocalState>): void;
+  problem(): StoredJsonError | undefined;
 };
 
-type ConfigDefaults = Pick<CinbaConfig, "cwd" | "coreName">;
+type LocalStateDefaults = Pick<LocalState, "cwd" | "coreName">;
 
-/** Load and own one config file. A missing or malformed file means defaults. */
-export function createConfigStore(path: string, defaults: ConfigDefaults): ConfigStore {
-  let state: CinbaConfig = {
-    cwd: defaults.cwd,
-    model: undefined,
-    lastSessionId: undefined,
-    coreName: defaults.coreName,
-    webSearchPrimary: "auto",
+// Kept only so an old config document is not destructively rewritten during
+// the no-automatic-migration transition. These values are never consumed.
+type LegacySettings = {
+  provider?: string;
+  modelId?: string;
+  webSearchPrimary?: WebSearchPrimary;
+};
+
+function parseLocalState(value: unknown, defaults: LocalStateDefaults): LocalState {
+  const document = value as Record<string, unknown>;
+  return {
+    cwd: typeof document.cwd === "string" && existsSync(document.cwd) ? document.cwd : defaults.cwd,
+    lastSessionId: typeof document.lastSessionId === "string" ? document.lastSessionId : undefined,
+    coreName:
+      typeof document.coreName === "string" && document.coreName.trim() !== ""
+        ? document.coreName.trim()
+        : defaults.coreName,
   };
+}
 
-  try {
-    const parsed = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-    if (typeof parsed.cwd === "string" && existsSync(parsed.cwd)) {
-      state.cwd = parsed.cwd;
-    }
-    if (typeof parsed.provider === "string" && typeof parsed.modelId === "string") {
-      state.model = { provider: parsed.provider, id: parsed.modelId };
-    }
-    if (typeof parsed.lastSessionId === "string") {
-      state.lastSessionId = parsed.lastSessionId;
-    }
-    if (typeof parsed.coreName === "string" && parsed.coreName.trim() !== "") {
-      state.coreName = parsed.coreName.trim();
-    }
-    if (
-      parsed.webSearchPrimary === "auto" ||
-      parsed.webSearchPrimary === "exa" ||
-      parsed.webSearchPrimary === "brave"
-    ) {
-      state.webSearchPrimary = parsed.webSearchPrimary;
-    }
-  } catch {
-    // First start, an unreadable file, and malformed JSON all fall back safely.
+function legacySettings(document: Record<string, unknown>): LegacySettings {
+  const settings: LegacySettings = {};
+  if (typeof document.provider === "string") {
+    settings.provider = document.provider;
+  }
+  if (typeof document.modelId === "string") {
+    settings.modelId = document.modelId;
+  }
+  if (
+    document.webSearchPrimary === "auto" ||
+    document.webSearchPrimary === "exa" ||
+    document.webSearchPrimary === "brave"
+  ) {
+    settings.webSearchPrimary = document.webSearchPrimary;
+  }
+  return settings;
+}
+
+/** Load and own only cwd, Core name, and last-session state. */
+export function createLocalStateStore(path: string, defaults: LocalStateDefaults): LocalStateStore {
+  const loaded = loadStoredJson(path, (value) => parseLocalState(value, defaults));
+  let state: LocalState =
+    loaded.status === "valid"
+      ? loaded.value
+      : { cwd: defaults.cwd, lastSessionId: undefined, coreName: defaults.coreName };
+  const preserved = loaded.status === "valid" ? legacySettings(loaded.document) : {};
+  const loadProblem = loaded.status === "invalid" ? loaded.error : undefined;
+
+  function get(): LocalState {
+    return { ...state };
   }
 
-  function get(): CinbaConfig {
-    return { ...state, model: state.model ? { ...state.model } : undefined };
+  function update(changes: Partial<LocalState>): void {
+    if (loadProblem) {
+      throw loadProblem;
+    }
+    const next: LocalState = {
+      cwd: changes.cwd ?? state.cwd,
+      coreName: changes.coreName?.trim() || state.coreName,
+      lastSessionId: Object.hasOwn(changes, "lastSessionId")
+        ? changes.lastSessionId
+        : state.lastSessionId,
+    };
+    const document = { ...preserved, ...next };
+    writeAtomicJson(path, document, (value) => parseLocalState(value, defaults));
+    state = next;
   }
 
-  function update(changes: Partial<CinbaConfig>): void {
-    if (changes.cwd !== undefined) {
-      state.cwd = changes.cwd;
-    }
-    if (Object.hasOwn(changes, "model")) {
-      state.model = changes.model ? { ...changes.model } : undefined;
-    }
-    if (Object.hasOwn(changes, "lastSessionId")) {
-      state.lastSessionId = changes.lastSessionId;
-    }
-    if (changes.coreName !== undefined) {
-      state.coreName = changes.coreName;
-    }
-    if (changes.webSearchPrimary !== undefined) {
-      state.webSearchPrimary = changes.webSearchPrimary;
-    }
-
-    try {
-      mkdirSync(dirname(path), { recursive: true });
-      const body = {
-        cwd: state.cwd,
-        provider: state.model?.provider,
-        modelId: state.model?.id,
-        lastSessionId: state.lastSessionId,
-        coreName: state.coreName,
-        webSearchPrimary: state.webSearchPrimary,
-      };
-      writeFileSync(path, JSON.stringify(body, null, 2), "utf8");
-    } catch {
-      // Failing to remember does not affect this run or interrupt the service.
-    }
-  }
-
-  return { get, update };
+  return { get, update, problem: () => loadProblem };
 }

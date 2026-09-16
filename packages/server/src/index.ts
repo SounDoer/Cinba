@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import { findSession } from "@cinba/agent";
 import { createWebToolsCredentialStore } from "@cinba/extensions/src/web-tools/credentials.ts";
 import { IDLE_TIMEOUT_MS, assessIdle, canStopNow } from "./reclaim.ts";
-import { createConfigStore } from "./config.ts";
+import { createLocalStateStore } from "./config.ts";
 import { createCredentialService } from "./credential-service.ts";
 import { createDeploymentStatusHandler } from "./deployment-status.ts";
 import { listDirectories } from "./directory-browser.ts";
@@ -37,6 +37,9 @@ import {
 } from "./drain.ts";
 import { createHealthHandler, isSafeToRestart, normalizeRevision } from "./health.ts";
 import { createLocalCoreControlHandler } from "./local-core-control.ts";
+import { LOCAL_SOURCES, resolveEffectiveSettings } from "./effective-settings.ts";
+import { createInstanceOverrideStore } from "./instance-override.ts";
+import { createLocalSettingsStore } from "./local-settings.ts";
 import { createProjectTrustGate } from "./project-trust-gate.ts";
 import { resolveCinbaStateDirectory } from "./runtime-paths.ts";
 import { createServerRuntime } from "./server-runtime.ts";
@@ -70,10 +73,22 @@ const STATE_DIRECTORY = resolveCinbaStateDirectory();
 /** Where the built UI lives. Located relative to the repo layout, not through package resolution. */
 const WEB_DIST = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
 const serveStatic = createStaticFileHandler(WEB_DIST);
-const config = createConfigStore(join(STATE_DIRECTORY, "config.json"), {
+const localState = createLocalStateStore(join(STATE_DIRECTORY, "config.json"), {
   cwd: homedir(),
   coreName: process.env.CINBA_DEFAULT_CORE_NAME?.trim() || hostname(),
 });
+const localSettings = createLocalSettingsStore(join(STATE_DIRECTORY, "local-settings.json"));
+const instanceOverride = createInstanceOverrideStore(
+  join(STATE_DIRECTORY, "instance-override.json"),
+);
+
+function effectiveSettings() {
+  return resolveEffectiveSettings({
+    sources: LOCAL_SOURCES,
+    local: localSettings.get(),
+    override: instanceOverride.get(),
+  });
+}
 
 // ---- State ----
 
@@ -113,7 +128,7 @@ const projectTrust = createProjectTrustGate<WebSocket>({
 });
 
 const sessions = createSessionRegistry({
-  defaultModel: () => config.get().model,
+  defaultModel: () => effectiveSettings().defaultModel,
   hasViewers: (sessionId) => [...viewing.values()].includes(sessionId),
   onActions: (sessionId, actions) => {
     toViewers(sessionId, { type: "actions", actions });
@@ -127,8 +142,8 @@ const sessions = createSessionRegistry({
 
 const credentials = createCredentialService({ onChanged: markCredentialsStale });
 const webTools = createWebToolsService({
-  getPrimary: () => config.get().webSearchPrimary,
-  setPrimary: (primary) => config.update({ webSearchPrimary: primary }),
+  getPrimary: () => effectiveSettings().webTools.searchPrimary,
+  setPrimary: (primary) => localSettings.setWebSearchPrimary(primary),
   credentials: createWebToolsCredentialStore(
     join(STATE_DIRECTORY, "credentials.json"),
     process.env,
@@ -215,7 +230,7 @@ async function openWithTrust(
 }
 
 async function resolveDefaultSession(socket: WebSocket): Promise<LiveSession | undefined> {
-  const { cwd, lastSessionId } = config.get();
+  const { cwd, lastSessionId } = localState.get();
   if (lastSessionId) {
     const existing = sessions.get(lastSessionId);
     if (existing) {
@@ -327,7 +342,7 @@ function show(socket: WebSocket, session: LiveSession): void {
       sessions.denyPendingConfirmations(previous);
     }
   }
-  config.update({
+  localState.update({
     lastSessionId: session.id,
     // New conversations start where the last one you looked at lives.
     cwd: session.cwd,
@@ -630,8 +645,6 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
       if (!(await sessions.setModel(current, target))) {
         return;
       }
-      // Remembered as the default for conversations started from now on.
-      config.update({ model: target });
       toViewers(current.id, { type: "model_changed", model: target });
       return;
     }
@@ -685,7 +698,7 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
       // one project must not resume with its tools pointed at another.
       const opened = await openWithTrust(socket, {
         sessionPath: stored.path,
-        cwd: stored.cwd || config.get().cwd,
+        cwd: stored.cwd || localState.get().cwd,
       });
       if (opened) {
         show(socket, opened);
@@ -723,8 +736,8 @@ async function handle(socket: WebSocket, raw: string): Promise<void> {
           // Already gone, or not ours to remove. The listing below tells the truth either way.
         }
       }
-      if (config.get().lastSessionId === message.sessionId) {
-        config.update({ lastSessionId: undefined });
+      if (localState.get().lastSessionId === message.sessionId) {
+        localState.update({ lastSessionId: undefined });
       }
 
       // Anyone who was looking at it needs somewhere to go.
@@ -749,7 +762,7 @@ function onConnection(socket: WebSocket): void {
   serviceIdleSince = undefined;
 
   // Before anything else: which machine the client has reached.
-  sendTo(socket, { type: "core_identity", name: config.get().coreName });
+  sendTo(socket, { type: "core_identity", name: localState.get().coreName });
   console.log(`[cinba] client connected, ${clients.size} now`);
 
   // A new connection lands on the conversation it was last on. Its Pi starts
@@ -857,11 +870,12 @@ export function startService(): void {
   void runtime
     .start()
     .then((address) => {
-      const currentConfig = config.get();
+      const currentState = localState.get();
+      const currentSettings = effectiveSettings();
       console.log(
-        `[cinba] core "${currentConfig.coreName}" - UI at http://${address.host}:${address.port}`,
+        `[cinba] core "${currentState.coreName}" - UI at http://${address.host}:${address.port}`,
       );
-      console.log(`[cinba] working directory ${currentConfig.cwd}`);
+      console.log(`[cinba] working directory ${currentState.cwd}`);
       console.log(
         `[cinba] idle conversations release their process after ${IDLE_TIMEOUT_MS / 60_000} minutes`,
       );
@@ -870,8 +884,10 @@ export function startService(): void {
           `[cinba] on-demand Core stops after ${SERVICE_IDLE_TIMEOUT_MS / 60_000} client-free minutes`,
         );
       }
-      if (currentConfig.model) {
-        console.log(`[cinba] model ${currentConfig.model.provider}/${currentConfig.model.id}`);
+      if (currentSettings.defaultModel) {
+        console.log(
+          `[cinba] model ${currentSettings.defaultModel.provider}/${currentSettings.defaultModel.id}`,
+        );
       }
     })
     .catch((error: unknown) => {
