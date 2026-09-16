@@ -3,6 +3,7 @@ import { type IncomingMessage, type ServerResponse, createServer } from "node:ht
 import { once } from "node:events";
 import test from "node:test";
 import {
+  AdministratorSyncClient,
   CoreSyncClient,
   EnrollmentClient,
   ManagementSyncClient,
@@ -278,6 +279,10 @@ test("typed clients keep management, enrollment, and Core authorization on separ
       });
       return;
     }
+    if (request.url === "/api/management/auth/status") {
+      json(response, 200, { version: 1, state: "setup-required" }, { "Cache-Control": "no-store" });
+      return;
+    }
     if (request.url === "/api/core/enrollments") {
       json(
         response,
@@ -307,6 +312,7 @@ test("typed clients keep management, enrollment, and Core authorization on separ
     const enrollment = new EnrollmentClient(http);
     const core = new CoreSyncClient(http, coreAuthorization("core-token"));
 
+    assert.equal((await new AdministratorSyncClient(http).status()).state, "setup-required");
     await management.settings();
     const created = await enrollment.create({
       version: 1,
@@ -325,6 +331,12 @@ test("typed clients keep management, enrollment, and Core authorization on separ
     });
 
     assert.deepEqual(observed, [
+      {
+        path: "/api/management/auth/status",
+        authorization: undefined,
+        csrf: undefined,
+        cookie: undefined,
+      },
       {
         path: "/api/management/settings",
         authorization: undefined,

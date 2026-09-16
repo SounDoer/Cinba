@@ -53,6 +53,7 @@ export type SyncState = {
   enrollments: StoredEnrollment[];
   administrator?: SecretHash;
   setupCode?: SecretHash;
+  setupCodeDisplay?: CredentialEnvelope;
 };
 
 export class SyncStateSchemaError extends Error {
@@ -300,6 +301,7 @@ export function parseSyncState(value: unknown): SyncState {
       "enrollments",
       "administrator",
       "setupCode",
+      "setupCodeDisplay",
     ],
     "state",
   );
@@ -343,6 +345,15 @@ export function parseSyncState(value: unknown): SyncState {
   ) {
     throw new SyncStateSchemaError("state.history", "latest entry does not match current state");
   }
+  const hasAdministrator = object.administrator !== undefined;
+  const hasSetupCode = object.setupCode !== undefined;
+  const hasSetupCodeDisplay = object.setupCodeDisplay !== undefined;
+  if (hasAdministrator === hasSetupCode || hasSetupCode !== hasSetupCodeDisplay) {
+    throw new SyncStateSchemaError(
+      "state",
+      "expected either an administrator or one complete pending Setup Code",
+    );
+  }
   return {
     version: 1,
     serverId: stringAt(object.serverId, "state.serverId", 128),
@@ -359,5 +370,13 @@ export function parseSyncState(value: unknown): SyncState {
     ...(object.setupCode === undefined
       ? {}
       : { setupCode: parseSecretHash(object.setupCode, "state.setupCode") }),
+    ...(object.setupCodeDisplay === undefined
+      ? {}
+      : {
+          setupCodeDisplay: parseCredentialEnvelope(
+            object.setupCodeDisplay,
+            "state.setupCodeDisplay",
+          ),
+        }),
   };
 }

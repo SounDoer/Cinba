@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -12,6 +12,8 @@ import {
   decryptCredential,
   encryptCredential,
   generateCredentialKey,
+  hashSecret,
+  verifySecret,
 } from "../security/credentials.ts";
 import {
   type AtomicWriteOptions,
@@ -52,6 +54,11 @@ export type SyncStore = {
   credential(provider: string): string | undefined;
   snapshot(includeCredentials: boolean): SyncSnapshot;
   history(): SyncState["history"];
+  authenticationState(): "setup-required" | "ready";
+  localSetupCode(): string | undefined;
+  verifyAdministratorPassword(password: string): boolean;
+  completeAdministratorSetup(setupCode: string, password: string): Promise<boolean>;
+  resetAdministrator(): Promise<string>;
   updateSettings(
     baseSettingsRevision: number,
     settings: SharedSettings,
@@ -63,11 +70,16 @@ export type SyncStore = {
   setCredential(provider: string, credential: string | undefined): Promise<number>;
 };
 
-function initialState(now: Date): SyncState {
+function newSetupCode(): string {
+  return randomBytes(24).toString("base64url");
+}
+
+function initialState(now: Date, key: Uint8Array): SyncState {
   const settings: SharedSettings = {
     version: 1,
     webTools: { searchPrimary: "auto" },
   };
+  const setupCode = newSetupCode();
   return {
     version: 1,
     serverId: randomUUID(),
@@ -85,6 +97,8 @@ function initialState(now: Date): SyncState {
     credentials: {},
     cores: [],
     enrollments: [],
+    setupCode: hashSecret(setupCode),
+    setupCodeDisplay: encryptCredential(setupCode, key),
   };
 }
 
@@ -114,7 +128,7 @@ export function createSyncStore(directory: string, options: SyncStoreOptions = {
     const keyExists = existsSync(keyPath);
     if (!stateExists && !keyExists) {
       key = generateCredentialKey();
-      state = initialState(now());
+      state = initialState(now(), key);
       writePrivateFileOnce(keyPath, key);
       createdKey = true;
       replaceJsonAtomically(statePath, state, parseSyncState, options.atomicWrite);
@@ -128,6 +142,9 @@ export function createSyncStore(directory: string, options: SyncStoreOptions = {
       state = parseSyncState(JSON.parse(readFileSync(statePath, "utf8")) as unknown);
       for (const envelope of Object.values(state.credentials)) {
         decryptCredential(envelope, key);
+      }
+      if (state.setupCodeDisplay) {
+        decryptCredential(state.setupCodeDisplay, key);
       }
     }
   } catch {
@@ -208,6 +225,41 @@ export function createSyncStore(directory: string, options: SyncStoreOptions = {
       };
     },
     history: () => structuredClone(requireState().state.history),
+    authenticationState: () => (requireState().state.administrator ? "ready" : "setup-required"),
+    localSetupCode: () => {
+      const current = requireState();
+      return current.state.setupCodeDisplay
+        ? decryptCredential(current.state.setupCodeDisplay, current.key)
+        : undefined;
+    },
+    verifyAdministratorPassword: (password) => {
+      const administrator = requireState().state.administrator;
+      return administrator ? verifySecret(password, administrator) : false;
+    },
+    completeAdministratorSetup: (setupCode, password) =>
+      enqueue(() => {
+        const current = requireState();
+        if (!current.state.setupCode || !verifySecret(setupCode, current.state.setupCode)) {
+          return false;
+        }
+        const next = cloneState(current.state);
+        next.administrator = hashSecret(password);
+        delete next.setupCode;
+        delete next.setupCodeDisplay;
+        commit(next);
+        return true;
+      }),
+    resetAdministrator: () =>
+      enqueue(() => {
+        const current = requireState();
+        const setupCode = newSetupCode();
+        const next = cloneState(current.state);
+        delete next.administrator;
+        next.setupCode = hashSecret(setupCode);
+        next.setupCodeDisplay = encryptCredential(setupCode, current.key);
+        commit(next);
+        return setupCode;
+      }),
     updateSettings: (baseSettingsRevision, nextSettings) =>
       enqueue(() => {
         const current = requireState().state;

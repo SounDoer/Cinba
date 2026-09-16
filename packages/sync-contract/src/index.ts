@@ -22,6 +22,10 @@ export type {
 export { parseSyncErrorResponse, SYNC_ERROR_CODES } from "./errors.ts";
 export type { SyncErrorCode, SyncErrorResponse } from "./errors.ts";
 export {
+  parseAdministratorAuthenticated,
+  parseAdministratorLoginRequest,
+  parseAdministratorSetupRequest,
+  parseAdministratorStatus,
   parseBackupMetadata,
   parseConnectedCoreList,
   parseCredentialStatus,
@@ -35,6 +39,10 @@ export {
   parseUpdateSharedSettingsRequest,
 } from "./management.ts";
 export type {
+  AdministratorAuthenticated,
+  AdministratorLoginRequest,
+  AdministratorSetupRequest,
+  AdministratorStatus,
   BackupMetadata,
   ConnectedCore,
   ConnectedCoreList,
@@ -55,6 +63,10 @@ export type { ModelRef, Parser } from "./schemas.ts";
 export const SYNC_ROUTES = {
   health: "/health",
   management: {
+    authStatus: "/api/management/auth/status",
+    setup: "/api/management/auth/setup",
+    login: "/api/management/auth/login",
+    logout: "/api/management/auth/logout",
     settings: "/api/management/settings",
     credentials: "/api/management/credentials",
     cores: "/api/management/cores",

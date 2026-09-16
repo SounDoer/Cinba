@@ -89,6 +89,29 @@ export type EnrollmentDecisionRequest = {
   decision: "approve" | "reject";
 };
 
+export type AdministratorStatus = {
+  version: 1;
+  state: "setup-required" | "ready" | "authenticated";
+};
+
+export type AdministratorSetupRequest = {
+  version: 1;
+  setupCode: string;
+  password: string;
+};
+
+export type AdministratorLoginRequest = {
+  version: 1;
+  password: string;
+};
+
+export type AdministratorAuthenticated = {
+  version: 1;
+  state: "authenticated";
+  csrfToken: string;
+  expiresAt: string;
+};
+
 export function parseSharedSettings(value: unknown, path = "settings"): SharedSettings {
   const object = strictObject(value, ["version", "defaultModel", "webTools"], path);
   versionOne(object, path);
@@ -291,5 +314,48 @@ export function parseEnrollmentDecisionRequest(value: unknown): EnrollmentDecisi
   return {
     version: 1,
     decision: oneOf(object.decision, ["approve", "reject"] as const, "request.decision"),
+  };
+}
+
+export function parseAdministratorStatus(value: unknown): AdministratorStatus {
+  const object = strictObject(value, ["version", "state"], "response");
+  versionOne(object, "response");
+  return {
+    version: 1,
+    state: oneOf(
+      object.state,
+      ["setup-required", "ready", "authenticated"] as const,
+      "response.state",
+    ),
+  };
+}
+
+export function parseAdministratorSetupRequest(value: unknown): AdministratorSetupRequest {
+  const object = strictObject(value, ["version", "setupCode", "password"], "request");
+  versionOne(object, "request");
+  return {
+    version: 1,
+    setupCode: stringAt(object.setupCode, "request.setupCode", 512),
+    password: stringAt(object.password, "request.password", 4_096),
+  };
+}
+
+export function parseAdministratorLoginRequest(value: unknown): AdministratorLoginRequest {
+  const object = strictObject(value, ["version", "password"], "request");
+  versionOne(object, "request");
+  return { version: 1, password: stringAt(object.password, "request.password", 4_096) };
+}
+
+export function parseAdministratorAuthenticated(value: unknown): AdministratorAuthenticated {
+  const object = strictObject(value, ["version", "state", "csrfToken", "expiresAt"], "response");
+  versionOne(object, "response");
+  if (object.state !== "authenticated") {
+    throw new Error("response.state: expected authenticated");
+  }
+  return {
+    version: 1,
+    state: "authenticated",
+    csrfToken: stringAt(object.csrfToken, "response.csrfToken", 512),
+    expiresAt: stringAt(object.expiresAt, "response.expiresAt", 64),
   };
 }

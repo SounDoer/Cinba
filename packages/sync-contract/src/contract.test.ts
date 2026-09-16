@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   type Parser,
+  parseAdministratorAuthenticated,
+  parseAdministratorLoginRequest,
+  parseAdministratorSetupRequest,
+  parseAdministratorStatus,
   parseBackupMetadata,
   parseCapabilitiesReport,
   parseConnectedCoreList,
@@ -30,6 +34,27 @@ const settings = {
 };
 
 const validDocuments: Array<[string, Parser<unknown>, unknown]> = [
+  ["Administrator status", parseAdministratorStatus, { version: 1, state: "setup-required" }],
+  [
+    "Administrator setup",
+    parseAdministratorSetupRequest,
+    { version: 1, setupCode: "setup-code", password: "strong-password" },
+  ],
+  [
+    "Administrator login",
+    parseAdministratorLoginRequest,
+    { version: 1, password: "strong-password" },
+  ],
+  [
+    "Administrator authenticated",
+    parseAdministratorAuthenticated,
+    {
+      version: 1,
+      state: "authenticated",
+      csrfToken: "csrf-token",
+      expiresAt: "2026-09-16T00:00:00.000Z",
+    },
+  ],
   ["Shared Settings", parseSharedSettings, settings],
   [
     "Shared Settings view",

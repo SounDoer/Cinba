@@ -8,6 +8,25 @@ export {
   verifySecret,
 } from "./security/credentials.ts";
 export type { CredentialEnvelope, SecretHash } from "./security/credentials.ts";
+export { AttemptLimiter } from "./security/rate-limiter.ts";
+export type { AttemptLimiterOptions } from "./security/rate-limiter.ts";
+export {
+  ADMIN_SESSION_COOKIE,
+  AdministratorSessions,
+  clearSessionCookie,
+  createSessionCookie,
+  sessionIdFromCookie,
+} from "./security/sessions.ts";
+export type { AdministratorSession, AdministratorSessionsOptions } from "./security/sessions.ts";
+export { createAdministratorAuthHandler } from "./routes/administrator-auth-routes.ts";
+export { AdministratorAuthService } from "./services/administrator-auth.ts";
+export type {
+  AuthenticationFailure,
+  AuthenticationResult,
+  AuthenticationSuccess,
+  CookieMode,
+  RequestSecurity,
+} from "./services/administrator-auth.ts";
 export { replaceJsonAtomically, writePrivateFileOnce } from "./store/atomic-json-store.ts";
 export type { AtomicWriteOptions } from "./store/atomic-json-store.ts";
 export { parseCredentialEnvelope, parseSecretHash, parseSyncState } from "./store/schema.ts";

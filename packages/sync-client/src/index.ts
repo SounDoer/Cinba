@@ -1,4 +1,5 @@
 export { coreAuthorization, enrollmentAuthorization, managementAuthorization } from "./auth.ts";
+export { AdministratorSyncClient } from "./administrator-client.ts";
 export type {
   CoreAuthorization,
   EnrollmentAuthorization,
