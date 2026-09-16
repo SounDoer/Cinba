@@ -27,6 +27,19 @@ function providerLabel(provider: ProviderStatus, markConfigured: boolean): strin
   return `${marker}${provider.name}`;
 }
 
+function providerState(provider: ProviderStatus): string {
+  switch (provider.source) {
+    case "sync-api-key":
+      return "available via Sync";
+    case "local-oauth":
+      return "local OAuth";
+    case "conflict":
+      return "conflicting local API key";
+    default:
+      return provider.configured ? "configured" : "not configured";
+  }
+}
+
 /** Owns the complete /providers, /login, and /logout user flow. */
 export class ProviderFlow {
   #intent: ProviderIntent | undefined;
@@ -59,27 +72,51 @@ export class ProviderFlow {
 
     if (intent === "list") {
       this.#host.append("");
-      for (const provider of providers.filter((entry) => entry.configured)) {
+      for (const provider of providers.filter(
+        (entry) => entry.configured || entry.source === "conflict",
+      )) {
         this.#host.append(
-          `${GREEN}configured${RESET}  ${provider.name} ${DIM}(${provider.id})${RESET}`,
+          `${GREEN}${providerState(provider)}${RESET}  ${provider.name} ${DIM}(${provider.id})${RESET}`,
         );
       }
+      const remaining = providers.filter(
+        (entry) => !entry.configured && entry.source !== "conflict",
+      ).length;
+      const managedBySync = providers.some((provider) => provider.management === "sync");
       this.#host.append(
-        `${DIM}${providers.filter((entry) => !entry.configured).length} more available - /login to add one${RESET}`,
+        `${DIM}${remaining} more available${managedBySync ? "" : " - /login to add one"}${RESET}`,
       );
       this.#host.requestRender();
       return;
     }
 
+    const managedBySync = providers.some((provider) => provider.management === "sync");
+    if (intent === "login" && managedBySync) {
+      this.#host.showNotice("API keys are managed by Cinba Sync");
+      return;
+    }
+
     const choices =
-      intent === "logout" ? providers.filter((provider) => provider.configured) : providers;
+      intent === "logout"
+        ? providers.filter((provider) =>
+            managedBySync
+              ? provider.source === "conflict" || provider.source === "local-oauth"
+              : provider.configured,
+          )
+        : providers;
     if (intent === "logout" && choices.length === 0) {
       this.#host.showNotice("nothing is configured");
       return;
     }
 
+    let title = "Forget which provider's key?";
+    if (intent === "login") {
+      title = "Give which provider an API key?";
+    } else if (managedBySync) {
+      title = "Remove which local credential?";
+    }
     const picker = new ChoicePicker(
-      intent === "login" ? "Give which provider an API key?" : "Forget which provider's key?",
+      title,
       choices.map((provider) => ({
         value: provider.id,
         label: providerLabel(provider, intent === "login"),

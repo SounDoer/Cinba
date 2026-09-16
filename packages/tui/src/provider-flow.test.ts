@@ -145,3 +145,56 @@ test("a failed provider-list request does not consume a later unsolicited listin
 
   assert.equal(state.interaction, undefined);
 });
+
+test("Shared Credentials mode refuses local API-key entry", () => {
+  const state = setup();
+  state.flow.login();
+  state.flow.onListing([
+    {
+      id: "deepseek",
+      name: "DeepSeek",
+      configured: true,
+      source: "sync-api-key",
+      management: "sync",
+    },
+  ]);
+
+  assert.deepEqual(state.notices, ["API keys are managed by Cinba Sync"]);
+  assert.equal(state.interaction, undefined);
+  assert.deepEqual(state.calls.set, []);
+});
+
+test("Shared Credentials logout offers only removable local credentials", () => {
+  const state = setup();
+  state.flow.logout();
+  state.flow.onListing([
+    {
+      id: "deepseek",
+      name: "DeepSeek",
+      configured: true,
+      source: "sync-api-key",
+      management: "sync",
+    },
+    {
+      id: "groq",
+      name: "Groq",
+      configured: false,
+      source: "conflict",
+      management: "sync",
+    },
+    {
+      id: "openai",
+      name: "OpenAI",
+      configured: true,
+      source: "local-oauth",
+      management: "sync",
+    },
+  ]);
+
+  const rendered = state.interaction?.render(80).join("\n") ?? "";
+  assert.doesNotMatch(rendered, /DeepSeek/);
+  assert.match(rendered, /Groq/);
+  assert.match(rendered, /OpenAI/);
+  send(state.interaction, "\r");
+  assert.deepEqual(state.calls.clear, ["groq"]);
+});
