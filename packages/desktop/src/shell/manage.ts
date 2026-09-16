@@ -14,10 +14,6 @@ const urlInput = document.querySelector<HTMLInputElement>("#base-url")!;
 const formMessage = document.querySelector<HTMLElement>("#form-message")!;
 const testButton = document.querySelector<HTMLButtonElement>("#test")!;
 const cancelButton = document.querySelector<HTMLButtonElement>("#cancel")!;
-const syncForm = document.querySelector<HTMLFormElement>("#sync-form")!;
-const syncUrl = document.querySelector<HTMLInputElement>("#sync-url")!;
-const syncMessage = document.querySelector<HTMLElement>("#sync-message")!;
-const syncRemove = document.querySelector<HTMLButtonElement>("#sync-remove")!;
 let state: DesktopShellState;
 
 function input(): ProfileInput {
@@ -92,25 +88,7 @@ function render(next: DesktopShellState): void {
   problem.hidden = !state.problem;
   problem.textContent = state.problem ?? "";
   recoverButton.hidden = !state.canRecoverProfiles;
-  syncUrl.value = state.syncProfile?.baseUrl ?? "";
-  syncRemove.hidden = !state.syncProfile;
 }
-
-syncForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  syncMessage.textContent = "Saving…";
-  try {
-    await desktopApi.saveSync(syncUrl.value);
-    syncMessage.textContent = "Cinba Sync saved";
-  } catch (error) {
-    syncMessage.textContent = error instanceof Error ? error.message : String(error);
-  }
-});
-
-syncRemove.addEventListener("click", async () => {
-  await desktopApi.removeSync();
-  syncMessage.textContent = "Cinba Sync removed";
-});
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();

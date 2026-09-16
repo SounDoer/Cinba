@@ -3,11 +3,10 @@ import { BrowserWindow, WebContentsView, shell } from "electron";
 import { ensureLocalCore } from "@cinba/core-manager";
 import { type CoreNavigatorState, createCoreNavigator } from "./core-navigator.ts";
 import type { ConnectionTestResult, DesktopShellState, ProfileInput } from "./desktop-api.ts";
-import { decideCoreNavigation, decideSyncNavigation } from "./navigation-policy.ts";
+import { decideCoreNavigation } from "./navigation-policy.ts";
 import type { CoreProfileStore } from "./profile-store.ts";
 import { createRemoteCoreProfile } from "./profiles.ts";
 import { createShellViewModel } from "./shell-view.ts";
-import type { SyncProfileStore } from "./sync-profile-store.ts";
 import { createNavigationGuard } from "./navigation-guard.ts";
 import { remoteContentPreferences } from "./content-security.ts";
 
@@ -49,10 +48,6 @@ async function probeCore(baseUrl: string): Promise<CoreHealth | undefined> {
 
 export type DesktopWindowController = {
   open(profileId?: string): Promise<void>;
-  openSync(): Promise<void>;
-  saveSync(baseUrl: string): Promise<void>;
-  removeSync(): Promise<void>;
-  openSyncExternal(): Promise<void>;
   retry(): Promise<void>;
   openManager(): Promise<void>;
   getState(): DesktopShellState;
@@ -65,18 +60,12 @@ export type DesktopWindowController = {
 };
 
 /** Own the native shell and its isolated Core content view. */
-export function createDesktopWindowController(
-  profiles: CoreProfileStore,
-  syncProfiles: SyncProfileStore,
-): DesktopWindowController {
+export function createDesktopWindowController(profiles: CoreProfileStore): DesktopWindowController {
   let window: BrowserWindow | undefined;
   let manager: BrowserWindow | undefined;
   let coreView: WebContentsView | undefined;
   let selected = profiles.lastSelected();
   let adapterFailure: CoreNavigatorState | undefined;
-  let selectedKind: "core" | "sync" = "core";
-  let syncStatus: "opening" | "online" | "offline" = "offline";
-  let syncMessage: string | undefined;
   const navigation = createNavigationGuard();
 
   const navigator = createCoreNavigator({
@@ -101,16 +90,7 @@ export function createDesktopWindowController(
     const core = createShellViewModel(profiles.list(), currentConnection());
     const state = {
       ...core,
-      ...(selectedKind === "sync"
-        ? {
-            status: syncStatus,
-            ...(syncMessage ? { message: syncMessage } : {}),
-            canRetry: syncStatus === "offline",
-          }
-        : {}),
       canRecoverProfiles: profiles.canRecover(),
-      selectedKind,
-      ...(syncProfiles.get() ? { syncProfile: syncProfiles.get() } : {}),
       ...(problem ? { problem } : {}),
     };
     return state;
@@ -142,10 +122,8 @@ export function createDesktopWindowController(
     if (!window || !coreView) {
       return;
     }
-    coreView.setVisible(
-      selectedKind === "sync" ? syncStatus === "online" : state.type === "online",
-    );
-    window.setTitle(`Cinba — ${selectedKind === "sync" ? "Cinba Sync" : state.profile.label}`);
+    coreView.setVisible(state.type === "online");
+    window.setTitle(`Cinba — ${state.profile.label}`);
     broadcast();
   }
 
@@ -169,26 +147,7 @@ export function createDesktopWindowController(
     });
   }
 
-  function protectSyncNavigation(view: WebContentsView, baseUrl: string): void {
-    view.webContents.on("will-navigate", (event) => {
-      const decision = decideSyncNavigation(baseUrl, event.url);
-      if (decision === "allow") {
-        return;
-      }
-      event.preventDefault();
-      if (decision === "external") {
-        void shell.openExternal(event.url);
-      }
-    });
-    view.webContents.setWindowOpenHandler(({ url }) => {
-      if (decideSyncNavigation(baseUrl, url) === "external") {
-        void shell.openExternal(url);
-      }
-      return { action: "deny" };
-    });
-  }
-
-  function replaceCoreView(kind: "core" | "sync" = "core", baseUrl?: string): void {
+  function replaceCoreView(): void {
     if (!window) {
       throw new Error("Desktop window is unavailable");
     }
@@ -197,15 +156,11 @@ export function createDesktopWindowController(
       coreView.webContents.close();
     }
     const view = new WebContentsView({
-      webPreferences: remoteContentPreferences(kind),
+      webPreferences: remoteContentPreferences(),
     });
     coreView = view;
     coreView.setVisible(false);
-    if (kind === "sync") {
-      protectSyncNavigation(coreView, baseUrl!);
-    } else {
-      protectCoreNavigation(coreView);
-    }
+    protectCoreNavigation(coreView);
     const contentSession = coreView.webContents.session;
     if (!downloadProtectedSessions.has(contentSession)) {
       downloadProtectedSessions.add(contentSession);
@@ -213,12 +168,6 @@ export function createDesktopWindowController(
     }
     view.webContents.on("render-process-gone", (_event, details) => {
       if (view !== coreView) {
-        return;
-      }
-      if (selectedKind === "sync") {
-        syncStatus = "offline";
-        syncMessage = `Sync content stopped: ${details.reason}`;
-        applyConnection(currentConnection());
         return;
       }
       adapterFailure = {
@@ -270,13 +219,12 @@ export function createDesktopWindowController(
     }
     profiles.select(target.id);
     selected = target;
-    selectedKind = "core";
     adapterFailure = undefined;
-    replaceCoreView("core");
+    replaceCoreView();
     const opening = navigator.open(target);
     applyConnection(currentConnection());
     await opening;
-    if (!navigation.current(request) || selectedKind !== "core") {
+    if (!navigation.current(request)) {
       return;
     }
     applyConnection(currentConnection());
@@ -290,70 +238,7 @@ export function createDesktopWindowController(
   }
 
   async function retry(): Promise<void> {
-    if (selectedKind === "sync") {
-      await openSync();
-    } else {
-      await open(selected.id);
-    }
-  }
-
-  async function openSync(): Promise<void> {
-    const profile = syncProfiles.get();
-    if (!profile) {
-      throw new Error("Configure Cinba Sync before opening it");
-    }
-    const request = navigation.begin();
-    await ensureWindow();
-    if (!navigation.current(request)) {
-      return;
-    }
-    selectedKind = "sync";
-    syncStatus = "opening";
-    syncMessage = undefined;
-    replaceCoreView("sync", profile.baseUrl);
-    applyConnection(currentConnection());
-    try {
-      await coreView!.webContents.loadURL(profile.baseUrl);
-      if (!navigation.current(request) || selectedKind !== "sync") {
-        return;
-      }
-      syncStatus = "online";
-    } catch {
-      if (!navigation.current(request) || selectedKind !== "sync") {
-        return;
-      }
-      syncStatus = "offline";
-      syncMessage = "Cinba Sync is unavailable";
-    }
-    applyConnection(currentConnection());
-    if (window && !window.isDestroyed()) {
-      if (window.isMinimized()) {
-        window.restore();
-      }
-      window.show();
-      window.focus();
-    }
-  }
-
-  async function saveSync(baseUrl: string): Promise<void> {
-    syncProfiles.set(baseUrl);
-    broadcast();
-  }
-
-  async function removeSync(): Promise<void> {
-    if (selectedKind === "sync") {
-      await open(selected.id);
-    }
-    syncProfiles.clear();
-    broadcast();
-  }
-
-  async function openSyncExternal(): Promise<void> {
-    const profile = syncProfiles.get();
-    if (!profile) {
-      throw new Error("Configure Cinba Sync before opening it");
-    }
-    await shell.openExternal(profile.baseUrl);
+    await open(selected.id);
   }
 
   async function openManager(): Promise<void> {
@@ -417,10 +302,6 @@ export function createDesktopWindowController(
 
   return {
     open,
-    openSync,
-    saveSync,
-    removeSync,
-    openSyncExternal,
     retry,
     openManager,
     getState,

@@ -1,8 +1,8 @@
-export function remoteContentPreferences(kind: "core" | "sync") {
+export function remoteContentPreferences() {
   return {
     contextIsolation: true,
     nodeIntegration: false,
     sandbox: true,
-    partition: kind === "sync" ? "persist:cinba-sync" : "persist:cinba-core",
+    partition: "persist:cinba-core",
   } as const;
 }

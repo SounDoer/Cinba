@@ -6,7 +6,6 @@ import { type IpcMainInvokeEvent, app, ipcMain } from "electron";
 import { createLocalCoreConfig } from "@cinba/core-manager";
 import type { ProfileInput } from "./desktop-api.ts";
 import { createCoreProfileStore } from "./profile-store.ts";
-import { createSyncProfileStore } from "./sync-profile-store.ts";
 import { type SystemTrayController, createSystemTrayController } from "./tray.ts";
 import { type DesktopWindowController, createDesktopWindowController } from "./window.ts";
 
@@ -17,10 +16,6 @@ let openWhenReady = true;
 const IPC_CHANNELS = [
   "desktop:get-state",
   "desktop:select-profile",
-  "desktop:open-sync",
-  "desktop:save-sync",
-  "desktop:remove-sync",
-  "desktop:open-sync-external",
   "desktop:retry",
   "desktop:open-manager",
   "desktop:add-profile",
@@ -48,13 +43,6 @@ function readProfileInput(value: unknown): ProfileInput {
   return { label: candidate.label, baseUrl: candidate.baseUrl };
 }
 
-function readSyncUrl(value: unknown): string {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error("Invalid Sync Server URL");
-  }
-  return value;
-}
-
 function registerDesktopIpc(window: DesktopWindowController): () => void {
   function authorize(event: IpcMainInvokeEvent): void {
     if (!window.ownsRenderer(event.sender.id)) {
@@ -69,22 +57,6 @@ function registerDesktopIpc(window: DesktopWindowController): () => void {
   ipcMain.handle("desktop:select-profile", async (event, profileId: unknown) => {
     authorize(event);
     await window.open(readProfileId(profileId));
-  });
-  ipcMain.handle("desktop:open-sync", async (event) => {
-    authorize(event);
-    await window.openSync();
-  });
-  ipcMain.handle("desktop:save-sync", async (event, baseUrl: unknown) => {
-    authorize(event);
-    await window.saveSync(readSyncUrl(baseUrl));
-  });
-  ipcMain.handle("desktop:remove-sync", async (event) => {
-    authorize(event);
-    await window.removeSync();
-  });
-  ipcMain.handle("desktop:open-sync-external", async (event) => {
-    authorize(event);
-    await window.openSyncExternal();
   });
   ipcMain.handle("desktop:retry", async (event) => {
     authorize(event);
@@ -139,10 +111,7 @@ if (!hasSingleInstanceLock) {
       const profiles = createCoreProfileStore(join(localConfig.stateDirectory, "desktop.json"), {
         localLabel: process.platform === "darwin" ? "This Mac" : "This PC",
       });
-      const syncProfile = createSyncProfileStore(
-        join(localConfig.stateDirectory, "desktop-sync.json"),
-      );
-      const window = createDesktopWindowController(profiles, syncProfile);
+      const window = createDesktopWindowController(profiles);
       removeIpcHandlers = registerDesktopIpc(window);
       tray = await createSystemTrayController({
         openWindow: window.open,

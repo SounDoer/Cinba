@@ -82,7 +82,7 @@ Core instance。Sync Server 不把这些数据提升为全局状态。
 | Sync Snapshot      | 一个 Core 一次性取得的完整、已发布同步版本                    |
 | Sync Revision      | Shared Settings 或 Shared Credential 变化后生成的完整快照版本 |
 | Settings Revision  | Shared Settings 每次保存或回滚生成的历史版本                  |
-| Management Client  | 登录 Sync Server 管理页面的浏览器或 Desktop 页面              |
+| Management Client  | 登录 Sync Server 管理页面的浏览器                         |
 
 Desktop 的 `CoreProfile` 只表示“这台 Desktop 保存了哪些 Core 地址”；Sync Server 的 Connected
 Cores 表示“哪些 Core 已注册到这台 Sync Server”。两者不能合并或互相替代。
@@ -475,23 +475,21 @@ Backup / Restore
 
 它们不保存管理员密码，也不代理修改 Shared Settings 或 Credential。
 
-### 12.3 Desktop 是承载与导航层
+### 12.3 Desktop 只管理 Core 导航
 
-Desktop 已经管理多个 Core connection profile。它新增一个与 Core 列表平级的 Cinba Sync 全局
-入口，嵌入或打开 Sync Web，但不复制 Sync 管理业务：
+Desktop 只管理多个 Core connection profile，不再单独保存 Sync Server URL，也不再提供与
+Core 列表平级的 Sync 全局入口：
 
 ```text
 Desktop
 ├── Cores
 │   ├── Local Core
 │   └── VPS Core
-└── Services
-    └── Cinba Sync
 ```
 
-打开某个 Core 时加载现有 `packages/web`；打开 Cinba Sync 时加载远程 `packages/sync-web`。
-Sync Web 的管理员 cookie 属于 Sync Server origin；Desktop 的 CoreProfile Store 和普通 Core 都不
-持有管理员权限。
+打开某个 Core 时加载现有 `packages/web`。用户从当前 Core 的 Sync 面板进入管理界面，
+`Open Sync management` 把已连接 Core 记录的 management URL 交给系统浏览器。Desktop 不要求
+用户重复录入同一 URL，也不保存 Sync 管理员 cookie、密码或 Core credential。
 
 ## 13. 网络与部署
 
@@ -597,7 +595,7 @@ sync-web
 - `packages/contract`：只增加当前 Core 的 Sync 状态与 Connect/Sync now/Disconnect 操作；
 - `packages/core-client`：封装上述 Core 操作，不承载管理员 API；
 - `packages/web` / `packages/tui`：当前 Core 的状态、来源和 Override；
-- `packages/desktop`：全局 Sync Web 入口，保留现有 CoreProfile Store；
+- `packages/desktop`：保留 CoreProfile Store，Sync 管理由 Core Web 导向系统浏览器；
 - `packages/deploy`：独立 Sync 服务安装、健康检查和发布接线；
 - `scripts/cinba.ts`：Sync 本机管理与恢复命令；
 - `scripts/launch.ts`：仓库开发入口，不把 Sync 混进普通 Core 生命周期。
@@ -673,7 +671,7 @@ sync-web
 - 过期 revision 的管理页面不能覆盖新设置；
 - 未认证请求、被撤销 Core 和 Local Credential Core 都拿不到 Shared Credential；
 - 管理 API、日志、错误、诊断、普通状态和备份元数据不暴露 API key；
-- Desktop 的 CoreProfile 与 Sync Connected Cores 保持独立；
+- Desktop 的 CoreProfile 不保存 Sync URL，与 Sync Connected Cores 保持独立；
 - Sync Server 可以在不运行 Core 的主机独立工作；
 - 备份恢复后保留 Shared Settings、Credential、history 与 Core identity；
 - Tailscale 内的 Mac/Windows/手机浏览器可以管理 VPS Sync Server；

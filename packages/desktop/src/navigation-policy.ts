@@ -19,10 +19,3 @@ export function decideCoreNavigation(
 ): CoreNavigationDecision {
   return decideOriginNavigation(profileBaseUrl, targetUrl);
 }
-
-export function decideSyncNavigation(
-  syncBaseUrl: string,
-  targetUrl: string,
-): CoreNavigationDecision {
-  return decideOriginNavigation(syncBaseUrl, targetUrl);
-}

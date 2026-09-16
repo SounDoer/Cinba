@@ -13,7 +13,7 @@
 - Dev Core 默认使用 Shared Settings，但只读取自己的 Local Credentials；
 - 每个 Core 保留 Instance Override，当前会话选模型不反向修改 Shared Settings；
 - Sync Server 可部署在 VPS、Mac 或其它常驻设备，不依赖普通 Core 才能运行；
-- Sync Web 是唯一完整管理界面，Desktop 只提供与 Core 列表平级的全局入口；
+- Sync Web 是唯一完整管理界面，Desktop 不复制它的地址配置或管理入口；
 - Sync 离线时 Core 使用最后一次成功同步的缓存，不阻塞启动和已有工作；
 - Core 注册、撤销、设置冲突、历史回滚、备份恢复和敏感数据边界均有自动测试；
 - 用真实 Windows、Mac、VPS 与 Dev Core 完成端到端验收；
@@ -117,9 +117,7 @@ packages/
 │   └── sync-settings.tsx
 ├── tui/src/
 │   └── sync-flow.ts
-└── desktop/src/
-    ├── sync-profile.ts             # 全局 Sync 服务地址，不是 CoreProfile
-    └── sync-navigation-policy.ts
+└── desktop/src/                    # 只保留 CoreProfile 与 Core 导航
 
 scripts/
 ├── cinba.ts                        # sync serve/status/reset/backup/restore
@@ -487,44 +485,33 @@ Windows、Mac、VPS 的新会话实际使用相同 Shared default/key，Dev 实�
 用户在任意 Core 的 Web/TUI 能看清“值从哪里来”、连接 Sync 和排查当前 Core，但完整管理仍只有
 Sync Web。
 
-## 阶段 10：Desktop 全局 Sync 层级
+## 阶段 10：Desktop 中的 Sync 管理导航
 
 ### 改动
 
-保留现有 `CoreProfileStore` 和 Core 切换模型，在 Desktop shell 增加独立的全局服务入口：
+保留现有 `CoreProfileStore` 和 Core 切换模型。实机试用发现，再让 Desktop 单独保存一次
+Sync URL 会造成重复配置，并让用户误以为该表单会把 Core 连接到 Sync。因此最终实现改为：
 
 ```text
 Desktop
 ├── Cores
 │   ├── Local Core
 │   └── Remote Core
-└── Services
-    └── Cinba Sync
 ```
 
-Desktop 只保存一个可选的 Sync Server URL 和显示信息，不保存管理员密码、session 或 Core
-credential。Sync Web 的 cookie 由其 origin/session partition 管理。导航层严格区分：
-
-- Core view 仍走现有 CoreProfile 和健康检查；
-- Sync view 只允许已保存的 Sync HTTPS origin；
-- 跨 origin 导航、弹窗、下载和外链按阶段 0 的 policy 明确处理；
-- Sync 离线只影响 Sync view，不触发 Local Core，也不切换当前 CoreProfile；
-- 若安全嵌入在目标平台不可靠，使用系统浏览器作为明确降级，不复制管理 UI。
+Desktop 不保存 Sync Server URL、管理员密码、session 或 Core credential。当前 Core 的 Sync
+面板是唯一入口；它使用该 Core 已保存的 management URL，并由系统浏览器打开 Sync Web。
 
 ### 测试与验收
 
-- CoreProfile 与 Sync profile 的类型、存储和菜单不混用；
-- 切换 Core/Sync 的旧异步结果不能覆盖当前页面；
-- 非白名单 origin、`javascript:`、任意下载和新窗口被阻止或交给安全外链策略；
-- Sync 页面无法调用 Desktop shell 的 Core lifecycle IPC；
-- 管理 cookie 不被 Desktop state、Core Web 或另一个 Sync origin 读取；
-- Sync 离线页可重试、编辑地址或外部打开，不启动/停止 Core；
-- Windows 与 macOS 做登录、刷新、关闭重开和多 Core 切换实机验收。
+- Manage Connections 只列出本机和远程 Core，没有独立 Sync URL 表单；
+- Desktop state 和 IPC 不再持有 Sync profile，也不再读写 `desktop-sync.json`；
+- Core Web 中的跨 origin Sync 管理链接交给系统浏览器；
+- Windows 与 macOS 做 Core 切换、Sync 外链和多 Core 实机验收。
 
 ### 完成条件
 
-Desktop 清楚表达“多个 Core + 一个全局 Sync 服务”，没有把 Sync 错建成某个 Core 的子设置或新的
-CoreProfile。
+Desktop 只表达多个 Core；Sync 连接属于各 Core，完整管理界面由 Core 面板导向系统浏览器。
 
 ## 阶段 11：CLI、开发生命周期与备份恢复
 
@@ -599,8 +586,8 @@ Web 中完成。
 ### 实机验收
 
 - VPS：Caddy + Tailscale HTTPS、systemd 重启、backup/restore；
-- Windows：Desktop 管理 Sync、普通 Core、离线缓存；
-- Mac：Desktop/浏览器管理 Sync、普通 Core，可选本机托管 Sync Server；
+- Windows：Desktop 管理普通 Core，浏览器管理 Sync，验证离线缓存；
+- Mac：Desktop 管理普通 Core，浏览器管理 Sync，可选本机托管 Sync Server；
 - Dev：跟随 Shared Settings，同时无法读取或缓存 Shared Credentials；
 - Mobile browser：Setup/Login、修改设置、替换 key、批准 Core；
 - 会话中切模型后 Shared Settings 与其他 Core 均不改变；
@@ -647,8 +634,8 @@ Credential 消费边界；不能为了“支持更多 Provider”把 key 写进�
 
 ### 2. Electron 嵌入破坏 origin/cookie 隔离
 
-若无法证明 Sync Web 与 Core Web、shell IPC 隔离，Desktop 第一版改为系统浏览器打开 Sync Web。功能
-入口仍保留在全局层级，不复制一套管理页面。
+Desktop 第一版使用系统浏览器打开 Sync Web，不再维护独立 Sync view、session partition 或手工
+Sync URL。功能可降级，安全边界不可降级。
 
 ### 3. 新 runtime dependency
 

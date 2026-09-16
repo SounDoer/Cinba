@@ -3,10 +3,6 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("cinbaDesktop", {
   getState: () => ipcRenderer.invoke("desktop:get-state"),
   selectProfile: (profileId) => ipcRenderer.invoke("desktop:select-profile", profileId),
-  openSync: () => ipcRenderer.invoke("desktop:open-sync"),
-  saveSync: (baseUrl) => ipcRenderer.invoke("desktop:save-sync", baseUrl),
-  removeSync: () => ipcRenderer.invoke("desktop:remove-sync"),
-  openSyncExternal: () => ipcRenderer.invoke("desktop:open-sync-external"),
   retry: () => ipcRenderer.invoke("desktop:retry"),
   openManager: () => ipcRenderer.invoke("desktop:open-manager"),
   addProfile: (input) => ipcRenderer.invoke("desktop:add-profile", input),
