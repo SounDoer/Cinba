@@ -1,0 +1,274 @@
+import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
+import {
+  type CredentialStatus,
+  type SharedSettings,
+  type SharedSettingsView,
+  type SyncSnapshot,
+  parseSharedSettings,
+} from "@cinba/sync-contract";
+import {
+  decryptCredential,
+  encryptCredential,
+  generateCredentialKey,
+} from "../security/credentials.ts";
+import {
+  type AtomicWriteOptions,
+  replaceJsonAtomically,
+  writePrivateFileOnce,
+} from "./atomic-json-store.ts";
+import { type SyncState, parseSyncState } from "./schema.ts";
+
+export class SyncStoreUnavailableError extends Error {
+  constructor() {
+    super(
+      "Sync Store is read-only because state.json and credential-key could not be verified together",
+    );
+    this.name = "SyncStoreUnavailableError";
+  }
+}
+
+export class SettingsConflictError extends Error {
+  readonly currentSettingsRevision: number;
+
+  constructor(currentSettingsRevision: number) {
+    super("Shared Settings changed after the requested base revision");
+    this.name = "SettingsConflictError";
+    this.currentSettingsRevision = currentSettingsRevision;
+  }
+}
+
+export type SyncStoreOptions = {
+  now?: () => Date;
+  atomicWrite?: AtomicWriteOptions;
+};
+
+export type SyncStore = {
+  problem(): SyncStoreUnavailableError | undefined;
+  serverId(): string;
+  settings(): SharedSettingsView;
+  credentialStatuses(): CredentialStatus[];
+  credential(provider: string): string | undefined;
+  snapshot(includeCredentials: boolean): SyncSnapshot;
+  history(): SyncState["history"];
+  updateSettings(
+    baseSettingsRevision: number,
+    settings: SharedSettings,
+  ): Promise<SharedSettingsView>;
+  rollbackSettings(
+    baseSettingsRevision: number,
+    targetSettingsRevision: number,
+  ): Promise<SharedSettingsView>;
+  setCredential(provider: string, credential: string | undefined): Promise<number>;
+};
+
+function initialState(now: Date): SyncState {
+  const settings: SharedSettings = {
+    version: 1,
+    webTools: { searchPrimary: "auto" },
+  };
+  return {
+    version: 1,
+    serverId: randomUUID(),
+    settings,
+    settingsRevision: 0,
+    syncRevision: 0,
+    history: [
+      {
+        settingsRevision: 0,
+        syncRevision: 0,
+        createdAt: now.toISOString(),
+        settings,
+      },
+    ],
+    credentials: {},
+    cores: [],
+    enrollments: [],
+  };
+}
+
+function cloneState(state: SyncState): SyncState {
+  return structuredClone(state);
+}
+
+function validateProvider(provider: string): string {
+  const trimmed = provider.trim();
+  if (trimmed === "" || trimmed.length > 128) {
+    throw new Error("Provider id must be a non-empty string up to 128 characters");
+  }
+  return trimmed;
+}
+
+export function createSyncStore(directory: string, options: SyncStoreOptions = {}): SyncStore {
+  const statePath = join(directory, "state.json");
+  const keyPath = join(directory, "credential-key");
+  const now = options.now ?? (() => new Date());
+  let key: Buffer | undefined;
+  let state: SyncState | undefined;
+  let loadProblem: SyncStoreUnavailableError | undefined;
+  let createdKey = false;
+
+  try {
+    const stateExists = existsSync(statePath);
+    const keyExists = existsSync(keyPath);
+    if (!stateExists && !keyExists) {
+      key = generateCredentialKey();
+      state = initialState(now());
+      writePrivateFileOnce(keyPath, key);
+      createdKey = true;
+      replaceJsonAtomically(statePath, state, parseSyncState, options.atomicWrite);
+    } else if (!stateExists || !keyExists) {
+      throw new Error("state.json and credential-key must exist together");
+    } else {
+      key = readFileSync(keyPath);
+      if (key.byteLength !== 32) {
+        throw new Error("credential-key has an invalid length");
+      }
+      state = parseSyncState(JSON.parse(readFileSync(statePath, "utf8")) as unknown);
+      for (const envelope of Object.values(state.credentials)) {
+        decryptCredential(envelope, key);
+      }
+    }
+  } catch {
+    if (createdKey && !existsSync(statePath)) {
+      try {
+        unlinkSync(keyPath);
+      } catch {
+        // A failed cleanup still remains fail-closed on the next start.
+      }
+    }
+    key = undefined;
+    state = undefined;
+    loadProblem = new SyncStoreUnavailableError();
+  }
+
+  let mutationTail: Promise<void> = Promise.resolve();
+
+  function requireState(): { state: SyncState; key: Buffer } {
+    if (!state || !key || loadProblem) {
+      throw loadProblem ?? new SyncStoreUnavailableError();
+    }
+    return { state, key };
+  }
+
+  function commit(next: SyncState): void {
+    parseSyncState(next);
+    replaceJsonAtomically(statePath, next, parseSyncState, options.atomicWrite);
+    state = next;
+  }
+
+  function enqueue<T>(mutation: () => T): Promise<T> {
+    const result = mutationTail.then(mutation);
+    mutationTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  function settingsView(current: SyncState): SharedSettingsView {
+    return {
+      version: 1,
+      settingsRevision: current.settingsRevision,
+      syncRevision: current.syncRevision,
+      settings: structuredClone(current.settings),
+    };
+  }
+
+  return {
+    problem: () => loadProblem,
+    serverId: () => requireState().state.serverId,
+    settings: () => settingsView(requireState().state),
+    credentialStatuses: () =>
+      Object.keys(requireState().state.credentials)
+        .toSorted()
+        .map((provider) => ({ version: 1, provider, configured: true })),
+    credential: (provider) => {
+      const current = requireState();
+      const envelope = current.state.credentials[provider];
+      return envelope ? decryptCredential(envelope, current.key) : undefined;
+    },
+    snapshot: (includeCredentials) => {
+      const current = requireState();
+      const credentials = includeCredentials
+        ? Object.fromEntries(
+            Object.entries(current.state.credentials).map(([provider, envelope]) => [
+              provider,
+              decryptCredential(envelope, current.key),
+            ]),
+          )
+        : undefined;
+      return {
+        version: 1,
+        syncRevision: current.state.syncRevision,
+        settingsRevision: current.state.settingsRevision,
+        settings: structuredClone(current.state.settings),
+        ...(credentials ? { credentials } : {}),
+      };
+    },
+    history: () => structuredClone(requireState().state.history),
+    updateSettings: (baseSettingsRevision, nextSettings) =>
+      enqueue(() => {
+        const current = requireState().state;
+        if (current.settingsRevision !== baseSettingsRevision) {
+          throw new SettingsConflictError(current.settingsRevision);
+        }
+        const settings = parseSharedSettings(nextSettings);
+        const next = cloneState(current);
+        next.settingsRevision += 1;
+        next.syncRevision += 1;
+        next.settings = settings;
+        next.history.push({
+          settingsRevision: next.settingsRevision,
+          syncRevision: next.syncRevision,
+          createdAt: now().toISOString(),
+          settings: structuredClone(settings),
+        });
+        commit(next);
+        return settingsView(next);
+      }),
+    rollbackSettings: (baseSettingsRevision, targetSettingsRevision) =>
+      enqueue(() => {
+        const current = requireState().state;
+        if (current.settingsRevision !== baseSettingsRevision) {
+          throw new SettingsConflictError(current.settingsRevision);
+        }
+        const target = current.history.find(
+          (entry) => entry.settingsRevision === targetSettingsRevision,
+        );
+        if (!target) {
+          throw new Error("Target Settings revision does not exist");
+        }
+        const next = cloneState(current);
+        next.settingsRevision += 1;
+        next.syncRevision += 1;
+        next.settings = structuredClone(target.settings);
+        next.history.push({
+          settingsRevision: next.settingsRevision,
+          syncRevision: next.syncRevision,
+          createdAt: now().toISOString(),
+          settings: structuredClone(next.settings),
+        });
+        commit(next);
+        return settingsView(next);
+      }),
+    setCredential: (provider, credential) =>
+      enqueue(() => {
+        const current = requireState();
+        const providerId = validateProvider(provider);
+        if (credential !== undefined && credential === "") {
+          throw new Error("Credential must not be empty");
+        }
+        const next = cloneState(current.state);
+        if (credential === undefined) {
+          delete next.credentials[providerId];
+        } else {
+          next.credentials[providerId] = encryptCredential(credential, current.key);
+        }
+        next.syncRevision += 1;
+        commit(next);
+        return next.syncRevision;
+      }),
+  };
+}
