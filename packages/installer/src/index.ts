@@ -59,6 +59,23 @@ export type {
   UninstallTargetKind,
 } from "./uninstall.ts";
 export {
+  createDefaultServiceState,
+  parseServiceState,
+  readServiceState,
+  serviceStatePath,
+  writeServiceState,
+} from "./services/service-state.ts";
+export { createManagedServiceDefinitions } from "./services/definitions.ts";
+export type { ManagedServiceDefinition, ServicePlatform } from "./services/definitions.ts";
+export type {
+  ServiceComponent,
+  ServiceComponentRecord,
+  ServiceFailure,
+  ServiceMode,
+  ServiceOperationPhase,
+  ServiceState,
+} from "./services/service-state.ts";
+export {
   clearCurrentRelease,
   currentPointerPath,
   parseCurrentReleasePointer,
