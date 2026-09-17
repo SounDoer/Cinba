@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { resolveCinbaStateDirectory } from "./runtime-paths.ts";
+import { pathToFileURL } from "node:url";
+import { resolveCinbaStateDirectory, resolveWebRoot } from "./runtime-paths.ts";
 
 test("the default Core keeps the existing state directory", () => {
   assert.equal(
@@ -19,4 +20,17 @@ test("a relative state directory is refused", () => {
   assert.throws(() => resolveCinbaStateDirectory(".cinba/dev", resolve("home")), {
     message: "CINBA_STATE_DIR must be an absolute path",
   });
+});
+
+test("a packaged Web root must be explicit and absolute", () => {
+  assert.equal(resolveWebRoot(resolve("payload", "web")), resolve("payload", "web"));
+  assert.throws(() => resolveWebRoot("relative/web"), {
+    message: "CINBA_WEB_ROOT must be an absolute path",
+  });
+});
+
+test("source development keeps the Web build relative to the server package", () => {
+  const workspace = resolve("workspace");
+  const moduleUrl = pathToFileURL(join(workspace, "packages", "server", "src", "index.ts")).href;
+  assert.equal(resolveWebRoot(undefined, moduleUrl), join(workspace, "packages", "web", "dist"));
 });

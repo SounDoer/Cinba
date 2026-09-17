@@ -37,6 +37,8 @@
     "test": "node --test --experimental-strip-types \"packages/*/src/**/*.test.ts\" \"scripts/**/*.test.ts\"",
     "test:e2e": "node --test --experimental-strip-types \"packages/*/src/**/*.e2e.ts\"",
     "build": "npm run build --workspace @cinba/web && npm run build --workspace @cinba/desktop && npm run build --workspace @cinba/sync-web",
+    "build:payload": "npm run build && node scripts/build-product-payload.ts",
+    "verify:payload": "node scripts/verify-product-payload.ts",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e && npm run build"
   },
   "devDependencies": {
@@ -44,6 +46,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@types/ws": "^8.18.1",
+    "esbuild": "^0.28.2",
     "oxlint": "^1.82.0",
     "prettier": "^3.9.6",
     "typescript": "^7.0.2"

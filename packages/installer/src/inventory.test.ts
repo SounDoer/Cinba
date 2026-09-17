@@ -7,6 +7,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   type ArtifactInventory,
+  createArtifactInventory,
   parseArtifactInventory,
   verifyArtifactInventory,
 } from "./inventory.ts";
@@ -70,6 +71,32 @@ test("verifies every payload file while exempting the inventory itself", async (
     );
 
     assert.deepEqual(await verifyArtifactInventory(root, parsed), { valid: true, problems: [] });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("generates a sorted inventory without hashing the inventory file itself", async () => {
+  const root = mkdtempSync(join(tmpdir(), "cinba-inventory-"));
+  try {
+    await mkdir(join(root, "bin"));
+    await writeFile(join(root, "z.txt"), "z");
+    await writeFile(join(root, "bin", "cinba.exe"), "cinba");
+    await writeFile(join(root, "inventory.json"), "old inventory");
+
+    const generated = await createArtifactInventory(root, {
+      version: "0.1.0",
+      revision: REVISION,
+      target: "windows-x64",
+    });
+    assert.deepEqual(
+      generated.files.map((file) => file.path),
+      ["bin/cinba.exe", "z.txt"],
+    );
+    assert.deepEqual(await verifyArtifactInventory(root, generated), {
+      valid: true,
+      problems: [],
+    });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

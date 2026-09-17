@@ -1,8 +1,36 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildSpawnPlan } from "./pi-process.ts";
+import { join, resolve } from "node:path";
+import { buildSpawnPlan, resolveIntrinsicExtensions } from "./pi-process.ts";
 
 const GATE = "/gate.ts";
+
+test("packaged intrinsic extensions resolve from one explicit absolute root", () => {
+  const root = resolve("payload", "extensions");
+  assert.deepEqual(resolveIntrinsicExtensions({ CINBA_EXTENSION_ROOT: root }), [
+    join(root, "permission-gate.mjs"),
+    join(root, "session-edit.mjs"),
+    join(root, "web-tools.mjs"),
+  ]);
+  assert.throws(
+    () => resolveIntrinsicExtensions({ CINBA_EXTENSION_ROOT: "relative/extensions" }),
+    /must be an absolute path/,
+  );
+});
+
+test("source development keeps resolving intrinsic extensions through workspaces", () => {
+  const requested: string[] = [];
+  const resolved = resolveIntrinsicExtensions({}, (specifier) => {
+    requested.push(specifier);
+    return `/workspace/${specifier}.ts`;
+  });
+  assert.deepEqual(requested, [
+    "@cinba/extensions/src/permission-gate.ts",
+    "@cinba/extensions/src/session-edit.ts",
+    "@cinba/extensions/src/web-tools.ts",
+  ]);
+  assert.equal(resolved.length, 3);
+});
 
 test("all intrinsic extensions are mounted before caller extensions", () => {
   const plan = buildSpawnPlan(

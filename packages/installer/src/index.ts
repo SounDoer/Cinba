@@ -19,9 +19,14 @@ export type {
   ReleaseManifest,
   WindowsMinimumSystem,
 } from "./manifest.ts";
-export { parseArtifactInventory, verifyArtifactInventory } from "./inventory.ts";
+export {
+  createArtifactInventory,
+  parseArtifactInventory,
+  verifyArtifactInventory,
+} from "./inventory.ts";
 export type {
   ArtifactInventory,
+  InventoryIdentity,
   InventoryFile,
   InventoryProblem,
   InventoryVerification,

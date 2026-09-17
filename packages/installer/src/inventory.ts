@@ -30,6 +30,8 @@ export type InventoryVerification = {
   problems: InventoryProblem[];
 };
 
+export type InventoryIdentity = Pick<ArtifactInventory, "version" | "revision" | "target">;
+
 const SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const REVISION = /^[0-9a-f]{40}$/;
@@ -157,6 +159,38 @@ async function collectFiles(
     }
   }
   return files;
+}
+
+export async function createArtifactInventory(
+  rootDirectory: string,
+  identity: InventoryIdentity,
+  options: { inventoryFileName?: string } = {},
+): Promise<ArtifactInventory> {
+  const root = resolve(rootDirectory);
+  const inventoryFileName = options.inventoryFileName ?? "inventory.json";
+  const structuralProblems: InventoryProblem[] = [];
+  const paths = await collectFiles(root, root, structuralProblems);
+  if (structuralProblems.length > 0) {
+    const first = structuralProblems[0]!;
+    throw new Error(`artifact contains unsupported ${first.reason} entry at ${first.path}`);
+  }
+  const files: InventoryFile[] = [];
+  for (const filePath of paths.filter((candidate) => candidate !== inventoryFileName).toSorted()) {
+    const absolute = resolve(root, ...filePath.split("/"));
+    const status = await lstat(absolute);
+    files.push({
+      path: filePath,
+      size: status.size,
+      sha256: await sha256(absolute),
+      executable: identity.target === "windows-x64" ? false : (status.mode & 0o111) !== 0,
+    });
+  }
+  return parseArtifactInventory({
+    schemaVersion: 1,
+    product: "Cinba",
+    ...identity,
+    files,
+  });
 }
 
 export async function verifyArtifactInventory(

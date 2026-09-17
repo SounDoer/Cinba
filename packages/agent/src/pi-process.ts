@@ -1,6 +1,7 @@
 // Builds and starts the Pi RPC child process used by one live conversation.
 
 import { type ChildProcess, spawn } from "node:child_process";
+import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildProviderEnvironment } from "./provider-environment.ts";
 
@@ -24,6 +25,27 @@ export type SpawnPlan = {
 };
 
 const DEFAULT_PROVIDER = "deepseek";
+
+export function resolveIntrinsicExtensions(
+  environment: NodeJS.ProcessEnv = process.env,
+  resolveModule: (specifier: string) => string = (specifier) =>
+    fileURLToPath(import.meta.resolve(specifier)),
+): string[] {
+  const packagedRoot = environment.CINBA_EXTENSION_ROOT?.trim();
+  if (packagedRoot) {
+    if (!isAbsolute(packagedRoot)) {
+      throw new Error("CINBA_EXTENSION_ROOT must be an absolute path");
+    }
+    return ["permission-gate.mjs", "session-edit.mjs", "web-tools.mjs"].map((name) =>
+      join(packagedRoot, name),
+    );
+  }
+  return [
+    resolveModule("@cinba/extensions/src/permission-gate.ts"),
+    resolveModule("@cinba/extensions/src/session-edit.ts"),
+    resolveModule("@cinba/extensions/src/web-tools.ts"),
+  ];
+}
 
 /** Build the process arguments separately so they can be tested without spawning Pi. */
 export function buildSpawnPlan(
@@ -69,10 +91,7 @@ export function buildSpawnPlan(
 /** Start Pi's JS RPC entry directly, avoiding platform-specific command wrappers. */
 export function startPi(options: CoreOptions = {}): ChildProcess {
   const entry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent/rpc-entry"));
-  const gate = fileURLToPath(import.meta.resolve("@cinba/extensions/src/permission-gate.ts"));
-  const sessionEdit = fileURLToPath(import.meta.resolve("@cinba/extensions/src/session-edit.ts"));
-  const webTools = fileURLToPath(import.meta.resolve("@cinba/extensions/src/web-tools.ts"));
-  const plan = buildSpawnPlan(entry, [gate, sessionEdit, webTools], options);
+  const plan = buildSpawnPlan(entry, resolveIntrinsicExtensions(), options);
 
   return spawn(process.execPath, plan.args, {
     cwd: options.cwd ?? process.cwd(),

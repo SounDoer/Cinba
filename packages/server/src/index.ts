@@ -21,8 +21,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { normalizeSyncServerUrl } from "@cinba/sync-client";
 import { rmSync } from "node:fs";
 import { homedir, hostname } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { findSession, listCoreCapabilities, localProviderAuthType } from "@cinba/agent";
 import { createWebToolsCredentialStore } from "@cinba/extensions/src/web-tools/credentials.ts";
 import { IDLE_TIMEOUT_MS, assessIdle, canStopNow } from "./reclaim.ts";
@@ -44,7 +43,7 @@ import { createInstanceOverrideStore } from "./instance-override.ts";
 import { createLocalSettingsStore } from "./local-settings.ts";
 import { createProjectTrustGate } from "./project-trust-gate.ts";
 import { effectiveProviderStatuses } from "./provider-status.ts";
-import { resolveCinbaStateDirectory } from "./runtime-paths.ts";
+import { resolveCinbaStateDirectory, resolveWebRoot } from "./runtime-paths.ts";
 import { createServerRuntime } from "./server-runtime.ts";
 import { SERVICE_IDLE_TIMEOUT_MS, assessServiceIdle, readCoreLifetime } from "./service-idle.ts";
 import { type LiveSession, createSessionRegistry } from "./session-registry.ts";
@@ -88,7 +87,7 @@ let coreLifetime = readCoreLifetime(process.env.CINBA_CORE_LIFETIME);
 const STATE_DIRECTORY = resolveCinbaStateDirectory();
 
 /** Where the built UI lives. Located relative to the repo layout, not through package resolution. */
-const WEB_DIST = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
+const WEB_DIST = resolveWebRoot();
 const serveStatic = createStaticFileHandler(WEB_DIST);
 const localState = createLocalStateStore(join(STATE_DIRECTORY, "config.json"), {
   cwd: homedir(),

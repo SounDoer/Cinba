@@ -16,7 +16,7 @@ export { PiClient } from "./pi-client.ts";
 export type { CoreEvent, CoreResponse, UiReply, UiRequest, UiRequestHandler } from "./pi-client.ts";
 export { activeBranchEntries, foldSessionEntries } from "./entries.ts";
 export { createEventFolder, foldUiRequest } from "./events.ts";
-export { buildSpawnPlan, startPi } from "./pi-process.ts";
+export { buildSpawnPlan, resolveIntrinsicExtensions, startPi } from "./pi-process.ts";
 export type { CoreOptions, SpawnPlan } from "./pi-process.ts";
 export {
   buildProviderEnvironment,
