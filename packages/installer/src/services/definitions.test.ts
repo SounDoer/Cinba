@@ -18,6 +18,8 @@ test("Core and Sync use separate registrations through one stable launcher", () 
   assert.deepEqual(services.sync.arguments, ["service", "sync"]);
   assert.deepEqual(services.core.allowedModes, ["on-demand", "background"]);
   assert.deepEqual(services.sync.allowedModes, ["disabled", "on-demand", "background"]);
+  assert.equal(services.core.healthUrl, "http://127.0.0.1:4517/healthz");
+  assert.equal(services.sync.healthUrl, "http://127.0.0.1:4518/health");
 });
 
 test("each platform receives its native registration identity", () => {

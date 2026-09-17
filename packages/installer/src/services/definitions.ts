@@ -45,7 +45,7 @@ export function createManagedServiceDefinitions(
       launcherPath: paths.launcherPath,
       arguments: ["service", "core"],
       logPath: logPath("core.log"),
-      healthUrl: "http://127.0.0.1:4517/health",
+      healthUrl: "http://127.0.0.1:4517/healthz",
       stopTimeoutMs: 16 * 60 * 1_000,
       allowedModes: ["on-demand", "background"],
     },

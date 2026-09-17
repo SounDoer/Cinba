@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, posix, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type LocalCoreConfig,
@@ -16,8 +16,18 @@ export type ProductCommand =
   | { type: "tui"; workingDirectory: string }
   | { type: "core"; action: "status" | "start" | "stop" }
   | { type: "sync"; action: "serve" }
+  | { type: "service"; component: ProductServiceComponent }
   | { type: "version" }
   | { type: "help" };
+
+export type ProductServiceComponent = "core" | "sync";
+
+export type ProductServiceProcess = {
+  component: ProductServiceComponent;
+  entry: string;
+  workingDirectory: string;
+  environment: NodeJS.ProcessEnv;
+};
 
 const HELP = `Cinba
 
@@ -79,10 +89,74 @@ export function parseProductCommand(
   if (arguments_.length === 2 && arguments_[0] === "sync" && arguments_[1] === "serve") {
     return { type: "sync", action: "serve" };
   }
+  if (
+    arguments_.length === 2 &&
+    arguments_[0] === "service" &&
+    (arguments_[1] === "core" || arguments_[1] === "sync")
+  ) {
+    return { type: "service", component: arguments_[1] };
+  }
   if (arguments_.length === 1) {
     return { type: "tui", workingDirectory: resolve(arguments_[0]!) };
   }
   throw new Error("run 'cinba help' for usage");
+}
+
+export function createProductServiceProcess(
+  payloadRoot: string,
+  revision: string,
+  component: ProductServiceComponent,
+  options: {
+    homeDirectory?: string;
+    environment?: NodeJS.ProcessEnv;
+    platform?: "win32" | "darwin" | "linux";
+  } = {},
+): ProductServiceProcess {
+  const environment = { ...(options.environment ?? process.env) };
+  const platform = options.platform ?? process.platform;
+  if (platform !== "win32" && platform !== "darwin" && platform !== "linux") {
+    throw new Error(`Cinba is not available on ${platform}`);
+  }
+  const payload = resolveProductPayloadLayout(payloadRoot, platform);
+  const productJoin = platform === "win32" ? win32.join : posix.join;
+  const paths = resolveProductPaths({
+    platform,
+    homeDirectory: options.homeDirectory ?? homedir(),
+    environment,
+  });
+  if (component === "core") {
+    delete environment.CINBA_LOCAL_CONTROL_TOKEN;
+    return {
+      component,
+      entry: payload.coreEntry,
+      workingDirectory: payload.root,
+      environment: {
+        ...environment,
+        ELECTRON_RUN_AS_NODE: "1",
+        CINBA_CORE_LIFETIME: "persistent",
+        CINBA_REVISION: revision,
+        CINBA_PORT: "4517",
+        CINBA_STATE_DIR: productJoin(paths.dataDirectory, "Core"),
+        PI_CODING_AGENT_DIR: productJoin(paths.dataDirectory, "Pi"),
+        CINBA_EXTENSION_ROOT: payload.extensionRoot,
+        CINBA_WEB_ROOT: payload.webRoot,
+      },
+    };
+  }
+  return {
+    component,
+    entry: payload.syncEntry,
+    workingDirectory: payload.root,
+    environment: {
+      ...environment,
+      ELECTRON_RUN_AS_NODE: "1",
+      CINBA_SYNC_HOST: "127.0.0.1",
+      CINBA_SYNC_PORT: "4518",
+      CINBA_SYNC_PUBLIC_ORIGIN: "http://127.0.0.1:4518",
+      CINBA_SYNC_STATE_DIR: paths.syncDataDirectory,
+      CINBA_SYNC_WEB_ROOT: payload.syncWebRoot,
+    },
+  };
 }
 
 export function createProductCoreConfig(
@@ -104,16 +178,17 @@ export function createProductCoreConfig(
     environment,
   });
   const payload = resolveProductPayloadLayout(payloadRoot, platform);
+  const productJoin = platform === "win32" ? win32.join : posix.join;
   return {
     baseUrl: "http://127.0.0.1:4517/",
     repositoryRoot: payload.root,
     serverEntry: payload.coreEntry,
-    stateDirectory: join(paths.dataDirectory, "Core"),
-    piAgentDirectory: join(paths.dataDirectory, "Pi"),
-    startLockPath: join(paths.stateDirectory, "core-start.lock"),
-    runtimePath: join(paths.stateDirectory, "core-runtime.json"),
-    controlPath: join(paths.stateDirectory, "core-control.json"),
-    logPath: join(paths.logDirectory, "core.log"),
+    stateDirectory: productJoin(paths.dataDirectory, "Core"),
+    piAgentDirectory: productJoin(paths.dataDirectory, "Pi"),
+    startLockPath: productJoin(paths.stateDirectory, "core-start.lock"),
+    runtimePath: productJoin(paths.stateDirectory, "core-runtime.json"),
+    controlPath: productJoin(paths.stateDirectory, "core-control.json"),
+    logPath: productJoin(paths.logDirectory, "core.log"),
     environment: {
       CINBA_EXTENSION_ROOT: payload.extensionRoot,
       CINBA_WEB_ROOT: payload.webRoot,
@@ -132,6 +207,50 @@ function waitForExit(child: ChildProcess): Promise<number> {
       }
     });
   });
+}
+
+function waitForServiceExit(child: ChildProcess): Promise<number> {
+  return new Promise((resolvePromise, reject) => {
+    const forward = (signal: NodeJS.Signals) => {
+      child.kill(signal);
+    };
+    const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
+    for (const signal of signals) {
+      process.on(signal, forward);
+    }
+    const cleanup = () => {
+      for (const signal of signals) {
+        process.off(signal, forward);
+      }
+    };
+    child.once("error", (error) => {
+      cleanup();
+      reject(error);
+    });
+    child.once("exit", (code, signal) => {
+      cleanup();
+      if (code !== null) {
+        resolvePromise(code);
+      } else if (signal === "SIGINT" || signal === "SIGTERM") {
+        resolvePromise(0);
+      } else {
+        reject(new Error(`service stopped by ${signal ?? "an unknown signal"}`));
+      }
+    });
+  });
+}
+
+async function runProductService(service: ProductServiceProcess): Promise<void> {
+  const child = spawn(process.execPath, [service.entry], {
+    cwd: service.workingDirectory,
+    stdio: "inherit",
+    windowsHide: true,
+    env: service.environment,
+  });
+  const code = await waitForServiceExit(child);
+  if (code !== 0) {
+    throw new Error(`Cinba ${service.component} exited with code ${code}`);
+  }
 }
 
 function formatCoreStatus(status: Awaited<ReturnType<typeof inspectLocalCore>>): string {
@@ -162,6 +281,12 @@ export async function runProductCli(
   }
 
   const config = createProductCoreConfig(payload.root);
+  if (command.type === "service") {
+    await runProductService(
+      createProductServiceProcess(payload.root, release.revision, command.component),
+    );
+    return;
+  }
   if (command.type === "core") {
     if (command.action === "status") {
       console.log(formatCoreStatus(await inspectLocalCore(config)));
@@ -175,25 +300,7 @@ export async function runProductCli(
     return;
   }
   if (command.type === "sync") {
-    const paths = resolveProductPaths({
-      platform: process.platform as "win32" | "darwin" | "linux",
-      homeDirectory: homedir(),
-      environment: process.env,
-    });
-    const code = await waitForExit(
-      spawn(process.execPath, [payload.syncEntry], {
-        stdio: "inherit",
-        windowsHide: true,
-        env: {
-          ...process.env,
-          CINBA_SYNC_STATE_DIR: paths.syncDataDirectory,
-          CINBA_SYNC_WEB_ROOT: payload.syncWebRoot,
-        },
-      }),
-    );
-    if (code !== 0) {
-      throw new Error(`Cinba Sync exited with code ${code}`);
-    }
+    await runProductService(createProductServiceProcess(payload.root, release.revision, "sync"));
     return;
   }
 
