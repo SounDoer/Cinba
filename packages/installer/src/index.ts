@@ -41,6 +41,13 @@ export type {
 export { parsePayloadRelease } from "./payload-release.ts";
 export type { PayloadRelease } from "./payload-release.ts";
 export {
+  createDataSnapshot,
+  dataSnapshotPath,
+  discardDataSnapshot,
+  restoreDataSnapshot,
+} from "./data-snapshot.ts";
+export type { DataSnapshot, ProtectedDataRoot } from "./data-snapshot.ts";
+export {
   clearCurrentRelease,
   currentPointerPath,
   parseCurrentReleasePointer,
