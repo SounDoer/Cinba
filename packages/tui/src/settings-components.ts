@@ -130,6 +130,7 @@ export class SecretInput implements Component, Focusable {
 export class TextInput implements Component, Focusable {
   #value = "";
   #label: string;
+  #receivingPaste = false;
   focused = false;
   onAnswer?: (value: string | undefined) => void;
 
@@ -139,6 +140,29 @@ export class TextInput implements Component, Focusable {
   }
 
   handleInput(data: string): void {
+    if (this.#receivingPaste) {
+      const end = data.indexOf(BRACKETED_PASTE_END);
+      if (end === -1) {
+        this.#appendPrintable(data);
+        return;
+      }
+      this.#appendPrintable(data.slice(0, end));
+      this.#receivingPaste = false;
+      const remaining = data.slice(end + BRACKETED_PASTE_END.length);
+      if (remaining !== "") {
+        this.handleInput(remaining);
+      }
+      return;
+    }
+
+    const pasteStart = data.indexOf(BRACKETED_PASTE_START);
+    if (pasteStart !== -1) {
+      this.#appendPrintable(data.slice(0, pasteStart));
+      this.#receivingPaste = true;
+      this.handleInput(data.slice(pasteStart + BRACKETED_PASTE_START.length));
+      return;
+    }
+
     if (matchesKey(data, "escape")) {
       return this.onAnswer?.(undefined);
     }
@@ -152,6 +176,12 @@ export class TextInput implements Component, Focusable {
     if (data.length > 0 && !data.startsWith("\x1b") && data >= " ") {
       this.#value += data;
     }
+  }
+
+  #appendPrintable(data: string): void {
+    this.#value += [...data]
+      .filter((character) => character >= " " && character !== "\x7f")
+      .join("");
   }
 
   invalidate(): void {}
