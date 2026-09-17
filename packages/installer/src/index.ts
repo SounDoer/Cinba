@@ -48,6 +48,8 @@ export {
   restoreDataSnapshot,
 } from "./data-snapshot.ts";
 export type { DataSnapshot, ProtectedDataRoot } from "./data-snapshot.ts";
+export { cleanupInstallation } from "./cleanup.ts";
+export type { InstallationCleanupResult } from "./cleanup.ts";
 export {
   clearCurrentRelease,
   currentPointerPath,
