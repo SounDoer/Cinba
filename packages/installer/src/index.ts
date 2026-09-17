@@ -38,3 +38,26 @@ export type {
   ProductPaths,
   ResolveProductPathsOptions,
 } from "./paths.ts";
+export {
+  clearCurrentRelease,
+  currentPointerPath,
+  parseCurrentReleasePointer,
+  parseInstallationTransaction,
+  readCurrentRelease,
+  readInstallationTransaction,
+  releasePath,
+  transactionStatePath,
+  writeCurrentRelease,
+  writeInstallationTransaction,
+} from "./installation-store.ts";
+export type {
+  CurrentReleasePointer,
+  InstallationFailure,
+  InstallationLayout,
+  InstallationPhase,
+  InstallationTransaction,
+  InstalledRelease,
+} from "./installation-store.ts";
+export { acquireInstallationLock } from "./installation-lock.ts";
+export { activateCandidate, stageCandidate } from "./transaction.ts";
+export type { ActivateCandidateOptions, StageCandidateOptions } from "./transaction.ts";
