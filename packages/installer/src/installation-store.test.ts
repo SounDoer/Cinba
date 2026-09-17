@@ -27,6 +27,8 @@ test("the current release pointer is strict, atomic, and removable", async () =>
   const release = {
     version: "1.2.3",
     revision: REVISION,
+    protocolVersion: 1,
+    dataFormatVersion: 1,
     target: "windows-x64" as const,
     directory: REVISION,
   };
@@ -52,6 +54,8 @@ test("a current pointer cannot escape the releases directory", () => {
         release: {
           version: "1.2.3",
           revision: REVISION,
+          protocolVersion: 1,
+          dataFormatVersion: 1,
           target: "windows-x64",
           directory: "../outside",
         },

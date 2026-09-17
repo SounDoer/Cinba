@@ -6,6 +6,8 @@ import { type ProductTarget, isProductTarget } from "./platform.ts";
 export type InstalledRelease = {
   version: string;
   revision: string;
+  protocolVersion: number;
+  dataFormatVersion: number;
   target: ProductTarget;
   directory: string;
 };
@@ -110,12 +112,22 @@ function timestamp(value: unknown, field: string): string {
 
 function parseInstalledRelease(value: unknown, allowCandidate: boolean): InstalledRelease {
   const parsed = object(value, "installed release");
-  exactKeys(parsed, ["version", "revision", "target", "directory"], "installed release");
+  exactKeys(
+    parsed,
+    ["version", "revision", "protocolVersion", "dataFormatVersion", "target", "directory"],
+    "installed release",
+  );
   if (typeof parsed.version !== "string" || !SEMVER.test(parsed.version)) {
     throw new Error("installed release version must be SemVer");
   }
   if (typeof parsed.revision !== "string" || !REVISION.test(parsed.revision)) {
     throw new Error("installed release revision must be a full lowercase Git commit");
+  }
+  if (!Number.isSafeInteger(parsed.protocolVersion) || (parsed.protocolVersion as number) < 1) {
+    throw new Error("installed release protocolVersion must be a positive integer");
+  }
+  if (!Number.isSafeInteger(parsed.dataFormatVersion) || (parsed.dataFormatVersion as number) < 1) {
+    throw new Error("installed release dataFormatVersion must be a positive integer");
   }
   if (!isProductTarget(parsed.target)) {
     throw new Error("installed release target is not supported");
@@ -129,6 +141,8 @@ function parseInstalledRelease(value: unknown, allowCandidate: boolean): Install
   return {
     version: parsed.version,
     revision: parsed.revision,
+    protocolVersion: parsed.protocolVersion as number,
+    dataFormatVersion: parsed.dataFormatVersion as number,
     target: parsed.target,
     directory: parsed.directory,
   };

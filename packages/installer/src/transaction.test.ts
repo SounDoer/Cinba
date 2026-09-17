@@ -38,10 +38,28 @@ async function artifact(
   version: string,
   revision: string,
   content = version,
+  dataFormatVersion = 1,
 ): Promise<string> {
   const directory = join(root, name);
   await mkdir(directory, { recursive: true });
   await writeFile(join(directory, "app.txt"), content);
+  await writeFile(
+    join(directory, "release.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        product: "Cinba",
+        version,
+        revision,
+        protocolVersion: 1,
+        dataFormatVersion,
+        target: "windows-x64",
+        nodeVersion: "24.0.0",
+      },
+      null,
+      2,
+    )}\n`,
+  );
   const inventory = await createArtifactInventory(directory, {
     version,
     revision,
@@ -90,6 +108,35 @@ test("a damaged candidate never changes current", async () => {
     );
     assert.equal(await readCurrentRelease(paths), undefined);
     assert.equal(await readInstallationTransaction(paths), undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an older release cannot replace data written in a newer format", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-data-downgrade-"));
+  const paths = layout(root);
+  try {
+    const current = await artifact(root, "current", "2.0.0", NEW_REVISION, "new", 2);
+    await stageCandidate({
+      sourceDirectory: current,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: FIRST_ID,
+    });
+    await activateCandidate({ layout: paths });
+
+    const old = await artifact(root, "old", "1.0.0", OLD_REVISION, "old", 1);
+    await assert.rejects(
+      stageCandidate({
+        sourceDirectory: old,
+        layout: paths,
+        expectedTarget: "windows-x64",
+        transactionId: SECOND_ID,
+      }),
+      /candidate data format 1 cannot read installed format 2/,
+    );
+    assert.equal((await readCurrentRelease(paths))?.revision, NEW_REVISION);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

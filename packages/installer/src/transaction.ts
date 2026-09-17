@@ -20,6 +20,7 @@ import {
   writeCurrentRelease,
   writeInstallationTransaction,
 } from "./installation-store.ts";
+import { type PayloadRelease, parsePayloadRelease } from "./payload-release.ts";
 import type { ProductTarget } from "./platform.ts";
 
 export type StageCandidateOptions = {
@@ -69,12 +70,14 @@ function updateTransaction(
   };
 }
 
-function candidateRelease(inventory: ArtifactInventory, transactionId: string): InstalledRelease {
+function candidateRelease(metadata: PayloadRelease, transactionId: string): InstalledRelease {
   return {
-    version: inventory.version,
-    revision: inventory.revision,
-    target: inventory.target,
-    directory: `.${inventory.revision}.${transactionId}.candidate`,
+    version: metadata.version,
+    revision: metadata.revision,
+    protocolVersion: metadata.protocolVersion,
+    dataFormatVersion: metadata.dataFormatVersion,
+    target: metadata.target,
+    directory: `.${metadata.revision}.${transactionId}.candidate`,
   };
 }
 
@@ -86,6 +89,8 @@ function sameRelease(left: InstalledRelease | undefined, right: InstalledRelease
   return (
     left?.version === right.version &&
     left.revision === right.revision &&
+    left.protocolVersion === right.protocolVersion &&
+    left.dataFormatVersion === right.dataFormatVersion &&
     left.target === right.target &&
     left.directory === right.directory
   );
@@ -105,7 +110,16 @@ async function readInventory(directory: string): Promise<ArtifactInventory> {
   );
 }
 
-function sameIdentity(inventory: ArtifactInventory, release: InstalledRelease): boolean {
+async function readReleaseMetadata(directory: string): Promise<PayloadRelease> {
+  return parsePayloadRelease(
+    JSON.parse(await readFile(join(directory, "release.json"), "utf8")) as unknown,
+  );
+}
+
+function sameIdentity(
+  inventory: ArtifactInventory,
+  release: Pick<InstalledRelease, "version" | "revision" | "target">,
+): boolean {
   return (
     inventory.version === release.version &&
     inventory.revision === release.revision &&
@@ -165,8 +179,13 @@ export async function stageCandidate(
       );
     }
 
+    const metadata = await readReleaseMetadata(release);
+    if (!sameIdentity(inventory, metadata)) {
+      throw new Error("candidate release metadata does not match its inventory");
+    }
+
     const id = options.transactionId ?? randomUUID();
-    const candidate = candidateRelease(inventory, id);
+    const candidate = candidateRelease(metadata, id);
     candidateDirectory = releasePath(options.layout, candidate);
     if (await exists(candidateDirectory)) {
       throw new Error("candidate directory already exists");
@@ -175,6 +194,11 @@ export async function stageCandidate(
     if (previous && previous.target !== options.expectedTarget) {
       throw new Error(
         `installed target ${previous.target} does not match ${options.expectedTarget}`,
+      );
+    }
+    if (previous && previous.dataFormatVersion > candidate.dataFormatVersion) {
+      throw new Error(
+        `candidate data format ${candidate.dataFormatVersion} cannot read installed format ${previous.dataFormatVersion}`,
       );
     }
     const timestamp = now().toISOString();

@@ -38,6 +38,8 @@ export type {
   ProductPaths,
   ResolveProductPathsOptions,
 } from "./paths.ts";
+export { parsePayloadRelease } from "./payload-release.ts";
+export type { PayloadRelease } from "./payload-release.ts";
 export {
   clearCurrentRelease,
   currentPointerPath,
