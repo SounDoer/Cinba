@@ -50,6 +50,14 @@ export {
 export type { DataSnapshot, ProtectedDataRoot } from "./data-snapshot.ts";
 export { cleanupInstallation } from "./cleanup.ts";
 export type { InstallationCleanupResult } from "./cleanup.ts";
+export { createUninstallPlan } from "./uninstall.ts";
+export type {
+  PurgeAuthorization,
+  UninstallPlan,
+  UninstallRequest,
+  UninstallTarget,
+  UninstallTargetKind,
+} from "./uninstall.ts";
 export {
   clearCurrentRelease,
   currentPointerPath,
