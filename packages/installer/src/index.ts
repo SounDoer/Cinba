@@ -42,6 +42,7 @@ export { parsePayloadRelease } from "./payload-release.ts";
 export type { PayloadRelease } from "./payload-release.ts";
 export {
   createDataSnapshot,
+  dataSnapshotExists,
   dataSnapshotPath,
   discardDataSnapshot,
   restoreDataSnapshot,

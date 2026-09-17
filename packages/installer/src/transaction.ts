@@ -6,6 +6,12 @@ import {
   parseArtifactInventory,
   verifyArtifactInventory,
 } from "./inventory.ts";
+import {
+  type ProtectedDataRoot,
+  createDataSnapshot,
+  dataSnapshotExists,
+  restoreDataSnapshot,
+} from "./data-snapshot.ts";
 import { acquireInstallationLock } from "./installation-lock.ts";
 import {
   type InstallationFailure,
@@ -34,6 +40,14 @@ export type StageCandidateOptions = {
 export type ActivateCandidateOptions = {
   layout: InstallationLayout;
   verify?: (releaseDirectory: string, release: InstalledRelease) => Promise<void>;
+  dataMigration?: {
+    roots: readonly ProtectedDataRoot[];
+    migrate: (context: {
+      fromDataFormatVersion: number;
+      toDataFormatVersion: number;
+      releaseDirectory: string;
+    }) => Promise<void>;
+  };
   now?: () => Date;
 };
 
@@ -247,6 +261,8 @@ export async function activateCandidate(
   let replacedDirectory: string | undefined;
   let replacedRelease = false;
   let targetInstalled = false;
+  let migrationStarted = false;
+  let migrationCompleted = false;
   try {
     transaction = await readInstallationTransaction(options.layout);
     if (!transaction || transaction.phase !== "ready") {
@@ -256,6 +272,23 @@ export async function activateCandidate(
     const target = installedRelease(transaction.candidate);
     targetDirectory = releasePath(options.layout, target);
     replacedDirectory = replacementPath(options.layout, target, transaction.id);
+    const migrationRequired =
+      transaction.previous !== null &&
+      transaction.previous.dataFormatVersion < target.dataFormatVersion;
+    if (migrationRequired && !options.dataMigration) {
+      throw new Error("this release requires a protected data migration");
+    }
+
+    if (migrationRequired && options.dataMigration) {
+      transaction = updateTransaction(transaction, "snapshotting", now);
+      await writeInstallationTransaction(options.layout, transaction);
+      await createDataSnapshot({
+        layout: options.layout,
+        transactionId: transaction.id,
+        roots: options.dataMigration.roots,
+        now,
+      });
+    }
 
     transaction = updateTransaction(transaction, "switching", now);
     await writeInstallationTransaction(options.layout, transaction);
@@ -269,6 +302,19 @@ export async function activateCandidate(
     await rename(candidateDirectory, targetDirectory);
     targetInstalled = true;
     await writeCurrentRelease(options.layout, target);
+
+    if (migrationRequired && options.dataMigration && transaction.previous) {
+      const fromDataFormatVersion = transaction.previous.dataFormatVersion;
+      transaction = updateTransaction(transaction, "migrating", now);
+      await writeInstallationTransaction(options.layout, transaction);
+      migrationStarted = true;
+      await options.dataMigration.migrate({
+        fromDataFormatVersion,
+        toDataFormatVersion: target.dataFormatVersion,
+        releaseDirectory: targetDirectory,
+      });
+      migrationCompleted = true;
+    }
 
     transaction = updateTransaction(transaction, "verifying", now);
     await writeInstallationTransaction(options.layout, transaction);
@@ -291,7 +337,12 @@ export async function activateCandidate(
     }
 
     try {
-      const failure = targetInstalled ? "verification-failed" : "switch-failed";
+      let failure: InstallationFailure = "switch-failed";
+      if (migrationStarted && !migrationCompleted) {
+        failure = "data-migration-failed";
+      } else if (targetInstalled) {
+        failure = "verification-failed";
+      }
       transaction = updateTransaction(transaction, "rolling-back", now, failure);
       await writeInstallationTransaction(options.layout, transaction);
       if (transaction.previous) {
@@ -304,6 +355,18 @@ export async function activateCandidate(
       }
       if (replacedRelease && replacedDirectory && (await exists(replacedDirectory))) {
         await rename(replacedDirectory, targetDirectory);
+      }
+      if (await dataSnapshotExists(options.layout, transaction.id)) {
+        if (!options.dataMigration) {
+          throw new Error("protected data migration configuration is required for rollback", {
+            cause: activationError,
+          });
+        }
+        await restoreDataSnapshot({
+          layout: options.layout,
+          transactionId: transaction.id,
+          roots: options.dataMigration.roots,
+        });
       }
       transaction = updateTransaction(transaction, "rolled-back", now, failure);
       await writeInstallationTransaction(options.layout, transaction);
@@ -365,13 +428,28 @@ export async function recoverInterruptedInstallation(
         await rm(targetDirectory, { recursive: true, force: true });
       }
       await rm(candidateDirectory, { recursive: true, force: true });
+      if (await dataSnapshotExists(options.layout, rollingBack.id)) {
+        if (!options.dataMigration) {
+          throw new Error("protected data migration configuration is required for recovery");
+        }
+        await restoreDataSnapshot({
+          layout: options.layout,
+          transactionId: rollingBack.id,
+          roots: options.dataMigration.roots,
+        });
+      }
       const rolledBack = updateTransaction(rollingBack, "rolled-back", now, "interrupted");
       transaction = rolledBack;
       await writeInstallationTransaction(options.layout, rolledBack);
       return rolledBack;
     };
 
-    if (transaction.phase === "staging" || transaction.phase === "rolling-back") {
+    if (
+      transaction.phase === "staging" ||
+      transaction.phase === "snapshotting" ||
+      transaction.phase === "migrating" ||
+      transaction.phase === "rolling-back"
+    ) {
       return await rollback();
     }
 
@@ -379,7 +457,8 @@ export async function recoverInterruptedInstallation(
     const candidateExists = await exists(candidateDirectory);
     const targetExists = await exists(targetDirectory);
     const switched = targetExists && !candidateExists && sameRelease(current, target);
-    if (!switched) {
+    const migrationSnapshotExists = await dataSnapshotExists(options.layout, transaction.id);
+    if (!switched || (transaction.phase === "switching" && migrationSnapshotExists)) {
       return await rollback();
     }
 

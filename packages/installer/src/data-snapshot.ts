@@ -41,6 +41,9 @@ function validateTransactionId(transactionId: string): void {
 }
 
 function validateRoots(layout: InstallationLayout, roots: readonly ProtectedDataRoot[]): void {
+  if (roots.length === 0) {
+    throw new Error("at least one protected data root is required");
+  }
   const names = new Set<string>();
   const paths = new Set<string>();
   for (const root of roots) {
@@ -90,6 +93,13 @@ function snapshotRoot(layout: InstallationLayout): string {
 export function dataSnapshotPath(layout: InstallationLayout, transactionId: string): string {
   validateTransactionId(transactionId);
   return join(snapshotRoot(layout), transactionId);
+}
+
+export async function dataSnapshotExists(
+  layout: InstallationLayout,
+  transactionId: string,
+): Promise<boolean> {
+  return (await stat(dataSnapshotPath(layout, transactionId))) !== undefined;
 }
 
 function parseSnapshot(value: unknown, transactionId: string): DataSnapshot {

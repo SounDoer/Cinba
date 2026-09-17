@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { createDataSnapshot } from "./data-snapshot.ts";
 import { createArtifactInventory } from "./inventory.ts";
 import { acquireInstallationLock } from "./installation-lock.ts";
 import {
@@ -200,6 +201,167 @@ test("failed verification restores the previous release", async () => {
       await readFile(join(paths.releasesDirectory, OLD_REVISION, "app.txt"), "utf8"),
       "1.0.0",
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("failed data migration restores both the previous release and protected data", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-migration-rollback-"));
+  const paths = layout(root);
+  const data = join(root, "data");
+  try {
+    await mkdir(data);
+    await writeFile(join(data, "format.txt"), "format-1");
+    const oldSource = await artifact(root, "old", "1.0.0", OLD_REVISION, "old", 1);
+    await stageCandidate({
+      sourceDirectory: oldSource,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: FIRST_ID,
+    });
+    await activateCandidate({ layout: paths });
+
+    const newSource = await artifact(root, "new", "2.0.0", NEW_REVISION, "new", 2);
+    await stageCandidate({
+      sourceDirectory: newSource,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: SECOND_ID,
+    });
+    await assert.rejects(
+      activateCandidate({
+        layout: paths,
+        dataMigration: {
+          roots: [{ name: "data", path: data }],
+          migrate: async () => {
+            await writeFile(join(data, "format.txt"), "format-2-partial");
+            throw new Error("migration failed");
+          },
+        },
+      }),
+      /migration failed/,
+    );
+    assert.equal((await readCurrentRelease(paths))?.revision, OLD_REVISION);
+    assert.equal(await readFile(join(data, "format.txt"), "utf8"), "format-1");
+    const transaction = await readInstallationTransaction(paths);
+    assert.equal(transaction?.phase, "rolled-back");
+    assert.equal(transaction?.failure, "data-migration-failed");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a data format upgrade requires an explicit protected migration", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-migration-required-"));
+  const paths = layout(root);
+  try {
+    const oldSource = await artifact(root, "old", "1.0.0", OLD_REVISION, "old", 1);
+    await stageCandidate({
+      sourceDirectory: oldSource,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: FIRST_ID,
+    });
+    await activateCandidate({ layout: paths });
+    const newSource = await artifact(root, "new", "2.0.0", NEW_REVISION, "new", 2);
+    await stageCandidate({
+      sourceDirectory: newSource,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: SECOND_ID,
+    });
+    await assert.rejects(
+      activateCandidate({ layout: paths }),
+      /requires a protected data migration/,
+    );
+    assert.equal((await readCurrentRelease(paths))?.revision, OLD_REVISION);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a protected data migration completes before release verification", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-migration-success-"));
+  const paths = layout(root);
+  const data = join(root, "data");
+  try {
+    await mkdir(data);
+    await writeFile(join(data, "format.txt"), "format-1");
+    const oldSource = await artifact(root, "old", "1.0.0", OLD_REVISION, "old", 1);
+    await stageCandidate({
+      sourceDirectory: oldSource,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: FIRST_ID,
+    });
+    await activateCandidate({ layout: paths });
+    const newSource = await artifact(root, "new", "2.0.0", NEW_REVISION, "new", 2);
+    await stageCandidate({
+      sourceDirectory: newSource,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: SECOND_ID,
+    });
+
+    const result = await activateCandidate({
+      layout: paths,
+      dataMigration: {
+        roots: [{ name: "data", path: data }],
+        migrate: async ({ fromDataFormatVersion, toDataFormatVersion }) => {
+          assert.equal(fromDataFormatVersion, 1);
+          assert.equal(toDataFormatVersion, 2);
+          await writeFile(join(data, "format.txt"), "format-2");
+        },
+      },
+      verify: async () => {
+        assert.equal(await readFile(join(data, "format.txt"), "utf8"), "format-2");
+      },
+    });
+    assert.equal(result.phase, "committed");
+    assert.equal((await readCurrentRelease(paths))?.dataFormatVersion, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("recovery rolls back a migration interrupted after data changed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-migration-recovery-"));
+  const paths = layout(root);
+  const data = join(root, "data");
+  const roots = [{ name: "data", path: data }];
+  try {
+    await mkdir(data);
+    await writeFile(join(data, "format.txt"), "format-1");
+    const oldSource = await artifact(root, "old", "1.0.0", OLD_REVISION, "old", 1);
+    await stageCandidate({
+      sourceDirectory: oldSource,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: FIRST_ID,
+    });
+    await activateCandidate({ layout: paths });
+    const newSource = await artifact(root, "new", "2.0.0", NEW_REVISION, "new", 2);
+    const ready = await stageCandidate({
+      sourceDirectory: newSource,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: SECOND_ID,
+    });
+    await createDataSnapshot({ layout: paths, transactionId: SECOND_ID, roots });
+    const target = { ...ready.candidate, directory: ready.candidate.revision };
+    await rename(releasePath(paths, ready.candidate), releasePath(paths, target));
+    await writeCurrentRelease(paths, target);
+    await writeFile(join(data, "format.txt"), "format-2-partial");
+    await writeInstallationTransaction(paths, { ...ready, phase: "migrating" });
+
+    const recovered = await recoverInterruptedInstallation({
+      layout: paths,
+      dataMigration: { roots, migrate: async () => assert.fail("migration must not resume") },
+    });
+    assert.equal(recovered?.phase, "rolled-back");
+    assert.equal((await readCurrentRelease(paths))?.revision, OLD_REVISION);
+    assert.equal(await readFile(join(data, "format.txt"), "utf8"), "format-1");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

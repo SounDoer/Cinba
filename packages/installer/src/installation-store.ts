@@ -20,7 +20,9 @@ export type CurrentReleasePointer = {
 export type InstallationPhase =
   | "staging"
   | "ready"
+  | "snapshotting"
   | "switching"
+  | "migrating"
   | "verifying"
   | "committed"
   | "rolling-back"
@@ -31,6 +33,7 @@ export type InstallationFailure =
   | "candidate-invalid"
   | "stage-failed"
   | "switch-failed"
+  | "data-migration-failed"
   | "verification-failed"
   | "rollback-failed"
   | "interrupted";
@@ -61,7 +64,9 @@ const CANDIDATE_DIRECTORY = /^\.[0-9a-f]{40}\.[0-9a-f-]{36}\.candidate$/;
 const PHASES = new Set<InstallationPhase>([
   "staging",
   "ready",
+  "snapshotting",
   "switching",
+  "migrating",
   "verifying",
   "committed",
   "rolling-back",
@@ -72,6 +77,7 @@ const FAILURES = new Set<InstallationFailure>([
   "candidate-invalid",
   "stage-failed",
   "switch-failed",
+  "data-migration-failed",
   "verification-failed",
   "rollback-failed",
   "interrupted",
