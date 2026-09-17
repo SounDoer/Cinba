@@ -9,6 +9,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { dirname } from "node:path";
 import {
   type CoreHealth,
   type LocalCoreControlStatus,
@@ -199,12 +200,18 @@ function defaultSpawnCore(
   revision: string,
 ): ChildProcess {
   mkdirSync(config.stateDirectory, { recursive: true });
+  mkdirSync(dirname(config.logPath), { recursive: true });
   const log = openSync(config.logPath, "a", 0o600);
   try {
     const child = spawn(process.execPath, [config.serverEntry], {
       cwd: config.repositoryRoot,
       detached: true,
-      env: createCoreProcessEnvironment(controlToken, process.env, config, revision),
+      env: createCoreProcessEnvironment(
+        controlToken,
+        { ...process.env, ...config.environment },
+        config,
+        revision,
+      ),
       stdio: ["ignore", log, log],
       windowsHide: true,
     });

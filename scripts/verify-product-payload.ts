@@ -9,12 +9,9 @@ import {
   requireProductTarget,
   verifyArtifactInventory,
 } from "@cinba/installer";
+import { readProductRelease, resolveProductPayloadLayout } from "@cinba/product-runtime";
 
 const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-
-type PayloadRelease = {
-  revision?: unknown;
-};
 
 async function unusedPort(): Promise<number> {
   const server = createServer();
@@ -32,6 +29,32 @@ async function unusedPort(): Promise<number> {
     server.close((error) => (error ? reject(error) : resolve())),
   );
   return port;
+}
+
+async function capture(executable: string, arguments_: string[], cwd: string): Promise<string> {
+  const child = spawn(executable, arguments_, {
+    cwd,
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  let stderr = "";
+  child.stdout?.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+  child.stderr?.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+  const code = await new Promise<number>((resolvePromise, reject) => {
+    child.once("error", reject);
+    child.once("exit", (exitCode, signal) => {
+      if (signal) {
+        reject(new Error(`payload command stopped by ${signal}`));
+      } else {
+        resolvePromise(exitCode ?? 0);
+      }
+    });
+  });
+  if (code !== 0) {
+    throw new Error(`payload command exited with ${code}\n${stderr}`);
+  }
+  return stdout.trim();
 }
 
 async function stop(process: ChildProcess): Promise<void> {
@@ -89,6 +112,7 @@ async function waitForCore(
 export async function verifyProductPayload(): Promise<void> {
   const target = requireProductTarget();
   const payload = join(REPOSITORY_ROOT, "dist", "product", target);
+  const layout = resolveProductPayloadLayout(payload);
   const inventory = parseArtifactInventory(
     JSON.parse(await readFile(join(payload, "inventory.json"), "utf8")),
   );
@@ -99,33 +123,32 @@ export async function verifyProductPayload(): Promise<void> {
     );
   }
 
-  const release = JSON.parse(
-    await readFile(join(payload, "release.json"), "utf8"),
-  ) as PayloadRelease;
-  if (typeof release.revision !== "string" || !/^[0-9a-f]{40}$/.test(release.revision)) {
-    throw new Error("payload release.json does not contain a full lowercase Git revision");
+  const release = await readProductRelease(payload);
+  if (release.target !== target) {
+    throw new Error(`payload target ${release.target} does not match current target ${target}`);
   }
 
   const temporary = await mkdtemp(join(tmpdir(), "cinba-payload-probe-"));
   const port = await unusedPort();
-  const node =
-    process.platform === "win32"
-      ? join(payload, "runtime", "node.exe")
-      : join(payload, "runtime", "bin", "node");
+  const node = layout.nodeExecutable;
+  const version = await capture(node, [layout.cliEntry, "--version"], temporary);
+  if (version !== `Cinba ${release.version} (${release.revision})`) {
+    throw new Error(`packaged CLI returned an unexpected identity: ${version}`);
+  }
   let stdout = "";
   let stderr = "";
-  const core = spawn(node, [join(payload, "lib", "core.mjs")], {
+  const core = spawn(node, [layout.coreEntry], {
     cwd: payload,
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
       CINBA_CORE_LIFETIME: "persistent",
-      CINBA_EXTENSION_ROOT: join(payload, "extensions"),
+      CINBA_EXTENSION_ROOT: layout.extensionRoot,
       CINBA_PORT: String(port),
       CINBA_REVISION: release.revision,
       CINBA_STATE_DIR: join(temporary, "data"),
-      CINBA_WEB_ROOT: join(payload, "web"),
+      CINBA_WEB_ROOT: layout.webRoot,
       PI_CODING_AGENT_DIR: join(temporary, "pi-agent"),
     },
   });

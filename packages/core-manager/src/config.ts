@@ -12,6 +12,7 @@ export type LocalCoreConfig = {
   runtimePath: string;
   controlPath: string;
   logPath: string;
+  environment?: NodeJS.ProcessEnv;
 };
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");

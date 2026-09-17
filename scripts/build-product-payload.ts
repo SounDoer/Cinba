@@ -168,6 +168,7 @@ async function buildEntries(payload: string): Promise<void> {
   await build({
     ...shared,
     entryPoints: {
+      cli: "packages/product-runtime/src/cli.ts",
       core: "packages/server/src/index.ts",
       sync: "packages/sync-server/src/service-entry.ts",
       tui: "packages/tui/src/index.ts",
