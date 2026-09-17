@@ -36,6 +36,8 @@ export type ActivateCandidateOptions = {
   now?: () => Date;
 };
 
+export type RecoverInstallationOptions = ActivateCandidateOptions;
+
 async function exists(path: string): Promise<boolean> {
   try {
     await lstat(path);
@@ -78,6 +80,23 @@ function candidateRelease(inventory: ArtifactInventory, transactionId: string): 
 
 function installedRelease(candidate: InstalledRelease): InstalledRelease {
   return { ...candidate, directory: candidate.revision };
+}
+
+function sameRelease(left: InstalledRelease | undefined, right: InstalledRelease): boolean {
+  return (
+    left?.version === right.version &&
+    left.revision === right.revision &&
+    left.target === right.target &&
+    left.directory === right.directory
+  );
+}
+
+function replacementPath(
+  layout: InstallationLayout,
+  release: InstalledRelease,
+  transactionId: string,
+): string {
+  return join(resolve(layout.releasesDirectory), `.${release.revision}.${transactionId}.replaced`);
 }
 
 async function readInventory(directory: string): Promise<ArtifactInventory> {
@@ -212,10 +231,7 @@ export async function activateCandidate(
     const candidateDirectory = releasePath(options.layout, transaction.candidate);
     const target = installedRelease(transaction.candidate);
     targetDirectory = releasePath(options.layout, target);
-    replacedDirectory = join(
-      resolve(options.layout.releasesDirectory),
-      `.${target.revision}.${transaction.id}.replaced`,
-    );
+    replacedDirectory = replacementPath(options.layout, target, transaction.id);
 
     transaction = updateTransaction(transaction, "switching", now);
     await writeInstallationTransaction(options.layout, transaction);
@@ -279,6 +295,88 @@ export async function activateCandidate(
       throw combined;
     }
     throw activationError;
+  } finally {
+    await unlock();
+  }
+}
+
+export async function recoverInterruptedInstallation(
+  options: RecoverInstallationOptions,
+): Promise<InstallationTransaction | undefined> {
+  const unlock = await acquireInstallationLock(options.layout);
+  const now = options.now ?? (() => new Date());
+  let transaction: InstallationTransaction | undefined;
+  try {
+    transaction = await readInstallationTransaction(options.layout);
+    if (!transaction) {
+      return undefined;
+    }
+    if (["ready", "committed", "rolled-back", "failed"].includes(transaction.phase)) {
+      return transaction;
+    }
+
+    const candidateDirectory = releasePath(options.layout, transaction.candidate);
+    const target = installedRelease(transaction.candidate);
+    const targetDirectory = releasePath(options.layout, target);
+    const replacedDirectory = replacementPath(options.layout, target, transaction.id);
+
+    const rollback = async (): Promise<InstallationTransaction> => {
+      const rollingBack = updateTransaction(transaction!, "rolling-back", now, "interrupted");
+      transaction = rollingBack;
+      await writeInstallationTransaction(options.layout, rollingBack);
+      const candidateExists = await exists(candidateDirectory);
+      const replacementExists = await exists(replacedDirectory);
+      if (rollingBack.previous) {
+        await writeCurrentRelease(options.layout, rollingBack.previous);
+      } else {
+        await clearCurrentRelease(options.layout);
+      }
+      if (replacementExists) {
+        await rm(targetDirectory, { recursive: true, force: true });
+        await rename(replacedDirectory, targetDirectory);
+      } else if (
+        !candidateExists &&
+        (!rollingBack.previous || rollingBack.previous.revision !== target.revision)
+      ) {
+        await rm(targetDirectory, { recursive: true, force: true });
+      }
+      await rm(candidateDirectory, { recursive: true, force: true });
+      const rolledBack = updateTransaction(rollingBack, "rolled-back", now, "interrupted");
+      transaction = rolledBack;
+      await writeInstallationTransaction(options.layout, rolledBack);
+      return rolledBack;
+    };
+
+    if (transaction.phase === "staging" || transaction.phase === "rolling-back") {
+      return await rollback();
+    }
+
+    const current = await readCurrentRelease(options.layout);
+    const candidateExists = await exists(candidateDirectory);
+    const targetExists = await exists(targetDirectory);
+    const switched = targetExists && !candidateExists && sameRelease(current, target);
+    if (!switched) {
+      return await rollback();
+    }
+
+    transaction = updateTransaction(transaction, "verifying", now, null);
+    await writeInstallationTransaction(options.layout, transaction);
+    try {
+      await (options.verify ?? verifyRelease)(targetDirectory, target);
+    } catch {
+      return await rollback();
+    }
+    transaction = updateTransaction(transaction, "committed", now);
+    await writeInstallationTransaction(options.layout, transaction);
+    return transaction;
+  } catch (recoveryError) {
+    if (transaction && transaction.phase !== "failed") {
+      await writeInstallationTransaction(
+        options.layout,
+        updateTransaction(transaction, "failed", now, "rollback-failed"),
+      );
+    }
+    throw recoveryError;
   } finally {
     await unlock();
   }

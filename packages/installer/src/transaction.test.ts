@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,8 +10,14 @@ import {
   readCurrentRelease,
   readInstallationTransaction,
   releasePath,
+  writeCurrentRelease,
+  writeInstallationTransaction,
 } from "./installation-store.ts";
-import { activateCandidate, stageCandidate } from "./transaction.ts";
+import {
+  activateCandidate,
+  recoverInterruptedInstallation,
+  stageCandidate,
+} from "./transaction.ts";
 
 const OLD_REVISION = "1111111111111111111111111111111111111111";
 const NEW_REVISION = "2222222222222222222222222222222222222222";
@@ -194,13 +200,115 @@ test("the installation lock refuses a competing transaction", async () => {
   const root = await mkdtemp(join(tmpdir(), "cinba-install-lock-"));
   const paths = layout(root);
   try {
-    const unlock = await acquireInstallationLock(paths, { processId: 101 });
-    await assert.rejects(acquireInstallationLock(paths, { processId: 202 }), {
+    const unlock = await acquireInstallationLock(paths);
+    await assert.rejects(acquireInstallationLock(paths), {
       message: "another Cinba installation transaction is active",
     });
     await unlock();
-    const unlockAgain = await acquireInstallationLock(paths, { processId: 202 });
+    const unlockAgain = await acquireInstallationLock(paths);
     await unlockAgain();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a lock left by a dead installer is recovered without deleting its successor", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-install-stale-lock-"));
+  const paths = layout(root);
+  try {
+    const staleUnlock = await acquireInstallationLock(paths, { processId: 2_147_483_647 });
+    const activeUnlock = await acquireInstallationLock(paths);
+    await staleUnlock();
+    await assert.rejects(acquireInstallationLock(paths), {
+      message: "another Cinba installation transaction is active",
+    });
+    await activeUnlock();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("recovery discards an interrupted staging directory", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-recover-staging-"));
+  const paths = layout(root);
+  try {
+    const source = await artifact(root, "source", "1.0.0", OLD_REVISION);
+    const ready = await stageCandidate({
+      sourceDirectory: source,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: FIRST_ID,
+    });
+    await writeInstallationTransaction(paths, { ...ready, phase: "staging" });
+    const recovered = await recoverInterruptedInstallation({ layout: paths });
+    assert.equal(recovered?.phase, "rolled-back");
+    await assert.rejects(readFile(join(releasePath(paths, ready.candidate), "app.txt"), "utf8"), {
+      code: "ENOENT",
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("recovery resumes verification after the release pointer was switched", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-recover-verifying-"));
+  const paths = layout(root);
+  try {
+    const source = await artifact(root, "source", "1.0.0", OLD_REVISION);
+    const ready = await stageCandidate({
+      sourceDirectory: source,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: FIRST_ID,
+    });
+    const target = { ...ready.candidate, directory: ready.candidate.revision };
+    await rename(releasePath(paths, ready.candidate), releasePath(paths, target));
+    await writeCurrentRelease(paths, target);
+    await writeInstallationTransaction(paths, { ...ready, phase: "verifying" });
+
+    const recovered = await recoverInterruptedInstallation({ layout: paths });
+    assert.equal(recovered?.phase, "committed");
+    assert.deepEqual(await readCurrentRelease(paths), target);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("failed recovery verification restores the previous release", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-recover-rollback-"));
+  const paths = layout(root);
+  try {
+    const oldSource = await artifact(root, "old", "1.0.0", OLD_REVISION);
+    await stageCandidate({
+      sourceDirectory: oldSource,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: FIRST_ID,
+    });
+    await activateCandidate({ layout: paths });
+    const newSource = await artifact(root, "new", "2.0.0", NEW_REVISION);
+    const ready = await stageCandidate({
+      sourceDirectory: newSource,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: SECOND_ID,
+    });
+    const target = { ...ready.candidate, directory: ready.candidate.revision };
+    await rename(releasePath(paths, ready.candidate), releasePath(paths, target));
+    await writeCurrentRelease(paths, target);
+    await writeInstallationTransaction(paths, { ...ready, phase: "verifying" });
+
+    const recovered = await recoverInterruptedInstallation({
+      layout: paths,
+      verify: async () => {
+        throw new Error("still unhealthy");
+      },
+    });
+    assert.equal(recovered?.phase, "rolled-back");
+    assert.equal((await readCurrentRelease(paths))?.revision, OLD_REVISION);
+    await assert.rejects(readFile(join(paths.releasesDirectory, NEW_REVISION, "app.txt"), "utf8"), {
+      code: "ENOENT",
+    });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

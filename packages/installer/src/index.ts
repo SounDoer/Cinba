@@ -59,5 +59,13 @@ export type {
   InstalledRelease,
 } from "./installation-store.ts";
 export { acquireInstallationLock } from "./installation-lock.ts";
-export { activateCandidate, stageCandidate } from "./transaction.ts";
-export type { ActivateCandidateOptions, StageCandidateOptions } from "./transaction.ts";
+export {
+  activateCandidate,
+  recoverInterruptedInstallation,
+  stageCandidate,
+} from "./transaction.ts";
+export type {
+  ActivateCandidateOptions,
+  RecoverInstallationOptions,
+  StageCandidateOptions,
+} from "./transaction.ts";
