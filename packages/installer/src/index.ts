@@ -89,6 +89,11 @@ export {
   renderWindowsScheduledTaskRegistration,
 } from "./services/windows-task.ts";
 export type { PowerShellResult, RunPowerShell } from "./services/windows-task.ts";
+export {
+  createMacosLaunchAgentAdapter,
+  renderMacosLaunchAgent,
+} from "./services/macos-launch-agent.ts";
+export type { LaunchctlResult, RunLaunchctl } from "./services/macos-launch-agent.ts";
 export type {
   ManagedServiceStatus,
   PlatformServiceAdapter,
