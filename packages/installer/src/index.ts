@@ -72,6 +72,18 @@ export {
   recoverManagedServiceOperation,
   setManagedServiceMode,
 } from "./services/service-manager.ts";
+export {
+  LinuxLingerRequiredError,
+  createLinuxSystemdUserAdapter,
+  enableLinuxLinger,
+  inspectLinuxBackgroundSupport,
+  renderSystemdUserUnit,
+} from "./services/linux-systemd-user.ts";
+export type {
+  LinuxBackgroundSupport,
+  RunServiceCommand,
+  ServiceCommandResult,
+} from "./services/linux-systemd-user.ts";
 export type {
   ManagedServiceStatus,
   PlatformServiceAdapter,
