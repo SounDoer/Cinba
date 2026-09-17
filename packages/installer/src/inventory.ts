@@ -1,0 +1,210 @@
+import { createReadStream } from "node:fs";
+import { lstat, readdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { relative, resolve, sep } from "node:path";
+import { type ProductTarget, isProductTarget } from "./platform.ts";
+
+export type InventoryFile = {
+  path: string;
+  size: number;
+  sha256: string;
+  executable: boolean;
+};
+
+export type ArtifactInventory = {
+  schemaVersion: 1;
+  product: "Cinba";
+  version: string;
+  revision: string;
+  target: ProductTarget;
+  files: InventoryFile[];
+};
+
+export type InventoryProblem = {
+  path: string;
+  reason: "missing" | "unexpected" | "not-file" | "symlink" | "size" | "sha256" | "executable";
+};
+
+export type InventoryVerification = {
+  valid: boolean;
+  problems: InventoryProblem[];
+};
+
+const SEMVER =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const REVISION = /^[0-9a-f]{40}$/;
+const SHA256 = /^[0-9a-f]{64}$/;
+
+function record(value: unknown, context: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${context} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function exactKeys(value: Record<string, unknown>, expected: string[], context: string): void {
+  const expectedSet = new Set(expected);
+  const unknown = Object.keys(value).find((key) => !expectedSet.has(key));
+  if (unknown) {
+    throw new Error(`${context} contains unknown field ${unknown}`);
+  }
+  const missing = expected.find((key) => !Object.hasOwn(value, key));
+  if (missing) {
+    throw new Error(`${context} is missing field ${missing}`);
+  }
+}
+
+function safeRelativePath(value: unknown, context: string): string {
+  if (typeof value !== "string" || value.length === 0 || value.includes("\\")) {
+    throw new Error(`${context} must be a normalized relative POSIX path`);
+  }
+  const parts = value.split("/");
+  if (value.startsWith("/") || parts.some((part) => part === "" || part === "." || part === "..")) {
+    throw new Error(`${context} must be a normalized relative POSIX path`);
+  }
+  return value;
+}
+
+function parseFile(value: unknown, index: number): InventoryFile {
+  const context = `inventory files[${index}]`;
+  const parsed = record(value, context);
+  exactKeys(parsed, ["path", "size", "sha256", "executable"], context);
+  const path = safeRelativePath(parsed.path, `${context}.path`);
+  if (!Number.isSafeInteger(parsed.size) || (parsed.size as number) < 0) {
+    throw new Error(`${context}.size must be a non-negative integer`);
+  }
+  if (typeof parsed.sha256 !== "string" || !SHA256.test(parsed.sha256)) {
+    throw new Error(`${context}.sha256 must be a lowercase SHA-256 digest`);
+  }
+  if (typeof parsed.executable !== "boolean") {
+    throw new Error(`${context}.executable must be a boolean`);
+  }
+  return {
+    path,
+    size: parsed.size as number,
+    sha256: parsed.sha256,
+    executable: parsed.executable,
+  };
+}
+
+export function parseArtifactInventory(value: unknown): ArtifactInventory {
+  const parsed = record(value, "artifact inventory");
+  exactKeys(
+    parsed,
+    ["schemaVersion", "product", "version", "revision", "target", "files"],
+    "artifact inventory",
+  );
+  if (parsed.schemaVersion !== 1) {
+    throw new Error("artifact inventory schemaVersion must be 1");
+  }
+  if (parsed.product !== "Cinba") {
+    throw new Error('artifact inventory product must be "Cinba"');
+  }
+  if (typeof parsed.version !== "string" || !SEMVER.test(parsed.version)) {
+    throw new Error("artifact inventory version must be SemVer without a leading v");
+  }
+  if (typeof parsed.revision !== "string" || !REVISION.test(parsed.revision)) {
+    throw new Error("artifact inventory revision must be a full lowercase Git commit");
+  }
+  if (!isProductTarget(parsed.target)) {
+    throw new Error("artifact inventory target is not a supported product target");
+  }
+  if (!Array.isArray(parsed.files) || parsed.files.length === 0) {
+    throw new Error("artifact inventory files must be a non-empty array");
+  }
+  const files = parsed.files.map(parseFile);
+  for (let index = 1; index < files.length; index += 1) {
+    if (files[index - 1]!.path >= files[index]!.path) {
+      throw new Error("artifact inventory files must be unique and sorted by path");
+    }
+  }
+  return {
+    schemaVersion: 1,
+    product: "Cinba",
+    version: parsed.version,
+    revision: parsed.revision,
+    target: parsed.target,
+    files,
+  };
+}
+
+async function sha256(path: string): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) {
+    hash.update(chunk);
+  }
+  return hash.digest("hex");
+}
+
+async function collectFiles(
+  root: string,
+  directory: string,
+  problems: InventoryProblem[],
+): Promise<string[]> {
+  const files: string[] = [];
+  const entries = await readdir(directory, { withFileTypes: true });
+  for (const entry of entries) {
+    const absolute = resolve(directory, entry.name);
+    const path = relative(root, absolute).split(sep).join("/");
+    if (entry.isSymbolicLink()) {
+      problems.push({ path, reason: "symlink" });
+    } else if (entry.isDirectory()) {
+      files.push(...(await collectFiles(root, absolute, problems)));
+    } else if (entry.isFile()) {
+      files.push(path);
+    } else {
+      problems.push({ path, reason: "not-file" });
+    }
+  }
+  return files;
+}
+
+export async function verifyArtifactInventory(
+  rootDirectory: string,
+  inventory: ArtifactInventory,
+  options: { inventoryFileName?: string; enforceExecutable?: boolean } = {},
+): Promise<InventoryVerification> {
+  const root = resolve(rootDirectory);
+  const inventoryFileName = options.inventoryFileName ?? "inventory.json";
+  const enforceExecutable = options.enforceExecutable ?? inventory.target !== "windows-x64";
+  const problems: InventoryProblem[] = [];
+  const actualPaths = new Set(await collectFiles(root, root, problems));
+  actualPaths.delete(inventoryFileName);
+  const expectedPaths = new Set(inventory.files.map((file) => file.path));
+
+  for (const path of actualPaths) {
+    if (!expectedPaths.has(path)) {
+      problems.push({ path, reason: "unexpected" });
+    }
+  }
+
+  for (const expected of inventory.files) {
+    if (!actualPaths.has(expected.path)) {
+      problems.push({ path: expected.path, reason: "missing" });
+      continue;
+    }
+    const absolute = resolve(root, ...expected.path.split("/"));
+    const status = await lstat(absolute);
+    if (!status.isFile()) {
+      problems.push({ path: expected.path, reason: "not-file" });
+      continue;
+    }
+    if (status.size !== expected.size) {
+      problems.push({ path: expected.path, reason: "size" });
+      continue;
+    }
+    if ((await sha256(absolute)) !== expected.sha256) {
+      problems.push({ path: expected.path, reason: "sha256" });
+    }
+    if (enforceExecutable && ((status.mode & 0o111) !== 0) !== expected.executable) {
+      problems.push({ path: expected.path, reason: "executable" });
+    }
+  }
+
+  problems.sort((left, right) =>
+    left.path === right.path
+      ? left.reason.localeCompare(right.reason)
+      : left.path.localeCompare(right.path),
+  );
+  return { valid: problems.length === 0, problems };
+}

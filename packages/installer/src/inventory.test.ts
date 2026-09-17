@@ -1,0 +1,102 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import {
+  type ArtifactInventory,
+  parseArtifactInventory,
+  verifyArtifactInventory,
+} from "./inventory.ts";
+
+const REVISION = "0123456789abcdef0123456789abcdef01234567";
+
+function digest(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function inventory(files: ArtifactInventory["files"]): unknown {
+  return {
+    schemaVersion: 1,
+    product: "Cinba",
+    version: "0.1.0",
+    revision: REVISION,
+    target: "windows-x64",
+    files,
+  };
+}
+
+test("parses a deterministic artifact inventory", () => {
+  const value = inventory([
+    { path: "bin/cinba.exe", size: 5, sha256: digest("cinba"), executable: false },
+    { path: "runtime/node.exe", size: 4, sha256: digest("node"), executable: false },
+  ]);
+  assert.deepEqual(parseArtifactInventory(value), value);
+});
+
+test("rejects unsafe, duplicate, and unsorted inventory paths", () => {
+  for (const path of ["../secret", "/absolute", "bin\\cinba", "bin//cinba", "bin/./cinba"]) {
+    assert.throws(
+      () =>
+        parseArtifactInventory(
+          inventory([{ path, size: 1, sha256: digest("x"), executable: false }]),
+        ),
+      /normalized relative POSIX path/,
+    );
+  }
+
+  assert.throws(
+    () =>
+      parseArtifactInventory(
+        inventory([
+          { path: "z", size: 1, sha256: digest("z"), executable: false },
+          { path: "a", size: 1, sha256: digest("a"), executable: false },
+        ]),
+      ),
+    /unique and sorted/,
+  );
+});
+
+test("verifies every payload file while exempting the inventory itself", async () => {
+  const root = mkdtempSync(join(tmpdir(), "cinba-inventory-"));
+  try {
+    await mkdir(join(root, "bin"));
+    await writeFile(join(root, "bin", "cinba.exe"), "cinba");
+    writeFileSync(join(root, "inventory.json"), "generated separately");
+    const parsed = parseArtifactInventory(
+      inventory([{ path: "bin/cinba.exe", size: 5, sha256: digest("cinba"), executable: false }]),
+    );
+
+    assert.deepEqual(await verifyArtifactInventory(root, parsed), { valid: true, problems: [] });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("reports tampered, missing, and unexpected files without trusting names from disk", async () => {
+  const root = mkdtempSync(join(tmpdir(), "cinba-inventory-"));
+  try {
+    await mkdir(join(root, "bin"));
+    await writeFile(join(root, "bin", "cinba.exe"), "wrong");
+    await writeFile(join(root, "extra.txt"), "extra");
+    const parsed = parseArtifactInventory(
+      inventory([
+        { path: "bin/cinba.exe", size: 5, sha256: digest("cinba"), executable: false },
+        { path: "runtime/node.exe", size: 4, sha256: digest("node"), executable: false },
+      ]),
+    );
+
+    assert.deepEqual(await verifyArtifactInventory(root, parsed), {
+      valid: false,
+      problems: [
+        { path: "bin/cinba.exe", reason: "sha256" },
+        { path: "extra.txt", reason: "unexpected" },
+        { path: "runtime/node.exe", reason: "missing" },
+      ],
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
