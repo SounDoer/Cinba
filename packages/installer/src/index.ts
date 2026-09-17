@@ -84,6 +84,11 @@ export type {
   RunServiceCommand,
   ServiceCommandResult,
 } from "./services/linux-systemd-user.ts";
+export {
+  createWindowsScheduledTaskAdapter,
+  renderWindowsScheduledTaskRegistration,
+} from "./services/windows-task.ts";
+export type { PowerShellResult, RunPowerShell } from "./services/windows-task.ts";
 export type {
   ManagedServiceStatus,
   PlatformServiceAdapter,
