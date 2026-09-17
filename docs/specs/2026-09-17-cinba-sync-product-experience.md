@@ -192,7 +192,7 @@ Settings 和 Credentials 分别选择来源。连接已有 Sync 时默认：
 
 ```text
 Settings       Use shared settings
-Credentials    Keep credentials on this device
+Credentials    Use credentials available only to this Core
 ```
 
 连接页面允许用户分别请求 Shared Settings 和 Shared Credentials；批准页面必须准确显示请求范围。
@@ -207,16 +207,69 @@ Shared Credentials 默认关闭，并在请求时明确说明该 Core 将能使�
 - 连接已有 Sync 不自动上传本地 Credentials；
 - 删除本地副本必须是独立、明确的操作。
 
-创建新的本机 Sync 时，因为 Shared Settings 还不存在，用户可以选择：
+创建新的本机 Sync 时使用安全、可逆的默认值，不先增加初始化表单：
 
 ```text
-Initialize shared settings
+Create Cinba Sync on this device
 
-● Start with settings from this device
-○ Start with default settings
+Your current settings will be used to initialize Sync.
+
+API credentials will not be added to Sync or shared
+with other Cores.
+
+[Create Sync]
 ```
 
-是否把当前设备的 Credentials 加入 Sync 是另一个单独选项，默认关闭。
+当前 Core 的 Settings 被复制为初始 Shared Settings；原 Local Settings 仍保留。API Credentials 不
+自动写入 Sync，当前 Core 继续使用自己已有的 Local Credentials。这里不能使用“Credentials remain
+on this device”一类文案，因为 Sync Host 也在同一物理设备上；产品文案必须表达凭据属于当前 Core，
+还是已经加入 Sync 并可供获批 Core 使用。
+
+### 6.1 主动断开
+
+使用 Sync 一段时间后，Shared Settings 可能已经不同于连接前保存的 Local Settings。Core 主动断开
+时不能静默恢复旧值，而要明确选择：
+
+```text
+Disconnect from Cinba Sync
+
+What should this Core use after disconnecting?
+
+● Keep the settings currently in use
+  Copy the current shared settings to this Core.
+
+○ Restore the previous local settings
+  Return to the settings saved before connecting.
+```
+
+默认保留当前正在使用的 Settings，使断开只停止之后的同步，不让模型与偏好意外倒退。
+
+如果 Core 正在使用 Shared Credentials，Credentials 使用单独的明确选择，不能随 Settings 自动复制：
+
+```text
+○ Do not save them to this Core
+  Providers may require credentials after disconnecting.
+
+○ Save them as credentials for this Core
+  They will no longer receive updates from Sync.
+```
+
+这里不预选“保存”。保存后，原本由 Sync 管理和撤销的 API key 会成为该 Core 的持久本地副本，因此
+必须由用户明确决定。OAuth 登录本来就不属于 Shared Credentials，不受这个选择影响。
+
+### 6.2 管理端撤销 Core
+
+管理端执行 `Revoke Core` 不是 Core 主动迁移，管理界面不会为被撤销 Core 提供把 Shared
+Credentials 保存为本地副本的流程。撤销后：
+
+- 后续 Snapshot 请求立即被拒绝；
+- 正常 Core 在下次联系 Sync 并发现撤销后，清理 Sync credential 和从 Sync 获得的 Credentials 缓存；
+- 最后一次 Shared Settings 可以成为断开后的本地设置，避免普通偏好突然消失；
+- 依赖 Shared Credentials 的 Provider 进入需要本地凭据的状态。
+
+撤销不能从一台离线、失陷或恶意的 Core 中远程抹掉已经交付的 API key。需要真正收回第三方 Provider
+访问权时，用户还必须在 Provider 侧轮换对应 API key，并把新值更新到 Sync。主动断开是用户控制的
+迁移行为；管理端撤销是阻止后续 Sync 访问的权限收回。
 
 ## 7. 本机 GUI Sync
 
@@ -227,11 +280,9 @@ Settings → Cinba Sync
         ↓
 在这台设备创建 Cinba Sync
         ↓
-选择如何初始化 Shared Settings
-        ↓
-选择是否加入本机 Credentials（默认否）
-        ↓
 创建并按需启动 Sync
+        ↓
+用当前 Settings 初始化；不加入 API Credentials
         ↓
 当前 Core 自动连接并批准
         ↓
@@ -242,11 +293,13 @@ Settings → Cinba Sync
 
 ### 7.2 按需生命周期
 
-本机 Sync 默认不登录自启动，也不永久驻留后台：
+本机 Sync 默认不登录自启动，也不安装系统后台服务。第一阶段由现有 Desktop tray 进程托管：
 
-- 打开 Cinba、进入管理后台或本机 Core 需要 Sync 时自动确保其运行；
-- 不再需要时允许受管进程停止；
-- 下次需要时自动恢复；
+- 用户没有创建本机 Sync 时，不启动任何 Sync 进程；
+- 打开本机 Core 或管理后台时，Desktop 自动确保已配置的本机 Sync 运行；
+- 关闭窗口后 Desktop 仍在系统托盘，Sync 继续稳定运行；
+- 用户明确执行 `Quit Cinba` 时，Desktop 安全停止自己管理的本机 Sync；
+- 下次启动并需要 Sync 时自动恢复；
 - 不显示前台终端窗口。
 
 未来可以提供“Cinba 关闭后仍供其他设备使用”的用户级后台模式，但必须由用户主动启用。后台模式不
@@ -271,6 +324,21 @@ Desktop 默认在受限制的独立 WebView 中打开，并保留“在浏览器
 Desktop 只负责编排本机生命周期、加载正确地址和建立本机首次管理授权。Shared Settings、
 Credentials、Connected Cores、受信管理端、History 和 Backup 等管理能力仍然只在 `sync-web` 与
 Sync Server 实现一次。
+
+### 7.4 Disable 与 Delete
+
+本机 Host 必须把可恢复的停用与永久删除分开，不能合并成含糊的 `Remove`：
+
+**Disable Cinba Sync** 停止本机 Sync，取消之后的按需启动，但保留 Shared Settings、Credentials、
+历史、Connected Core、管理授权以及各 Core 的连接配置。Core 暂时离线并使用自己的 last-known-good
+缓存；用户以后 Enable 后可以原样恢复连接。
+
+**Delete Cinba Sync permanently** 先让当前 Core 按第 6.1 节完成断开，再删除 Sync 权威数据和加密
+key，使所有管理授权与 Core credential 永久失效。界面必须列出将删除的内容、显示仍连接的 Core
+数量，并进行独立的危险操作确认。
+
+备份仍是可选能力。删除确认可以提供 `Create backup first`，但不强制创建；用户明确确认永久删除且
+没有备份时，产品可以执行不可恢复删除。
 
 ## 8. 网络边界
 
@@ -322,13 +390,15 @@ Host 永久丢失后无法完整恢复权威数据的风险。
 - `Settings → Cinba Sync` 入口与默认本机状态；
 - 创建本机 Sync；
 - loopback-only；
-- 受管的按需生命周期；
+- 由 Desktop tray 托管的按需生命周期；
 - 本机第一次管理授权；
 - 当前 Core 自动 enrollment 与批准；
-- Shared Settings 初始化选择；
-- Credentials 默认保留本机；
+- 用当前 Settings 一键初始化 Shared Settings；
+- API Credentials 默认不加入 Sync；
 - 在 Desktop 中复用现有 `sync-web`；
-- 来源切换不删除本地数据。
+- 来源切换不删除本地数据；
+- 主动断开与管理端撤销使用不同的 Settings/Credentials 处理；
+- 可恢复的 Disable 与独立确认的永久 Delete。
 
 这个切片明确不包含：
 
