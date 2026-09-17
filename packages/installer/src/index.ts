@@ -67,6 +67,18 @@ export {
 } from "./services/service-state.ts";
 export { createManagedServiceDefinitions } from "./services/definitions.ts";
 export type { ManagedServiceDefinition, ServicePlatform } from "./services/definitions.ts";
+export {
+  inspectManagedService,
+  recoverManagedServiceOperation,
+  setManagedServiceMode,
+} from "./services/service-manager.ts";
+export type {
+  ManagedServiceStatus,
+  PlatformServiceAdapter,
+  PlatformServiceSnapshot,
+  ServiceAvailability,
+  ServiceManagerOptions,
+} from "./services/service-manager.ts";
 export type {
   ServiceComponent,
   ServiceComponentRecord,
