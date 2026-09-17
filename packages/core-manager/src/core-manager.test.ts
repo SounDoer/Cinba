@@ -55,6 +55,17 @@ test("a local Core spawned by Electron runs as the current on-demand revision", 
   assert.equal(environment.PATH, "C:\\Windows");
 });
 
+test("an isolated development Core keeps its explicit port and product name", () => {
+  const config = {
+    ...createLocalCoreConfig({ homeDirectory: join(tmpdir(), "cinba-manager-dev-home") }),
+    baseUrl: "http://127.0.0.1:4518/",
+    defaultCoreName: "workstation Dev",
+  };
+  const environment = createCoreProcessEnvironment("secret", {}, config, REVISION);
+  assert.equal(environment.CINBA_PORT, "4518");
+  assert.equal(environment.CINBA_DEFAULT_CORE_NAME, "workstation Dev");
+});
+
 test("reuses a Core that is already healthy", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
   const config = createLocalCoreConfig({ homeDirectory: home });

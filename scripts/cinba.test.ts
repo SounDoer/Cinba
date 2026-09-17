@@ -59,10 +59,10 @@ test("Core subcommands are parsed independently of TUI commands", () => {
     action: "stop",
   });
   assert.throws(() => parseCinbaCommand(["core"], "example"), {
-    message: "run 'cinba help' for usage",
+    message: "run 'cinba-dev help' for usage",
   });
   assert.throws(() => parseCinbaCommand(["tui", "one", "two"], "example"), {
-    message: "run 'cinba help' for usage",
+    message: "run 'cinba-dev help' for usage",
   });
 });
 
@@ -93,7 +93,7 @@ test("Sync status does not initialize an absent state directory", async () => {
   const root = resolve("missing-sync-state-for-test");
   assert.equal(
     await runSyncCommand({ type: "sync", action: "status" }, { CINBA_SYNC_STATE_DIR: root }),
-    "Cinba Sync: not initialized",
+    "Cinba Dev Sync: not initialized",
   );
 });
 
@@ -109,13 +109,13 @@ test("help aliases and doctor projects are parsed before the project shorthand",
     type: "doctor",
     workingDirectory: resolve("other"),
   });
-  assert.match(formatHelp(), /cinba doctor \[project\]/);
-  assert.match(formatHelp(), /cinba core <status\|start\|stop>/);
+  assert.match(formatHelp(), /cinba-dev doctor \[project\]/);
+  assert.match(formatHelp(), /cinba-dev core <status\|start\|stop>/);
 });
 
 test("Desktop has one cross-platform product entry", () => {
   assert.deepEqual(parseCinbaCommand(["desktop"], "example"), { type: "desktop" });
-  assert.match(formatHelp(), /cinba desktop/);
+  assert.match(formatHelp(), /cinba-dev desktop/);
   assert.match(formatHelp(), /Windows or macOS multi-Core Desktop client/);
   assert.doesNotMatch(formatHelp(), /cinba tray/);
 });
@@ -123,7 +123,7 @@ test("Desktop has one cross-platform product entry", () => {
 test("Core status is concise but includes management details when available", () => {
   assert.equal(
     formatCoreStatus({ state: "stopped", running: false, managed: false }),
-    "Cinba Core: stopped",
+    "Cinba Dev Core: stopped",
   );
   assert.equal(
     formatCoreStatus({
@@ -136,7 +136,7 @@ test("Core status is concise but includes management details when available", ()
       safeToStop: false,
     }),
     [
-      "Cinba Core: running",
+      "Cinba Dev Core: running",
       "  PID: 123",
       "  Lifecycle: on-demand",
       "  Clients: 2",

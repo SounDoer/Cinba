@@ -9,21 +9,21 @@ import {
 
 test("the Dev Core receives an isolated port, state directory, and Pi agent directory", () => {
   const home = resolve("example-home");
-  const stateDirectory = join(home, ".cinba", "dev");
+  const productRoot = join(home, "AppData", "Local", "Cinba Dev");
   const environment = createDevelopmentEnvironment(home, "workstation", { PATH: "/usr/bin" });
 
   assert.equal(environment.CINBA_PORT, "4518");
   assert.equal(environment.CINBA_CORE_LIFETIME, "persistent");
   assert.equal(environment.CINBA_DEFAULT_CORE_NAME, "workstation Dev");
-  assert.equal(environment.CINBA_STATE_DIR, stateDirectory);
+  assert.equal(environment.CINBA_STATE_DIR, join(productRoot, "Data", "Core"));
   assert.equal(environment.CINBA_SYNC_SETTINGS_SOURCE, "sync");
   assert.equal(environment.CINBA_SYNC_CREDENTIAL_SOURCE, "local");
-  assert.equal(environment.PI_CODING_AGENT_DIR, join(stateDirectory, "pi-agent"));
+  assert.equal(environment.PI_CODING_AGENT_DIR, join(productRoot, "Data", "Pi"));
   assert.equal(environment.PATH, "/usr/bin");
 });
 
 test("the Dev Core does not inherit stable web search credentials", () => {
-  const environment = createDevelopmentEnvironment("example-home", "workstation", {
+  const environment = createDevelopmentEnvironment(resolve("example-home"), "workstation", {
     EXA_API_KEY: "stable-exa-key",
     BRAVE_SEARCH_API_KEY: "stable-brave-key",
     PATH: "/usr/bin",
@@ -37,7 +37,10 @@ test("the Dev Core does not inherit stable web search credentials", () => {
 test("Dev Sync uses a state directory and port isolated from stable Sync and Dev Core", () => {
   const home = resolve("example-home");
   const environment = createSyncDevelopmentEnvironment(home, { PATH: "/usr/bin" });
-  assert.equal(environment.CINBA_SYNC_STATE_DIR, join(home, ".cinba-sync", "dev"));
+  assert.equal(
+    environment.CINBA_SYNC_STATE_DIR,
+    join(home, "AppData", "Local", "Cinba Dev", "Data", "Sync"),
+  );
   assert.equal(environment.CINBA_SYNC_PORT, "4519");
   assert.equal(environment.CINBA_SYNC_PUBLIC_ORIGIN, "http://127.0.0.1:4519");
   assert.equal(environment.PATH, "/usr/bin");

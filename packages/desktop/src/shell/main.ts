@@ -31,7 +31,7 @@ function render(state: DesktopShellState): void {
   const selectedLabel = selected?.label ?? "Core";
   offlineTitle.textContent = `${selectedLabel} is unavailable`;
   offlineMessage.textContent = state.message ?? "The Core did not respond.";
-  document.title = `Cinba — ${selectedLabel}`;
+  document.title = `Cinba Dev — ${selectedLabel}`;
 }
 
 profile.addEventListener("change", () => void desktopApi.selectProfile(profile.value));

@@ -46,7 +46,7 @@ npm install
 npm start
 ```
 
-`npm start` builds the Web UI, ensures the shared local Core is running on `127.0.0.1:4517`, and
+`npm start` builds the Web UI, ensures the Cinba Dev Core is running on `127.0.0.1:4518`, and
 opens it in the browser. The launcher can then exit: the Core stays in the background while any
 client is connected and stops safely after ten client-free minutes. On Windows, `cinba-web.cmd`
 provides the same flow as a double-click launcher.
@@ -57,11 +57,10 @@ For development with an isolated Core, Core watch mode, and Vite hot reload:
 npm run dev
 ```
 
-The development UI opens on `127.0.0.1:5173`. Its Dev Core listens on
-`127.0.0.1:4518` and keeps its Cinba state, Pi credentials, and Pi sessions under
-`~/.cinba/dev`, separate from the ordinary Core on port 4517. This lets both Core instances run at
-the same time without development work touching everyday data. The equivalent Windows launcher is
-`cinba-dev.cmd`.
+The development UI opens on `127.0.0.1:5173`. Its Core listens on `127.0.0.1:4518`. All source
+launchers use the `Cinba Dev` identity and its native data directories, such as
+`%LOCALAPPDATA%\Cinba Dev` on Windows. Those directories are completely separate from a formal
+`Cinba` installation. The equivalent Windows launcher is `cinba-dev.cmd`.
 
 To open the terminal client:
 
@@ -71,44 +70,42 @@ npm run tui -- C:\path\to\project
 
 You can also drag a project directory onto `cinba-tui.cmd`.
 
-To make the TUI available as `cinba` from every PowerShell working directory, link the repository
+To make the source TUI available as `cinba-dev` from every PowerShell working directory, link the repository
 once through npm:
 
 ```powershell
 cd C:\path\to\Cinba
 npm link
-Get-Command cinba
+Get-Command cinba-dev
 ```
 
 Change to any project and start the terminal client:
 
 ```powershell
 cd C:\path\to\project
-cinba
+cinba-dev
 ```
 
 The command starts the shared local Core when necessary, then opens the TUI in the current
-directory. `cinba tui [project]` is the explicit form, while `cinba [project]` is a project-path
+directory. `cinba-dev tui [project]` is the explicit form, while `cinba-dev [project]` is a project-path
 shortcut. A Web window, Desktop window, and any other TUI reuse that same Core.
 
 The global npm shim and `cinba-tui.cmd` both enter the product command parser in
 `scripts/cinba.ts`. It delegates TUI process orchestration to the importable `launchTui()` function
 in `scripts/launch.ts`; `npm run tui` reaches that same function through the launcher's developer
 command interface. The global command stays linked to this checkout, so code updates take effect
-without relinking. Remove it with `npm unlink --global cinba`. The Web launcher is named
-`cinba-web.cmd`, so the global `cinba` command remains unambiguous in both PowerShell and `cmd.exe`.
+without relinking. Remove it with `npm unlink --global cinba`. The formal `cinba` command is reserved
+for an installed release and is never created by source development.
 
-The local Core log is appended to `%USERPROFILE%\.cinba\core.log`. `npm run dev` remains a
-foreground development stack, but its isolated port and data mean the ordinary local Core can stay
-running. Setting `CINBA_SERVER` for the TUI selects an explicitly managed remote Core and does not
-start the local one.
+The local Core log is kept below the `Cinba Dev` native log directory. Setting `CINBA_SERVER` for
+the TUI selects an explicitly managed remote Core and does not start the local one.
 
 The same global command exposes the local Core lifecycle without opening a client:
 
 ```powershell
-cinba core status
-cinba core start
-cinba core stop
+cinba-dev core status
+cinba-dev core start
+cinba-dev core stop
 ```
 
 `status` reports whether the Core is stopped, running, or draining, plus its managed PID, lifecycle,
@@ -120,7 +117,7 @@ by this command.
 On Windows and macOS, the same manager is available from the Desktop controller:
 
 ```powershell
-cinba desktop
+cinba-dev desktop
 ```
 
 The command builds the Web UI and Desktop shell, returns after starting one background Desktop
@@ -129,7 +126,7 @@ selection, and keeps its selector and recovery controls available when that Core
 Core still serves its own complete, version-matched Web UI. Windows places the controller in the
 System Tray; macOS places it in the Menu Bar.
 
-Selecting the built-in Local Core ensures that the shared Stable Core is running in on-demand mode;
+Selecting the built-in Local Core ensures that the Cinba Dev Core is running in on-demand mode;
 opening a remote Core never starts the local one. Local lifecycle controls report stopped, running,
 draining, and external states, offer graceful start and stop, and open the local log regardless of
 which Core the window shows. Closing the window or choosing `Quit Desktop` exits only the
@@ -141,9 +138,9 @@ entry without typing a Terminal command.
 For command guidance and read-only environment diagnosis:
 
 ```powershell
-cinba help
-cinba doctor
-cinba doctor C:\path\to\project
+cinba-dev help
+cinba-dev doctor
+cinba-dev doctor C:\path\to\project
 ```
 
 `doctor` checks the Node.js runtime, linked checkout, project directory, and effective Core. A
@@ -209,9 +206,10 @@ master ──► prod ──► deploy ──► releases/current ──► syst
 | `@cinba/desktop`      | Electron multi-Core client and local Core tray/menu-bar controller       |
 | `@cinba/deploy`       | Safe release preparation, activation, verification, and rollback         |
 
-Stable runtime configuration and Pi data live outside the repository in `~/.cinba` and `~/.pi`.
-The local Dev Core keeps its isolated state below `~/.cinba/dev`. A release switch changes program
-files without replacing conversations, configuration, credentials, or user projects.
+Runtime configuration and private Pi data live outside the repository. Source development uses the
+native `Cinba Dev` data, state, cache, and log trees; a formal release uses separate `Cinba` trees.
+A release switch changes program files without replacing conversations, configuration, credentials,
+or user projects.
 
 ## Quality checks
 

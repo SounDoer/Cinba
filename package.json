@@ -14,7 +14,7 @@
     "url": "https://github.com/SounDoer/Cinba/issues"
   },
   "bin": {
-    "cinba": "scripts/cinba.ts"
+    "cinba-dev": "scripts/cinba.ts"
   },
   "engines": {
     "node": ">=24"

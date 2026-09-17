@@ -1,9 +1,10 @@
 // Keep application bootstrap separate from the tray and window surfaces so
 // either can evolve without turning the Electron entry point into a controller.
 
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { type IpcMainInvokeEvent, app, ipcMain } from "electron";
-import { createLocalCoreConfig } from "@cinba/core-manager";
+import { createDevelopmentCoreConfig } from "@cinba/product-runtime";
 import type { ProfileInput } from "./desktop-api.ts";
 import { createCoreProfileStore } from "./profile-store.ts";
 import { type SystemTrayController, createSystemTrayController } from "./tray.ts";
@@ -12,6 +13,7 @@ import { type DesktopWindowController, createDesktopWindowController } from "./w
 let tray: SystemTrayController | undefined;
 let removeIpcHandlers: (() => void) | undefined;
 let openWhenReady = true;
+const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 const IPC_CHANNELS = [
   "desktop:get-state",
@@ -94,6 +96,7 @@ function registerDesktopIpc(window: DesktopWindowController): () => void {
 }
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
+app.setName("Cinba Dev");
 if (!hasSingleInstanceLock) {
   app.quit();
 } else {
@@ -105,19 +108,20 @@ if (!hasSingleInstanceLock) {
   app
     .whenReady()
     .then(async () => {
-      app.setAppUserModelId("Cinba");
+      app.setAppUserModelId("com.soundoer.cinba.dev");
       app.dock?.hide();
-      const localConfig = createLocalCoreConfig();
+      const localConfig = createDevelopmentCoreConfig(REPOSITORY_ROOT);
       const profiles = createCoreProfileStore(join(localConfig.stateDirectory, "desktop.json"), {
         localLabel: process.platform === "darwin" ? "This Mac" : "This PC",
       });
-      const window = createDesktopWindowController(profiles);
+      const window = createDesktopWindowController(profiles, localConfig);
       removeIpcHandlers = registerDesktopIpc(window);
       tray = await createSystemTrayController({
         openWindow: window.open,
         openManager: window.openManager,
         profiles,
         currentProfileId: () => window.getState().selectedProfileId,
+        localConfig,
       });
       if (openWhenReady) {
         await tray.openWindow();

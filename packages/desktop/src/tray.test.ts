@@ -17,7 +17,7 @@ test("tray icons are non-empty BGRA bitmaps with transparent corners", () => {
 
 test("a stopped Core can be started", () => {
   assert.deepEqual(createTrayViewModel({ state: "stopped", running: false, managed: false }), {
-    tooltip: "Cinba Local Core: stopped",
+    tooltip: "Cinba Dev Local Core: stopped",
     iconTone: "stopped",
     statusLabel: "Local Core: stopped",
     detailLabels: [],

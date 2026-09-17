@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type LocalCoreStatus,
@@ -17,10 +17,15 @@ import {
   restoreSyncState,
   runSyncServer,
 } from "@cinba/sync-server";
+import {
+  createDevelopmentCoreConfig,
+  createDevelopmentSyncEnvironment,
+} from "@cinba/product-runtime";
 import { launchDesktop, launchTui } from "./launch.ts";
 import { formatDoctorReport, runDoctor } from "./doctor.ts";
 
 const COMMAND_PATH = fileURLToPath(import.meta.url);
+const REPOSITORY_ROOT = dirname(dirname(COMMAND_PATH));
 
 export type CinbaCommand =
   | { type: "tui"; workingDirectory: string }
@@ -35,18 +40,18 @@ export type CinbaCommand =
     }
   | { type: "help" };
 
-const HELP = `Cinba
+const HELP = `Cinba Dev
 
 Usage:
-  cinba [project]
-  cinba tui [project]
-  cinba core <status|start|stop>
-  cinba sync <serve|status|reset-password>
-  cinba sync backup <archive>
-  cinba sync restore <archive> [--force]
-  cinba desktop
-  cinba doctor [project]
-  cinba help
+  cinba-dev [project]
+  cinba-dev tui [project]
+  cinba-dev core <status|start|stop>
+  cinba-dev sync <serve|status|reset-password>
+  cinba-dev sync backup <archive>
+  cinba-dev sync restore <archive> [--force]
+  cinba-dev desktop
+  cinba-dev doctor [project]
+  cinba-dev help
 
 Commands:
   tui       Open the terminal client; defaults to the current project
@@ -95,7 +100,7 @@ export function parseCinbaCommand(arguments_: string[], workingDirectory: string
         force: arguments_[3] === "--force",
       };
     }
-    throw new Error("run 'cinba help' for usage");
+    throw new Error("run 'cinba-dev help' for usage");
   }
   if (arguments_.length === 1 && arguments_[0] === "desktop") {
     return { type: "desktop" };
@@ -122,7 +127,7 @@ export function parseCinbaCommand(arguments_: string[], workingDirectory: string
   if (arguments_.length === 1 && arguments_[0] !== "core" && arguments_[0] !== "doctor") {
     return { type: "tui", workingDirectory: resolve(arguments_[0]) };
   }
-  throw new Error("run 'cinba help' for usage");
+  throw new Error("run 'cinba-dev help' for usage");
 }
 
 function migrationPassword(environment: NodeJS.ProcessEnv): string {
@@ -151,9 +156,9 @@ export async function runSyncCommand(
   if (command.action === "status") {
     const status = inspectSyncState(directory);
     if (status.state === "absent") {
-      return "Cinba Sync: not initialized";
+      return "Cinba Dev Sync: not initialized";
     }
-    const lines = [`Cinba Sync: ${status.state}`];
+    const lines = [`Cinba Dev Sync: ${status.state}`];
     if (status.serverId) {
       lines.push(`  Server ID: ${status.serverId}`);
     }
@@ -192,10 +197,10 @@ export function isDirectExecution(
 
 export function formatCoreStatus(status: LocalCoreStatus): string {
   if (!status.running) {
-    return "Cinba Core: stopped";
+    return "Cinba Dev Core: stopped";
   }
 
-  const lines = [`Cinba Core: ${status.state}`];
+  const lines = [`Cinba Dev Core: ${status.state}`];
   if (status.pid !== undefined) {
     lines.push(`  PID: ${status.pid}`);
   }
@@ -212,10 +217,14 @@ export function formatCoreStatus(status: LocalCoreStatus): string {
 export async function runCoreCommand(
   action: "status" | "start" | "stop",
   manager: {
-    inspect: typeof inspectLocalCore;
-    ensure: typeof ensureLocalCore;
-    stop: typeof stopLocalCore;
-  } = { inspect: inspectLocalCore, ensure: ensureLocalCore, stop: stopLocalCore },
+    inspect: () => Promise<LocalCoreStatus>;
+    ensure: () => Promise<LocalCoreStatus>;
+    stop: () => Promise<LocalCoreStatus>;
+  } = {
+    inspect: () => inspectLocalCore(),
+    ensure: () => ensureLocalCore(),
+    stop: () => stopLocalCore(),
+  },
 ): Promise<string> {
   if (action === "status") {
     return formatCoreStatus(await manager.inspect());
@@ -252,18 +261,25 @@ async function main(): Promise<void> {
   }
   if (command.type === "desktop") {
     await launchDesktop();
-    console.log("Cinba Desktop is running.");
+    console.log("Cinba Dev Desktop is running.");
     return;
   }
   if (command.type === "sync") {
-    const result = await runSyncCommand(command);
+    const result = await runSyncCommand(command, createDevelopmentSyncEnvironment());
     if (result) {
       console.log(result);
     }
     return;
   }
 
-  console.log(await runCoreCommand(command.action));
+  const config = createDevelopmentCoreConfig(REPOSITORY_ROOT);
+  console.log(
+    await runCoreCommand(command.action, {
+      inspect: () => inspectLocalCore(config),
+      ensure: () => ensureLocalCore({ config }),
+      stop: () => stopLocalCore({ config }),
+    }),
+  );
 }
 
 if (process.argv[1] && isDirectExecution(COMMAND_PATH, process.argv[1])) {

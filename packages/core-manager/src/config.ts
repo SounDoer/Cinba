@@ -13,6 +13,7 @@ export type LocalCoreConfig = {
   controlPath: string;
   logPath: string;
   environment?: NodeJS.ProcessEnv;
+  defaultCoreName?: string;
 };
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");

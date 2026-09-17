@@ -12,6 +12,10 @@ import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureLocalCore } from "@cinba/core-manager";
+import {
+  createDevelopmentCoreConfig,
+  createDevelopmentSyncEnvironment,
+} from "@cinba/product-runtime";
 
 const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const CORE_ENTRY = join(REPOSITORY_ROOT, "packages", "server", "src", "index.ts");
@@ -22,11 +26,9 @@ const SYNC_ENTRY = join(REPOSITORY_ROOT, "packages", "sync-server", "src", "serv
 const VITE_ENTRY = join(REPOSITORY_ROOT, "node_modules", "vite", "bin", "vite.js");
 const ELECTRON_CLI = join(REPOSITORY_ROOT, "node_modules", "electron", "cli.js");
 
-const STABLE_CORE_PORT = 4517;
 const DEV_CORE_PORT = 4518;
 const WEB_PORT = 5173;
 const DEV_SYNC_PORT = 4519;
-const STABLE_CORE_URL = `http://127.0.0.1:${STABLE_CORE_PORT}/`;
 const DEV_CORE_URL = `http://127.0.0.1:${DEV_CORE_PORT}/`;
 const DEV_URL = `http://127.0.0.1:${WEB_PORT}/`;
 const READY_TIMEOUT_MS = 30_000;
@@ -143,7 +145,11 @@ export function createDevelopmentEnvironment(
   machineName = hostname(),
   environment: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
-  const stateDirectory = join(homeDirectory, ".cinba", "dev");
+  const config = createDevelopmentCoreConfig(REPOSITORY_ROOT, {
+    homeDirectory,
+    machineName,
+    environment,
+  });
   const {
     EXA_API_KEY: _exaApiKey,
     BRAVE_SEARCH_API_KEY: _braveSearchApiKey,
@@ -152,12 +158,12 @@ export function createDevelopmentEnvironment(
   return {
     ...devEnvironment,
     CINBA_CORE_LIFETIME: "persistent",
-    CINBA_DEFAULT_CORE_NAME: `${machineName} Dev`,
+    CINBA_DEFAULT_CORE_NAME: config.defaultCoreName,
     CINBA_PORT: String(DEV_CORE_PORT),
-    CINBA_STATE_DIR: stateDirectory,
+    CINBA_STATE_DIR: config.stateDirectory,
     CINBA_SYNC_SETTINGS_SOURCE: "sync",
     CINBA_SYNC_CREDENTIAL_SOURCE: "local",
-    PI_CODING_AGENT_DIR: join(stateDirectory, "pi-agent"),
+    PI_CODING_AGENT_DIR: config.piAgentDirectory,
   };
 }
 
@@ -165,13 +171,7 @@ export function createSyncDevelopmentEnvironment(
   homeDirectory = homedir(),
   environment: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
-  return {
-    ...environment,
-    CINBA_SYNC_HOST: "127.0.0.1",
-    CINBA_SYNC_PORT: String(DEV_SYNC_PORT),
-    CINBA_SYNC_PUBLIC_ORIGIN: `http://127.0.0.1:${DEV_SYNC_PORT}`,
-    CINBA_SYNC_STATE_DIR: join(homeDirectory, ".cinba-sync", "dev"),
-  };
+  return createDevelopmentSyncEnvironment({ homeDirectory, environment });
 }
 
 export async function launchSyncDevelopment(): Promise<void> {
@@ -257,9 +257,9 @@ export async function launchWeb(): Promise<void> {
     await runToCompletion([VITE_ENTRY, "build"], WEB_ROOT);
 
     console.log("[launcher] Ensuring the shared local Core is running...");
-    await ensureLocalCore();
-    await openBrowser(STABLE_CORE_URL);
-    console.log(`[launcher] Cinba is ready at ${STABLE_CORE_URL}`);
+    await ensureLocalCore({ config: createDevelopmentCoreConfig(REPOSITORY_ROOT) });
+    await openBrowser(DEV_CORE_URL);
+    console.log(`[launcher] Cinba Dev is ready at ${DEV_CORE_URL}`);
   });
 }
 
@@ -296,14 +296,21 @@ export async function launchDevelopment(): Promise<void> {
 
 export async function launchTui(workingDirectory: string | undefined): Promise<void> {
   await withLaunchLifecycle(async () => {
-    if (!process.env.CINBA_SERVER) {
+    const server = process.env.CINBA_SERVER;
+    if (!server) {
       console.log("[launcher] Ensuring the shared local Core is running...");
-      await ensureLocalCore();
+      await ensureLocalCore({ config: createDevelopmentCoreConfig(REPOSITORY_ROOT) });
     }
 
     const cwd = workingDirectory ? join(workingDirectory) : process.cwd();
-    console.log(`[launcher] Cinba terminal, working in: ${cwd}`);
-    const code = await waitForExit(run([TUI_ENTRY], { cwd, managed: false }));
+    console.log(`[launcher] Cinba Dev terminal, working in: ${cwd}`);
+    const code = await waitForExit(
+      run([TUI_ENTRY], {
+        cwd,
+        managed: false,
+        env: { ...process.env, CINBA_SERVER: server ?? "ws://127.0.0.1:4518/ws" },
+      }),
+    );
     if (code !== 0) {
       throw new Error(`Cinba terminal exited with code ${code}`);
     }

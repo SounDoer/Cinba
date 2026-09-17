@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { BrowserWindow, WebContentsView, shell } from "electron";
-import { ensureLocalCore } from "@cinba/core-manager";
+import { type LocalCoreConfig, ensureLocalCore } from "@cinba/core-manager";
 import { type CoreNavigatorState, createCoreNavigator } from "./core-navigator.ts";
 import type { ConnectionTestResult, DesktopShellState, ProfileInput } from "./desktop-api.ts";
 import { decideCoreNavigation } from "./navigation-policy.ts";
@@ -60,7 +60,10 @@ export type DesktopWindowController = {
 };
 
 /** Own the native shell and its isolated Core content view. */
-export function createDesktopWindowController(profiles: CoreProfileStore): DesktopWindowController {
+export function createDesktopWindowController(
+  profiles: CoreProfileStore,
+  localConfig?: LocalCoreConfig,
+): DesktopWindowController {
   let window: BrowserWindow | undefined;
   let manager: BrowserWindow | undefined;
   let coreView: WebContentsView | undefined;
@@ -70,7 +73,7 @@ export function createDesktopWindowController(profiles: CoreProfileStore): Deskt
 
   const navigator = createCoreNavigator({
     ensureLocal: async () => {
-      await ensureLocalCore();
+      await ensureLocalCore(localConfig ? { config: localConfig } : undefined);
     },
     probe: async (baseUrl) => Boolean(await probeCore(baseUrl)),
     load: async (baseUrl) => {
@@ -123,7 +126,7 @@ export function createDesktopWindowController(profiles: CoreProfileStore): Deskt
       return;
     }
     coreView.setVisible(state.type === "online");
-    window.setTitle(`Cinba — ${state.profile.label}`);
+    window.setTitle(`Cinba Dev — ${state.profile.label}`);
     broadcast();
   }
 
@@ -188,7 +191,7 @@ export function createDesktopWindowController(profiles: CoreProfileStore): Deskt
     window = new BrowserWindow({
       width: 980,
       height: 760,
-      title: "Cinba",
+      title: "Cinba Dev",
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
@@ -250,7 +253,7 @@ export function createDesktopWindowController(profiles: CoreProfileStore): Deskt
     manager = new BrowserWindow({
       width: 760,
       height: 720,
-      title: "Manage Connections — Cinba",
+      title: "Manage Connections — Cinba Dev",
       parent: window,
       webPreferences: {
         contextIsolation: true,

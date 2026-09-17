@@ -10,7 +10,8 @@
     "start": "electron ."
   },
   "dependencies": {
-    "@cinba/core-manager": "*"
+    "@cinba/core-manager": "*",
+    "@cinba/product-runtime": "*"
   },
   "devDependencies": {
     "electron": "^44.2.0",

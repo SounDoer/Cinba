@@ -7,5 +7,6 @@ export {
   runProductCli,
 } from "./cli.ts";
 export type { ProductCommand } from "./cli.ts";
+export { createDevelopmentCoreConfig, createDevelopmentSyncEnvironment } from "./development.ts";
 export { parseProductRelease, readProductRelease } from "./release.ts";
 export type { ProductRelease } from "./release.ts";

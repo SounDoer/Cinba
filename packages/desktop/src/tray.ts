@@ -1,6 +1,6 @@
 import {
+  type LocalCoreConfig,
   type LocalCoreStatus,
-  createLocalCoreConfig,
   ensureLocalCore,
   normalizeLocalCoreLifetime,
   stopLocalCore,
@@ -108,7 +108,7 @@ export function createTrayViewModel(
   if (operation) {
     const action = operation === "starting" ? "starting" : "stopping";
     return {
-      tooltip: `Cinba Local Core: ${action}`,
+      tooltip: `Cinba Dev Local Core: ${action}`,
       iconTone: error ? "error" : "busy",
       statusLabel: `Local Core: ${action}`,
       detailLabels,
@@ -119,7 +119,7 @@ export function createTrayViewModel(
 
   if (!status.running) {
     return {
-      tooltip: error ? "Cinba Local Core: status error" : "Cinba Local Core: stopped",
+      tooltip: error ? "Cinba Dev Local Core: status error" : "Cinba Dev Local Core: stopped",
       iconTone: error ? "error" : "stopped",
       statusLabel: "Local Core: stopped",
       detailLabels,
@@ -141,7 +141,7 @@ export function createTrayViewModel(
     iconTone = "error";
   }
   return {
-    tooltip: error ? "Cinba Local Core: status error" : `Cinba Local Core: ${state}`,
+    tooltip: error ? "Cinba Dev Local Core: status error" : `Cinba Dev Local Core: ${state}`,
     iconTone,
     statusLabel: `Local Core: ${state}`,
     detailLabels,
@@ -160,6 +160,7 @@ export async function createSystemTrayController(options: {
   openManager: () => Promise<void>;
   profiles: CoreProfileStore;
   currentProfileId: () => string;
+  localConfig?: LocalCoreConfig;
 }): Promise<SystemTrayController> {
   const { Menu, Tray, app, nativeImage, shell } = await import("electron");
   let status = STOPPED;
@@ -190,7 +191,7 @@ export async function createSystemTrayController(options: {
     tray.setToolTip(view.tooltip);
     tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: "Open Cinba", enabled: !operation, click: () => void openWindow() },
+        { label: "Open Cinba Dev", enabled: !operation, click: () => void openWindow() },
         {
           label: "Open Core",
           submenu: createCoreMenuItems(options.profiles.list(), options.currentProfileId()).map(
@@ -219,7 +220,7 @@ export async function createSystemTrayController(options: {
           click: () => void refreshStatus(),
         },
         { label: "Open Local Core Log", click: () => void openCoreLog() },
-        { label: "Quit Desktop", click: () => app.quit() },
+        { label: "Quit Cinba Dev", click: () => app.quit() },
       ]),
     );
   }
@@ -230,7 +231,9 @@ export async function createSystemTrayController(options: {
     }
     refreshInFlight = true;
     try {
-      status = await normalizeLocalCoreLifetime();
+      status = await normalizeLocalCoreLifetime(
+        options.localConfig ? { config: options.localConfig } : undefined,
+      );
       recentError = undefined;
     } catch (error) {
       recentError = errorMessage(error);
@@ -261,16 +264,23 @@ export async function createSystemTrayController(options: {
   }
 
   async function startCore(): Promise<void> {
-    await runOperation("starting", ensureLocalCore);
+    await runOperation("starting", () =>
+      ensureLocalCore(options.localConfig ? { config: options.localConfig } : undefined),
+    );
   }
 
   async function stopCore(): Promise<void> {
-    await runOperation("stopping", stopLocalCore);
+    await runOperation("stopping", () =>
+      stopLocalCore(options.localConfig ? { config: options.localConfig } : undefined),
+    );
   }
 
   async function openCoreLog(): Promise<void> {
     try {
-      const result = await shell.openPath(createLocalCoreConfig().logPath);
+      if (!options.localConfig) {
+        throw new Error("Local Core configuration is unavailable");
+      }
+      const result = await shell.openPath(options.localConfig.logPath);
       if (result) {
         recentError = result;
         render();

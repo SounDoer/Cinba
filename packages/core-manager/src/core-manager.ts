@@ -88,6 +88,10 @@ export function createCoreProcessEnvironment(
 ): NodeJS.ProcessEnv {
   const stableEnvironment = { ...environment };
   delete stableEnvironment.CINBA_DEFAULT_CORE_NAME;
+  const port = new URL(config.baseUrl).port;
+  if (!port) {
+    throw new Error("The local Core URL must contain an explicit port");
+  }
   return {
     ...stableEnvironment,
     // process.execPath is electron.exe when Desktop calls the manager. Without
@@ -96,9 +100,10 @@ export function createCoreProcessEnvironment(
     CINBA_CORE_LIFETIME: "on-demand",
     CINBA_REVISION: revision,
     CINBA_LOCAL_CONTROL_TOKEN: controlToken,
-    CINBA_PORT: "4517",
+    CINBA_PORT: port,
     CINBA_STATE_DIR: config.stateDirectory,
     PI_CODING_AGENT_DIR: config.piAgentDirectory,
+    ...(config.defaultCoreName ? { CINBA_DEFAULT_CORE_NAME: config.defaultCoreName } : {}),
   };
 }
 
