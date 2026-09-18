@@ -43,6 +43,7 @@ export type ProductPaths = {
   logDirectory: string;
   launcherDirectory: string;
   launcherPath: string;
+  desktopApplicationPath: string | null;
 };
 
 export type ResolveProductPathsOptions = {
@@ -106,6 +107,11 @@ function windowsPaths(
     logDirectory: win32.join(productRoot, "Logs"),
     launcherDirectory,
     launcherPath: win32.join(launcherDirectory, `${definition.launcherName}.exe`),
+    desktopApplicationPath: win32.join(
+      programDirectory,
+      "desktop",
+      `${definition.displayName}.exe`,
+    ),
   };
 }
 
@@ -139,6 +145,11 @@ function macosPaths(homeDirectory: string, identity: ProductIdentity): ProductPa
     logDirectory: posix.join(homeDirectory, "Library", "Logs", definition.applicationId),
     launcherDirectory,
     launcherPath: posix.join(launcherDirectory, definition.launcherName),
+    desktopApplicationPath: posix.join(
+      homeDirectory,
+      "Applications",
+      `${definition.displayName}.app`,
+    ),
   };
 }
 
@@ -196,6 +207,7 @@ function linuxPaths(
     logDirectory: posix.join(stateDirectory, "logs"),
     launcherDirectory,
     launcherPath: posix.join(launcherDirectory, definition.launcherName),
+    desktopApplicationPath: null,
   };
 }
 

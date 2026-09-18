@@ -13,6 +13,7 @@ test("resolves the Windows per-user program and data boundaries", () => {
   assert.equal(paths.dataDirectory, "C:\\Users\\Ada\\AppData\\Local\\Cinba\\Data");
   assert.equal(paths.syncDataDirectory, `${paths.dataDirectory}\\Sync`);
   assert.equal(paths.launcherPath, `${paths.programDirectory}\\bin\\cinba.exe`);
+  assert.equal(paths.desktopApplicationPath, `${paths.programDirectory}\\desktop\\Cinba.exe`);
   assert.equal(paths.currentPointerDirectory, paths.programDirectory);
   assert.equal(paths.applicationId, "com.soundoer.cinba");
 });
@@ -28,6 +29,7 @@ test("resolves the macOS app, support, cache, log, and launcher boundaries", () 
   assert.equal(paths.cacheDirectory, "/Users/ada/Library/Caches/com.soundoer.cinba");
   assert.equal(paths.logDirectory, "/Users/ada/Library/Logs/com.soundoer.cinba");
   assert.equal(paths.launcherPath, "/Users/ada/.local/bin/cinba");
+  assert.equal(paths.desktopApplicationPath, "/Users/ada/Applications/Cinba.app");
   assert.equal(
     paths.currentPointerDirectory,
     "/Users/ada/Library/Application Support/com.soundoer.cinba/Installer",
@@ -43,6 +45,7 @@ test("resolves Linux defaults and absolute XDG overrides", () => {
   assert.equal(defaults.stateDirectory, "/home/ada/.local/state/cinba");
   assert.equal(defaults.cacheDirectory, "/home/ada/.cache/cinba");
   assert.equal(defaults.launcherPath, "/home/ada/.local/bin/cinba");
+  assert.equal(defaults.desktopApplicationPath, null);
   assert.equal(defaults.currentPointerDirectory, defaults.programDirectory);
 
   const overridden = resolveProductPaths({
@@ -97,6 +100,9 @@ test("keeps release and development identities fully separate", () => {
     });
     for (const key of Object.keys(release) as Array<keyof typeof release>) {
       if (key === "identity" || key === "launcherDirectory") {
+        continue;
+      }
+      if (release[key] === null && development[key] === null) {
         continue;
       }
       assert.notEqual(release[key], development[key], `${platform} ${key} must be isolated`);
