@@ -17,7 +17,8 @@ export {
   checkForProductUpdatesAutomatically,
   toAutomaticUpdateViewModel,
 } from "./automatic-update.ts";
-export type { AutomaticUpdateViewModel } from "./automatic-update.ts";
+export type { ProductUpdateViewModel } from "./automatic-update.ts";
+export { resolveProductPaths } from "@cinba/installer";
 export {
   formatProductComponentMode,
   inspectProductComponentMode,

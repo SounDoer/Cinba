@@ -50,6 +50,7 @@ export async function prepareProductUpdate(options: {
   discover?: typeof discoverCinbaUpdate;
   download?: typeof downloadUpdateCandidate;
   lease?: ProductUpdateLease;
+  onStateChange?: (state: UpdateState) => void;
 }): Promise<UpdateState> {
   if (options.lease && options.lease.stateDirectory !== resolve(options.stateDirectory)) {
     throw new Error("update lease does not belong to this state directory");
@@ -78,10 +79,9 @@ export async function prepareProductUpdate(options: {
         return existing;
       }
     }
-    await writeUpdateState(
-      options.stateDirectory,
-      state("checking", options.currentVersion, checkedAt, null),
-    );
+    const checking = state("checking", options.currentVersion, checkedAt, null);
+    await writeUpdateState(options.stateDirectory, checking);
+    options.onStateChange?.(checking);
     const update = await (options.discover ?? discoverCinbaUpdate)({
       currentVersion: options.currentVersion,
       currentRevision: options.currentRevision,
@@ -92,14 +92,14 @@ export async function prepareProductUpdate(options: {
     if (update.state === "current") {
       const current = state("current", options.currentVersion, checkedAt, null);
       await writeUpdateState(options.stateDirectory, current);
+      options.onStateChange?.(current);
       return current;
     }
     operation = "download";
     candidate = candidateFrom(update);
-    await writeUpdateState(
-      options.stateDirectory,
-      state("downloading", options.currentVersion, checkedAt, candidate),
-    );
+    const downloading = state("downloading", options.currentVersion, checkedAt, candidate);
+    await writeUpdateState(options.stateDirectory, downloading);
+    options.onStateChange?.(downloading);
     const downloaded: DownloadedUpdate = await (options.download ?? downloadUpdateCandidate)({
       update,
       cacheDirectory: options.cacheDirectory,
@@ -109,13 +109,13 @@ export async function prepareProductUpdate(options: {
     candidate = { ...candidate, artifactPath: downloaded.artifactPath };
     const ready = state("ready", options.currentVersion, checkedAt, candidate);
     await writeUpdateState(options.stateDirectory, ready);
+    options.onStateChange?.(ready);
     return ready;
   } catch (error) {
     const failure = operation === "discovery" ? "discovery-failed" : "download-failed";
-    await writeUpdateState(
-      options.stateDirectory,
-      state("failed", options.currentVersion, checkedAt, candidate, failure),
-    );
+    const failed = state("failed", options.currentVersion, checkedAt, candidate, failure);
+    await writeUpdateState(options.stateDirectory, failed);
+    options.onStateChange?.(failed);
     throw error;
   } finally {
     if (ownsLease) {

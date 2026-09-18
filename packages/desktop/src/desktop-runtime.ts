@@ -1,4 +1,9 @@
 import { dirname, isAbsolute, resolve } from "node:path";
+import {
+  type ProductRelease,
+  type ProductUpdateViewModel,
+  checkForProductUpdatesAutomatically,
+} from "@cinba/product-runtime";
 
 export type DesktopRuntime =
   | {
@@ -13,6 +18,34 @@ export type DesktopRuntime =
       applicationId: "com.soundoer.cinba";
       payloadRoot: string;
     };
+
+type DesktopAutomaticUpdateOptions =
+  | { runtime: { identity: "development" } }
+  | {
+      runtime: { identity: "release" };
+      release: ProductRelease;
+      paths: { stateDirectory: string; cacheDirectory: string };
+      onUpdate: (update: ProductUpdateViewModel) => void;
+    };
+
+type AutomaticUpdateCheck = typeof checkForProductUpdatesAutomatically;
+
+export function startDesktopAutomaticUpdate(
+  options: DesktopAutomaticUpdateOptions,
+  check: AutomaticUpdateCheck = checkForProductUpdatesAutomatically,
+): { abort(): void } | undefined {
+  if (!("release" in options)) {
+    return undefined;
+  }
+  const controller = new AbortController();
+  void check({
+    release: options.release,
+    paths: options.paths,
+    signal: controller.signal,
+    onUpdate: options.onUpdate,
+  }).catch(() => undefined);
+  return { abort: () => controller.abort() };
+}
 
 export function resolveDesktopRuntime(options: {
   packaged: boolean;

@@ -1,6 +1,7 @@
 // Keep application bootstrap separate from the tray and window surfaces so
 // either can evolve without turning the Electron entry point into a controller.
 
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type IpcMainInvokeEvent, app, ipcMain } from "electron";
@@ -8,15 +9,17 @@ import {
   createDevelopmentCoreConfig,
   createProductCoreConfig,
   readProductRelease,
+  resolveProductPaths,
 } from "@cinba/product-runtime";
 import type { ProfileInput } from "./desktop-api.ts";
-import { resolveDesktopRuntime } from "./desktop-runtime.ts";
+import { resolveDesktopRuntime, startDesktopAutomaticUpdate } from "./desktop-runtime.ts";
 import { createCoreProfileStore } from "./profile-store.ts";
 import { type SystemTrayController, createSystemTrayController } from "./tray.ts";
 import { type DesktopWindowController, createDesktopWindowController } from "./window.ts";
 
 let tray: SystemTrayController | undefined;
 let removeIpcHandlers: (() => void) | undefined;
+let automaticUpdate: { abort(): void } | undefined;
 let openWhenReady = true;
 const runtime = resolveDesktopRuntime({
   packaged: app.isPackaged,
@@ -143,6 +146,25 @@ if (!hasSingleInstanceLock) {
         productName: runtime.displayName,
         ...(release ? { expectedRevision: release.revision } : {}),
       });
+      if (runtime.identity === "release" && release) {
+        const platform = process.platform;
+        if (platform !== "win32" && platform !== "darwin" && platform !== "linux") {
+          throw new Error(`Cinba is not available on ${platform}`);
+        }
+        automaticUpdate = startDesktopAutomaticUpdate({
+          runtime,
+          release,
+          paths: resolveProductPaths({
+            platform,
+            homeDirectory: homedir(),
+            environment: process.env,
+          }),
+          onUpdate: (update) => {
+            window.setUpdate(update);
+            tray?.setUpdate(update);
+          },
+        });
+      }
       if (openWhenReady) {
         await tray.openWindow();
       }
@@ -155,6 +177,7 @@ if (!hasSingleInstanceLock) {
 
 app.on("window-all-closed", () => {});
 app.on("will-quit", () => {
+  automaticUpdate?.abort();
   removeIpcHandlers?.();
   tray?.dispose();
 });

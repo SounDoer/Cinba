@@ -104,6 +104,47 @@ test("an error is shown without discarding the last known status", () => {
   assert.deepEqual(view.detailLabels, ["Error: request timed out"]);
 });
 
+test("release tray exposes update progress as informational labels", () => {
+  const stopped = { state: "stopped" as const, running: false, managed: false };
+
+  assert.equal(
+    createTrayViewModel(stopped, undefined, undefined, "Cinba", { phase: "checking" }).updateLabel,
+    "Checking for Updates",
+  );
+  assert.equal(
+    createTrayViewModel(stopped, undefined, undefined, "Cinba", { phase: "downloading" })
+      .updateLabel,
+    "Downloading Update",
+  );
+  assert.equal(
+    createTrayViewModel(stopped, undefined, undefined, "Cinba", {
+      phase: "ready",
+      candidateVersion: "0.2.0",
+    }).updateLabel,
+    "Update 0.2.0 Ready",
+  );
+});
+
+test("tray hides inactive and development update states", () => {
+  const stopped = { state: "stopped" as const, running: false, managed: false };
+
+  assert.equal(
+    createTrayViewModel(stopped, undefined, undefined, "Cinba", { phase: "idle" }).updateLabel,
+    undefined,
+  );
+  assert.equal(
+    createTrayViewModel(stopped, undefined, undefined, "Cinba", { phase: "current" }).updateLabel,
+    undefined,
+  );
+  assert.equal(
+    createTrayViewModel(stopped, undefined, undefined, "Cinba Dev", {
+      phase: "ready",
+      candidateVersion: "0.2.0",
+    }).updateLabel,
+    undefined,
+  );
+});
+
 test("the Open Core menu lists local and remote profiles", () => {
   assert.deepEqual(
     createCoreMenuItems(

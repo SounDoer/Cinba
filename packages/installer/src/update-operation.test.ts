@@ -40,6 +40,7 @@ test("one update operation advances through discovery and download to ready", as
   const root = await mkdtemp(join(tmpdir(), "cinba-update-operation-"));
   const artifactPath = join(root, "cache", "Cinba.exe");
   const controller = new AbortController();
+  const phases: string[] = [];
   try {
     const result = await prepareProductUpdate({
       currentVersion: "0.1.0",
@@ -49,6 +50,7 @@ test("one update operation advances through discovery and download to ready", as
       cacheDirectory: join(root, "cache"),
       now: () => new Date("2026-09-18T01:02:03Z"),
       signal: controller.signal,
+      onStateChange: (state) => phases.push(state.phase),
       discover: async (options) => {
         assert.equal(options.signal, controller.signal);
         return available();
@@ -65,6 +67,7 @@ test("one update operation advances through discovery and download to ready", as
     });
     assert.equal(result.phase, "ready");
     assert.equal(result.candidate?.artifactPath, artifactPath);
+    assert.deepEqual(phases, ["checking", "downloading", "ready"]);
     assert.deepEqual(await readUpdateState(join(root, "state")), result);
   } finally {
     await rm(root, { recursive: true, force: true });

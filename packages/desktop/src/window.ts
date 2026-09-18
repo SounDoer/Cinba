@@ -1,8 +1,14 @@
 import { fileURLToPath } from "node:url";
 import { BrowserWindow, WebContentsView, shell } from "electron";
 import { type LocalCoreConfig, ensureLocalCore } from "@cinba/core-manager";
+import type { ProductUpdateViewModel } from "@cinba/product-runtime";
 import { type CoreNavigatorState, createCoreNavigator } from "./core-navigator.ts";
-import type { ConnectionTestResult, DesktopShellState, ProfileInput } from "./desktop-api.ts";
+import {
+  type ConnectionTestResult,
+  type DesktopShellState,
+  type ProfileInput,
+  createDesktopUpdateState,
+} from "./desktop-api.ts";
 import { decideCoreNavigation } from "./navigation-policy.ts";
 import type { CoreProfileStore } from "./profile-store.ts";
 import { createRemoteCoreProfile } from "./profiles.ts";
@@ -51,6 +57,7 @@ export type DesktopWindowController = {
   retry(): Promise<void>;
   openManager(): Promise<void>;
   getState(): DesktopShellState;
+  setUpdate(update: ProductUpdateViewModel): void;
   addProfile(input: ProfileInput): Promise<void>;
   updateProfile(profileId: string, input: ProfileInput): Promise<void>;
   removeProfile(profileId: string): Promise<void>;
@@ -75,6 +82,7 @@ export function createDesktopWindowController(
   let selected = profiles.lastSelected();
   let adapterFailure: CoreNavigatorState | undefined;
   const navigation = createNavigationGuard();
+  const updateState = createDesktopUpdateState(broadcast);
 
   const navigator = createCoreNavigator({
     ensureLocal: async () => {
@@ -108,6 +116,7 @@ export function createDesktopWindowController(
       productName,
       canRecoverProfiles: profiles.canRecover(),
       ...(problem ? { problem } : {}),
+      ...(updateState.get() ? { update: updateState.get() } : {}),
     };
     return state;
   }
@@ -321,6 +330,7 @@ export function createDesktopWindowController(
     retry,
     openManager,
     getState,
+    setUpdate: updateState.set,
     addProfile,
     updateProfile,
     removeProfile,

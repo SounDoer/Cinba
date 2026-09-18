@@ -1,9 +1,10 @@
-import type { DesktopShellState } from "../desktop-api.ts";
+import { type DesktopShellState, createDesktopUpdatePresentation } from "../desktop-api.ts";
 import { desktopApi } from "./api.ts";
 import "./style.css";
 
 const profile = document.querySelector<HTMLSelectElement>("#profile")!;
 const badge = document.querySelector<HTMLElement>("#status-badge")!;
+const updatePill = document.querySelector<HTMLElement>("#update-pill")!;
 const retry = document.querySelector<HTMLButtonElement>("#retry")!;
 const manage = document.querySelector<HTMLButtonElement>("#manage")!;
 const offline = document.querySelector<HTMLElement>("#offline")!;
@@ -27,6 +28,9 @@ function render(state: DesktopShellState): void {
   );
   badge.textContent = state.status;
   badge.dataset.status = state.status;
+  const update = createDesktopUpdatePresentation(state.productName, state.update);
+  updatePill.textContent = update.label;
+  updatePill.hidden = update.hidden;
   retry.hidden = !state.canRetry;
   offline.hidden = state.status !== "offline";
   const selected = state.profiles.find((item) => item.id === state.selectedProfileId);

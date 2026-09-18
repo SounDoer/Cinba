@@ -5,6 +5,8 @@ import {
   normalizeLocalCoreLifetime,
   stopLocalCore,
 } from "@cinba/core-manager";
+import type { ProductUpdateViewModel } from "@cinba/product-runtime";
+import { createDesktopUpdatePresentation } from "./desktop-api.ts";
 import type { CoreProfile } from "./profiles.ts";
 import type { CoreProfileStore } from "./profile-store.ts";
 
@@ -21,10 +23,12 @@ export type TrayViewModel = {
   detailLabels: string[];
   canStart: boolean;
   canStop: boolean;
+  updateLabel?: string;
 };
 
 export type SystemTrayController = {
   openWindow(profileId?: string): Promise<void>;
+  setUpdate(update: ProductUpdateViewModel): void;
   dispose(): void;
 };
 
@@ -83,9 +87,12 @@ export function createTrayViewModel(
   status: LocalCoreStatus,
   operation?: TrayOperation,
   error?: string,
-  productName = "Cinba Dev",
+  productName: "Cinba" | "Cinba Dev" = "Cinba Dev",
+  update?: ProductUpdateViewModel,
 ): TrayViewModel {
   const detailLabels: string[] = [];
+  const updatePresentation = createDesktopUpdatePresentation(productName, update);
+  const updateView = updatePresentation.hidden ? {} : { updateLabel: updatePresentation.label };
   if (status.pid !== undefined) {
     detailLabels.push(`PID: ${status.pid}`);
   }
@@ -115,6 +122,7 @@ export function createTrayViewModel(
       detailLabels,
       canStart: false,
       canStop: false,
+      ...updateView,
     };
   }
 
@@ -128,6 +136,7 @@ export function createTrayViewModel(
       detailLabels,
       canStart: true,
       canStop: false,
+      ...updateView,
     };
   }
 
@@ -152,6 +161,7 @@ export function createTrayViewModel(
     detailLabels,
     canStart: false,
     canStop: status.managed && status.state !== "draining",
+    ...updateView,
   };
 }
 
@@ -174,6 +184,7 @@ export async function createSystemTrayController(options: {
   let operation: TrayOperation | undefined;
   let recentError: string | undefined;
   let refreshInFlight = false;
+  let update: ProductUpdateViewModel | undefined;
 
   function createTrayIcon(tone: TrayIconTone) {
     const icon = nativeImage.createFromBitmap(createTrayBitmap(tone), {
@@ -194,7 +205,7 @@ export async function createSystemTrayController(options: {
 
   function render(): void {
     const productName = options.productName ?? "Cinba Dev";
-    const view = createTrayViewModel(status, operation, recentError, productName);
+    const view = createTrayViewModel(status, operation, recentError, productName, update);
     tray.setImage(createTrayIcon(view.iconTone));
     tray.setToolTip(view.tooltip);
     tray.setContextMenu(
@@ -213,6 +224,7 @@ export async function createSystemTrayController(options: {
         },
         { label: "Manage Cores…", click: () => void options.openManager() },
         { type: "separator" },
+        ...(view.updateLabel ? [{ label: view.updateLabel, enabled: false }] : []),
         { label: view.statusLabel, enabled: false },
         ...view.detailLabels.map((label) => ({ label, enabled: false }) as const),
         { type: "separator" },
@@ -318,6 +330,10 @@ export async function createSystemTrayController(options: {
 
   return {
     openWindow,
+    setUpdate: (nextUpdate) => {
+      update = nextUpdate;
+      render();
+    },
     dispose: () => {
       clearInterval(refreshTimer);
       unsubscribeProfiles();
