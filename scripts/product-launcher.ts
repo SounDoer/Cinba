@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import {
   configurePosixLauncherPath,
@@ -10,6 +11,33 @@ import {
   runInstalledProductCommand,
 } from "@cinba/installer";
 import { parseStableLauncherCommand } from "./product-launcher-command.ts";
+import {
+  MACOS_INSTALL_PARENT_PROCESS_ID,
+  parseMacosInstallHandoff,
+  waitForMacosInstallerExit,
+} from "./macos-install-handoff.ts";
+
+function openMacosApplication(applicationPath: string): void {
+  const child = spawn("/usr/bin/open", [applicationPath], {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.once("error", () => {});
+  child.unref();
+}
+
+function showMacosInstallationFailure(): void {
+  const child = spawn(
+    "/usr/bin/osascript",
+    [
+      "-e",
+      'display alert "Cinba installation failed" message "Please download the installer again or inspect the installation log in Library/Logs/com.soundoer.cinba." as critical',
+    ],
+    { detached: true, stdio: "ignore" },
+  );
+  child.once("error", () => {});
+  child.unref();
+}
 
 async function run(): Promise<void> {
   const target = requireProductTarget();
@@ -24,6 +52,13 @@ async function run(): Promise<void> {
   });
   const launcherCommand = parseStableLauncherCommand(process.argv.slice(2), process.execPath);
   if (launcherCommand.type === "install") {
+    const macosHandoff = parseMacosInstallHandoff(process.env);
+    if (macosHandoff) {
+      if (platform !== "darwin") {
+        throw new Error("the macOS installer handoff is available only on macOS");
+      }
+      await waitForMacosInstallerExit(macosHandoff);
+    }
     if (platform === "linux" && typeof process.getuid === "function" && process.getuid() === 0) {
       throw new Error("Cinba must be installed as a non-root user");
     }
@@ -84,6 +119,12 @@ async function run(): Promise<void> {
         console.warn(`Add ${paths.launcherDirectory} to PATH manually.`);
       }
     }
+    if (macosHandoff) {
+      if (!paths.desktopApplicationPath) {
+        throw new Error("macOS installation paths do not include Cinba Desktop");
+      }
+      openMacosApplication(paths.desktopApplicationPath);
+    }
     return;
   }
   const command = await resolveInstalledProductCommand({
@@ -96,5 +137,8 @@ async function run(): Promise<void> {
 
 run().catch((error: unknown) => {
   console.error(`[cinba] ${error instanceof Error ? error.message : String(error)}`);
+  if (process.platform === "darwin" && process.env[MACOS_INSTALL_PARENT_PROCESS_ID]) {
+    showMacosInstallationFailure();
+  }
   process.exitCode = 1;
 });
