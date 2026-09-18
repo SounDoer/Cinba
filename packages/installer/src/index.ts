@@ -154,6 +154,8 @@ export type {
   InstalledRelease,
 } from "./installation-store.ts";
 export { acquireInstallationLock } from "./installation-lock.ts";
+export { installReleaseBundle } from "./bundle-installation.ts";
+export type { InstallReleaseBundleOptions, PreparedStableFiles } from "./bundle-installation.ts";
 export { resolveInstalledProductCommand, runInstalledProductCommand } from "./stable-launcher.ts";
 export type { InstalledProductCommand } from "./stable-launcher.ts";
 export {
