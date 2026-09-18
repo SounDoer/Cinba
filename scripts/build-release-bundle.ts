@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -11,6 +11,7 @@ import { buildDesktopApplication } from "./build-desktop-app.ts";
 import { buildProductLauncher } from "./build-product-launcher.ts";
 import { buildProductPayload } from "./build-product-payload.ts";
 import { verifyBundleInstallation } from "./verify-bundle-installation.ts";
+import { renderBundledLinuxInstaller } from "./linux-install-scripts.ts";
 
 const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -38,6 +39,10 @@ export async function buildReleaseBundle(): Promise<string> {
       target === "macos-arm64" ? join(root, "desktop", "Cinba.app") : join(root, "desktop");
     await mkdir(dirname(desktopDestination), { recursive: true });
     await cp(desktopSource, desktopDestination, { recursive: true });
+  } else {
+    const installer = join(root, "install.sh");
+    await writeFile(installer, renderBundledLinuxInstaller(), { mode: 0o755 });
+    await chmod(installer, 0o755);
   }
 
   const identity = { version: payload.version, revision: payload.revision, target };
