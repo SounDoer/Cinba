@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { type ProductTarget, isProductTarget } from "./platform.ts";
 
 export type InstalledRelease = {
@@ -214,10 +214,8 @@ function requireAbsoluteLayout(layout: InstallationLayout): void {
     }
   }
   const releases = resolve(layout.releasesDirectory);
-  const program = resolve(layout.programDirectory);
-  const path = relative(program, releases);
-  if (path === "" || path === ".." || path.startsWith(`..${sep}`) || isAbsolute(path)) {
-    throw new Error("releasesDirectory must be inside programDirectory");
+  if (dirname(releases) === releases) {
+    throw new Error("releasesDirectory cannot be a filesystem root");
   }
 }
 

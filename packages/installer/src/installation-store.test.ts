@@ -103,3 +103,45 @@ test("a separate stable manager directory can own the current pointer", async ()
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("macOS release storage can live outside the application bundle", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-install-macos-layout-"));
+  const paths = {
+    programDirectory: join(root, "Applications", "Cinba.app"),
+    releasesDirectory: join(
+      root,
+      "Library",
+      "Application Support",
+      "com.soundoer.cinba",
+      "Releases",
+    ),
+    transactionDirectory: join(
+      root,
+      "Library",
+      "Application Support",
+      "com.soundoer.cinba",
+      "Installer",
+    ),
+    currentPointerDirectory: join(
+      root,
+      "Library",
+      "Application Support",
+      "com.soundoer.cinba",
+      "Installer",
+    ),
+  } satisfies InstallationLayout;
+  const release = {
+    version: "1.2.3",
+    revision: REVISION,
+    protocolVersion: 1,
+    dataFormatVersion: 1,
+    target: "macos-arm64" as const,
+    directory: REVISION,
+  };
+  try {
+    await writeCurrentRelease(paths, release);
+    assert.deepEqual(await readCurrentRelease(paths), release);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

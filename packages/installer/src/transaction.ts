@@ -179,10 +179,10 @@ export async function stageCandidate(
   }
   const release = resolve(options.sourceDirectory);
   if (
-    release === resolve(options.layout.programDirectory) ||
-    isInside(options.layout.programDirectory, release)
+    release === resolve(options.layout.releasesDirectory) ||
+    isInside(options.layout.releasesDirectory, release)
   ) {
-    throw new Error("candidate sourceDirectory must be outside the managed program directory");
+    throw new Error("candidate sourceDirectory must be outside the managed releases directory");
   }
   const unlock = await acquireInstallationLock(options.layout);
   const now = options.now ?? (() => new Date());

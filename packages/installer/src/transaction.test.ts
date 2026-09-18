@@ -92,6 +92,45 @@ test("a verified candidate stages without changing the current release", async (
   }
 });
 
+test("a bundled macOS candidate may stage from inside the application directory", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-stage-macos-bundle-"));
+  const paths = {
+    ...layout(root),
+    releasesDirectory: join(root, "state", "releases"),
+  };
+  try {
+    const source = await artifact(paths.programDirectory, "embedded", "1.0.0", OLD_REVISION);
+    const transaction = await stageCandidate({
+      sourceDirectory: source,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: FIRST_ID,
+    });
+    assert.equal(transaction.phase, "ready");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a candidate cannot stage recursively from managed release storage", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-stage-managed-release-"));
+  const paths = layout(root);
+  try {
+    const source = await artifact(paths.releasesDirectory, "embedded", "1.0.0", OLD_REVISION);
+    await assert.rejects(
+      stageCandidate({
+        sourceDirectory: source,
+        layout: paths,
+        expectedTarget: "windows-x64",
+        transactionId: FIRST_ID,
+      }),
+      /candidate sourceDirectory must be outside the managed releases directory/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("a damaged candidate never changes current", async () => {
   const root = await mkdtemp(join(tmpdir(), "cinba-stage-damaged-"));
   const paths = layout(root);
