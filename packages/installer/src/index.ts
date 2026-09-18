@@ -159,6 +159,10 @@ export type { InstallReleaseBundleOptions, PreparedStableFiles } from "./bundle-
 export { prepareStableProductFiles, recoverStableProductFiles } from "./stable-files.ts";
 export type { StableFileInstallMode } from "./stable-files.ts";
 export { installProductBundle, verifyInstalledProductRelease } from "./product-installation.ts";
+export { configurePosixLauncherPath, removePosixLauncherPathBlock } from "./shell-path.ts";
+export type { PosixPathConfiguration } from "./shell-path.ts";
+export { configureWindowsUserPath, removeWindowsUserPath } from "./windows-path.ts";
+export type { PowerShellPathResult, RunPathPowerShell } from "./windows-path.ts";
 export { resolveInstalledProductCommand, runInstalledProductCommand } from "./stable-launcher.ts";
 export type { InstalledProductCommand } from "./stable-launcher.ts";
 export {
