@@ -154,6 +154,8 @@ export type {
   InstalledRelease,
 } from "./installation-store.ts";
 export { acquireInstallationLock } from "./installation-lock.ts";
+export { resolveInstalledProductCommand, runInstalledProductCommand } from "./stable-launcher.ts";
+export type { InstalledProductCommand } from "./stable-launcher.ts";
 export {
   activateCandidate,
   recoverInterruptedInstallation,
