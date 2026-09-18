@@ -42,6 +42,7 @@
     "build:launcher": "node scripts/build-product-launcher.ts",
     "build:bundle": "npm run build && node scripts/build-release-bundle.ts",
     "build:linux-artifact": "npm run build && node scripts/build-linux-artifact.ts",
+    "build:windows-artifact": "npm run build && node scripts/build-windows-artifact.ts",
     "verify:payload": "node scripts/verify-product-payload.ts",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e && npm run build"
   },
