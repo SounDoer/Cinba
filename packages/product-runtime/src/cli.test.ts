@@ -15,6 +15,7 @@ test("the installed command defaults to the TUI and keeps management explicit", 
     action: "start",
   });
   assert.deepEqual(parseProductCommand(["--version"], project), { type: "version" });
+  assert.deepEqual(parseProductCommand(["doctor"], project), { type: "doctor" });
   assert.deepEqual(parseProductCommand(["service", "core"], project), {
     type: "service",
     component: "core",

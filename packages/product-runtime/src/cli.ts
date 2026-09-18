@@ -10,6 +10,7 @@ import {
 } from "@cinba/core-manager";
 import { type ServiceMode, requireProductTarget, resolveProductPaths } from "@cinba/installer";
 import { resolveProductPayloadLayout } from "./layout.ts";
+import { formatInstalledDoctorReport, runInstalledDoctor } from "./doctor.ts";
 import {
   formatProductComponentMode,
   inspectProductComponentMode,
@@ -23,6 +24,7 @@ export type ProductCommand =
   | { type: "sync"; action: "serve" }
   | { type: "component-mode"; component: ProductServiceComponent; mode: ServiceMode | null }
   | { type: "service"; component: ProductServiceComponent }
+  | { type: "doctor" }
   | { type: "version" }
   | { type: "help" };
 
@@ -44,6 +46,7 @@ Usage:
   cinba core mode [on-demand|background]
   cinba sync serve
   cinba sync mode [disabled|on-demand|background]
+  cinba doctor
   cinba version
   cinba help
 
@@ -52,6 +55,7 @@ Commands:
   core      Inspect, start, or gracefully stop the local Core
   sync      Run Cinba Sync in the foreground
   mode      Inspect or change a component's lifecycle mode
+  doctor    Verify the installed release, runtime, and services
   version   Show the installed product version and revision
   help      Show this help
 
@@ -81,6 +85,9 @@ export function parseProductCommand(
     (arguments_[0] === "version" || arguments_[0] === "--version" || arguments_[0] === "-v")
   ) {
     return { type: "version" };
+  }
+  if (arguments_.length === 1 && arguments_[0] === "doctor") {
+    return { type: "doctor" };
   }
   if (arguments_[0] === "tui" && arguments_.length <= 2) {
     return {
@@ -303,6 +310,14 @@ export async function runProductCli(
   }
   if (command.type === "version") {
     console.log(`Cinba ${release.version} (${release.revision})`);
+    return;
+  }
+  if (command.type === "doctor") {
+    const report = await runInstalledDoctor(payload.root);
+    console.log(formatInstalledDoctorReport(report));
+    if (!report.healthy) {
+      process.exitCode = 1;
+    }
     return;
   }
 

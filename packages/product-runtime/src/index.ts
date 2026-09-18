@@ -14,6 +14,17 @@ export {
   setProductComponentMode,
 } from "./managed-services.ts";
 export type { ProductManagedServiceOptions } from "./managed-services.ts";
+export {
+  diagnoseInstalledProduct,
+  formatInstalledDoctorReport,
+  runInstalledDoctor,
+} from "./doctor.ts";
+export type {
+  InstalledDiagnostic,
+  InstalledDiagnosticLevel,
+  InstalledDoctorEvidence,
+  InstalledDoctorReport,
+} from "./doctor.ts";
 export { createDevelopmentCoreConfig, createDevelopmentSyncEnvironment } from "./development.ts";
 export { parseProductRelease, readProductRelease } from "./release.ts";
 export type { ProductRelease } from "./release.ts";
