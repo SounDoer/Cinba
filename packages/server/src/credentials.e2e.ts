@@ -77,16 +77,19 @@ async function modelsOf(provider: string): Promise<Model[]> {
 
 before(async () => {
   home = mkdtempSync(join(tmpdir(), "cinba-e2e-"));
+  const project = join(home, "project");
   mkdirSync(join(home, ".pi", "agent"), { recursive: true });
   mkdirSync(join(home, ".cinba"), { recursive: true });
+  mkdirSync(join(project, ".agents", "skills", "e2e-fixture"), { recursive: true });
   // No credentials at all, which is where a fresh machine starts.
   writeFileSync(join(home, ".pi", "agent", "auth.json"), "{}", "utf8");
-  // Open this repository so the real project-skill bridge is exercised too.
+  // Give this isolated project one skill so the real project-skill bridge is exercised too.
   writeFileSync(
-    join(home, ".cinba", "config.json"),
-    JSON.stringify({ cwd: process.cwd() }),
+    join(project, ".agents", "skills", "e2e-fixture", "SKILL.md"),
+    "---\nname: e2e-fixture\ndescription: Credential test fixture.\n---\n",
     "utf8",
   );
+  writeFileSync(join(home, ".cinba", "config.json"), JSON.stringify({ cwd: project }), "utf8");
 
   server = spawn(process.execPath, ["--experimental-strip-types", "packages/server/src/index.ts"], {
     // The whole home directory rather than PI_CODING_AGENT_DIR, which is what
@@ -133,14 +136,14 @@ before(async () => {
     arrived?.();
   });
 
-  // This repository deliberately contains a project-local skill. The real
+  // The isolated project deliberately contains a project-local skill. The real
   // client must answer the same pre-start trust question a person sees.
   const trust = await nextOfType("project_trust_requested");
   send({ type: "respond_project_trust", requestId: trust.requestId, trusted: true });
   await nextOfType("session_opened");
   const skillListing = await nextOfType("skill_listing");
   assert.equal(
-    (skillListing.skills as { name: string }[]).some((skill) => skill.name === "skill:cinba-prod"),
+    (skillListing.skills as { name: string }[]).some((skill) => skill.name === "skill:e2e-fixture"),
     true,
     "the trusted project skill should be exposed through the real Pi process",
   );

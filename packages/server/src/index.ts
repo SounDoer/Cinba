@@ -27,7 +27,6 @@ import { createWebToolsCredentialStore } from "@cinba/extensions/src/web-tools/c
 import { IDLE_TIMEOUT_MS, assessIdle, canStopNow } from "./reclaim.ts";
 import { createLocalStateStore } from "./config.ts";
 import { createCredentialService } from "./credential-service.ts";
-import { createDeploymentStatusHandler } from "./deployment-status.ts";
 import { listDirectories } from "./directory-browser.ts";
 import {
   DRAIN_TIMEOUT_MS,
@@ -347,9 +346,6 @@ const serveHealth = createHealthHandler({
   revision: REVISION,
   safeToRestart,
 });
-const serveDeploymentStatus = createDeploymentStatusHandler({
-  statusPath: join(STATE_DIRECTORY, "deployment.json"),
-});
 const serveLocalCoreControl = createLocalCoreControlHandler({
   lifetime: () => coreLifetime,
   token: process.env.CINBA_LOCAL_CONTROL_TOKEN,
@@ -514,9 +510,6 @@ async function serveHttp(request: IncomingMessage, response: ServerResponse): Pr
     return;
   }
   if (await serveCoreSyncControl(request, response)) {
-    return;
-  }
-  if (await serveDeploymentStatus(request, response)) {
     return;
   }
   await serveStatic(request, response);

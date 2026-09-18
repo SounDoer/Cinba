@@ -1,9 +1,0 @@
-[Unit]
-Description=Deploy the latest approved Cinba release
-
-[Service]
-Type=oneshot
-WorkingDirectory=%h/current
-Environment=PATH=%h/.local/node/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=%h/.local/node/bin/node %h/current/packages/deploy/src/locked-deployment.ts
-TimeoutStartSec=30min

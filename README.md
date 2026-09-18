@@ -1,254 +1,181 @@
 # Cinba
 
-Cinba is a personal AI coding agent client built on [pi.dev](https://pi.dev/). It keeps one Core
-service as the source of truth while Web and terminal clients connect to it through the same
-protocol.
+Cinba is a personal AI coding agent built on [pi.dev](https://pi.dev/). One Core owns the agent
+state while Desktop, Web, and terminal clients connect through the same protocol.
 
-The project is also a learning exercise: its layers stay deliberately visible so the agent loop,
-tool calls, permission decisions, sessions, credentials, and remote deployment can be understood
-rather than hidden behind a framework.
+Cinba is personal, experimental software. Release artifacts are intentionally unsigned. Windows
+SmartScreen and macOS Gatekeeper may therefore require an explicit user decision before the first
+launch.
 
-## Current status
+## Install Cinba
 
-Cinba is personal, experimental software. The local Windows and macOS workflows and the private
-VPS workflow are usable today. The first real deployment through Tailscale, Caddy, and systemd has
-been completed and verified from an iPhone and the VPS terminal.
+Formal builds are distributed only through this repository's
+[GitHub Releases](https://github.com/SounDoer/Cinba/releases). Each published release contains the
+exact Windows, macOS, and Linux artifacts, `cinba-release.json`, `SHA256SUMS`, and bilingual
+installation notes. If no release is listed yet, no formal Cinba build has been published.
 
-Available now:
+### Windows Desktop
 
-- Web and terminal interfaces backed by one Core;
-- multiple conversations with switching, naming, deletion, and message editing;
-- provider credential management and model switching;
-- streamed text, reasoning, tool cards, token usage, and cost;
-- an always-on permission gate for tool execution;
-- Core identity display and automatic Web reconnection;
-- a Windows System Tray or macOS Menu Bar controller for local Core status and controls;
-- development and production-style launchers;
-- guarded `master` to `prod` promotion and rollback-capable VPS deployment logic;
-- Tailscale-only VPS access through Caddy HTTPS, with no public Cinba port.
+Download `Cinba-X.Y.Z-windows-x64.exe` from one published release and run it. Installation is for
+the current user, requires no administrator privileges, and adds Cinba to the Start Menu and the
+current user's command path.
 
-Cinba is not designed to be exposed directly to the public internet. The deployed remote shape keeps
-the Core on loopback and places Tailscale access control and a Caddy HTTPS proxy in front of it.
+### macOS Desktop
 
-## Requirements
+Download `Cinba-X.Y.Z-macos-arm64.dmg` on an Apple Silicon Mac, open it, and run the Cinba installer
+inside. Cinba installs to `~/Applications/Cinba.app` for the current user.
 
-- Windows or macOS for the local Web, TUI, Desktop, and development workflow;
-- Node.js 24 or newer;
-- npm and Git;
-- an API key for a model provider supported by Pi.
+If Gatekeeper blocks the unsigned application, first verify that the DMG came from the selected
+GitHub Release, then run:
 
-## Quick start
+```sh
+xattr -dr com.apple.quarantine "$HOME/Applications/Cinba.app"
+```
 
-```powershell
+### Linux Headless
+
+Each published release supplies its own version-locked `install.sh` command in the release notes.
+The script installs the self-contained Linux x64 artifact for the current non-root user. It does not
+install Node.js, clone this repository, start the TUI, start Core, or create a background service.
+
+For an offline installation, copy the Linux archive and `SHA256SUMS` from the same release, verify
+the archive, extract it, and run the bundled `install.sh`.
+
+## Use an installed release
+
+The `cinba` command defaults to the TUI in the current directory:
+
+```sh
+cinba
+cinba /path/to/project
+cinba desktop
+```
+
+Desktop is available on Windows and macOS. The installed command also owns product lifecycle and
+diagnostics:
+
+```sh
+cinba version
+cinba doctor
+cinba update
+cinba core status
+cinba core start
+cinba core stop
+cinba core mode background
+cinba core mode on-demand
+cinba uninstall
+cinba uninstall --purge
+```
+
+Core starts on demand by default. Background mode is an explicit per-user choice and uses the
+platform service manager. Core and Sync have independent modes even though both reuse the same
+service-management foundation.
+
+Desktop and TUI check for updates at a low frequency, download and verify a candidate in the
+background, and ask before installation. An update waits while Core or Sync has work that cannot be
+safely interrupted. `cinba update` performs an immediate explicit check.
+
+Normal uninstall removes the program, release cache, launchers, and managed service registrations
+while preserving user data. `--purge` requires confirmation and also removes Cinba data. It never
+removes an independently owned Pi installation.
+
+## Cinba and Cinba Dev
+
+`Cinba` is an installed release. `Cinba Dev` is a local source checkout. They use separate native
+data, state, cache, log, credentials, Pi, and session directories, so development cannot silently
+modify a formal installation.
+
+To work on Cinba Dev, install Node.js 24, npm, and Git, then:
+
+```sh
 git clone https://github.com/SounDoer/Cinba.git
 cd Cinba
 npm install
-npm start
-```
-
-`npm start` builds the Web UI, ensures the Cinba Dev Core is running on `127.0.0.1:4518`, and
-opens it in the browser. The launcher can then exit: the Core stays in the background while any
-client is connected and stops safely after ten client-free minutes. On Windows, `cinba-web.cmd`
-provides the same flow as a double-click launcher.
-
-For development with an isolated Core, Core watch mode, and Vite hot reload:
-
-```powershell
 npm run dev
 ```
 
-The development UI opens on `127.0.0.1:5173`. Its Core listens on `127.0.0.1:4518`. All source
-launchers use the `Cinba Dev` identity and its native data directories, such as
-`%LOCALAPPDATA%\Cinba Dev` on Windows. Those directories are completely separate from a formal
-`Cinba` installation. The equivalent Windows launcher is `cinba-dev.cmd`.
+Useful source commands:
 
-To open the terminal client:
-
-```powershell
-npm run tui -- C:\path\to\project
+```sh
+npm start
+npm run tui -- /path/to/project
+npm run desktop
+npm run sync:dev
+npm run check
 ```
 
-You can also drag a project directory onto `cinba-tui.cmd`.
+Source development exposes `cinba-dev`, never `cinba`. To link it from other working directories:
 
-To make the source TUI available as `cinba-dev` from every PowerShell working directory, link the repository
-once through npm:
-
-```powershell
-cd C:\path\to\Cinba
+```sh
 npm link
-Get-Command cinba-dev
+cinba-dev /path/to/project
 ```
 
-Change to any project and start the terminal client:
+Remove that development link with `npm unlink --global cinba`. Source launchers all go through
+`scripts/launch.ts`; root `.cmd` files are double-click wrappers around the same development entry
+points.
 
-```powershell
-cd C:\path\to\project
-cinba-dev
-```
+## Data and network boundaries
 
-The command starts the shared local Core when necessary, then opens the TUI in the current
-directory. `cinba-dev tui [project]` is the explicit form, while `cinba-dev [project]` is a project-path
-shortcut. A Web window, Desktop window, and any other TUI reuse that same Core.
+Program releases are immutable and replaceable. User data is stored outside release directories.
+Runtime locks, process records, update candidates, logs, and caches are separate from durable
+configuration, credentials, conversations, and Pi data. This separation lets installation,
+updates, rollback, and normal uninstall operate without treating user data as program files.
 
-The global npm shim and `cinba-tui.cmd` both enter the product command parser in
-`scripts/cinba.ts`. It delegates TUI process orchestration to the importable `launchTui()` function
-in `scripts/launch.ts`; `npm run tui` reaches that same function through the launcher's developer
-command interface. The global command stays linked to this checkout, so code updates take effect
-without relinking. Remove it with `npm unlink --global cinba`. The formal `cinba` command is reserved
-for an installed release and is never created by source development.
-
-The local Core log is kept below the `Cinba Dev` native log directory. Setting `CINBA_SERVER` for
-the TUI selects an explicitly managed remote Core and does not start the local one.
-
-The same global command exposes the local Core lifecycle without opening a client:
-
-```powershell
-cinba-dev core status
-cinba-dev core start
-cinba-dev core stop
-```
-
-`status` reports whether the Core is stopped, running, or draining, plus its managed PID, lifecycle,
-connected client count, and stop safety when available. `stop` uses the Core's protected local
-control channel and existing drain behavior; it never kills a PID directly. A Core started outside
-the manager, such as the foreground development Core, is reported as `external` and is not stopped
-by this command.
-
-On Windows and macOS, the same manager is available from the Desktop controller:
-
-```powershell
-cinba-dev desktop
-```
-
-The command builds the Web UI and Desktop shell, returns after starting one background Desktop
-instance, and opens Cinba. Desktop remembers local and remote HTTPS Core profiles, reopens the last
-selection, and keeps its selector and recovery controls available when that Core is offline. Each
-Core still serves its own complete, version-matched Web UI. Windows places the controller in the
-System Tray; macOS places it in the Menu Bar.
-
-Selecting the built-in Local Core ensures that the Cinba Dev Core is running in on-demand mode;
-opening a remote Core never starts the local one. Local lifecycle controls report stopped, running,
-draining, and external states, offer graceful start and stop, and open the local log regardless of
-which Core the window shows. Closing the window or choosing `Quit Desktop` exits only the
-controller. The Local Core continues while another client or task is using it, then stops after the
-existing safe idle period. To stop it immediately, use `Stop Local Core Gracefully` before quitting.
-Double-click `cinba-desktop.cmd` on Windows or `cinba-desktop.command` on macOS for the same Desktop
-entry without typing a Terminal command.
-
-For command guidance and read-only environment diagnosis:
-
-```powershell
-cinba-dev help
-cinba-dev doctor
-cinba-dev doctor C:\path\to\project
-```
-
-`doctor` checks the Node.js runtime, linked checkout, project directory, and effective Core. A
-stopped local Core is informational because clients start it on demand. A missing project,
-unsupported runtime, incomplete checkout, or unreachable Core selected through `CINBA_SERVER`
-produces a failed result and a non-zero exit code; the command never attempts a repair.
-
-### VPS terminal command
-
-The deployed Linux release includes a small `cinba` command for the service user. Install it once
-from the active release without editing `.bashrc`:
-
-```sh
-/home/cinba/.local/node/bin/node \
-  /home/cinba/current/packages/deploy/src/install-user-launcher.ts
-```
-
-The installer creates `/home/cinba/.local/bin/cinba` as a managed symlink through `current`, so it
-automatically follows later deployments. Start a new login shell, then verify and run it:
-
-```sh
-command -v cinba
-readlink /home/cinba/.local/bin/cinba
-cinba
-```
-
-For the `cinba` user, the command always uses `/home/cinba/.local/node/bin/node`, loads the TUI from
-`/home/cinba/current`, and defaults the project to `/home/cinba/Cinba`. An optional first argument
-in the form `cinba /path/to/project` selects another project directory. Product subcommands such as
-`cinba help` and `cinba doctor` go through the same entry.
+Cinba binds its local services to loopback. Tailscale, Caddy, HTTPS, LAN exposure, public ingress,
+DNS, and firewall policy are external infrastructure owned by the user; Cinba does not install or
+configure them.
 
 ## Architecture
 
 ```text
-native launchers ──► core-manager ──► ensure one local server
-                                         │
-Web / TUI / Desktop                      │
-        │                                │
-        ▼                                │
-   core-client                           │
-        │ WebSocket                      │
-        ▼                                │
-      server ◄───────────────────────────┘
+Desktop / TUI / Web
         │
-        └──► agent ──► Pi process per active conversation
-                 ▲              │
-                 └── contract ◄─┘
-                              └── extensions / permission gate
+        ▼
+   core-client
+        │ WebSocket
+        ▼
+      server ──► agent ──► Pi process
+        ▲           ▲
+        │           └── extensions / permission gate
+        └── core-manager / installed service framework
 
-master ──► prod ──► deploy ──► releases/current ──► systemd service
+GitHub Release
+        └── platform installer ──► stable launcher ──► immutable release ──► user data
 ```
 
-| Package               | Responsibility                                                           |
-| --------------------- | ------------------------------------------------------------------------ |
-| `@cinba/contract`     | Browser-safe protocol, ledger, commands, and shared labels               |
-| `@cinba/core-client`  | Shared Core connection used by every client                              |
-| `@cinba/core-manager` | Starts, inspects, and safely stops the shared Core on the local computer |
-| `@cinba/server`       | HTTP, WebSocket, sessions, credentials, draining, and health             |
-| `@cinba/agent`        | Pi process lifecycle, RPC transport, events, and stored sessions         |
-| `@cinba/extensions`   | Pi extensions, including the mandatory permission gate                   |
-| `@cinba/web`          | React Web interface                                                      |
-| `@cinba/tui`          | Terminal interface built with `pi-tui`                                   |
-| `@cinba/desktop`      | Electron multi-Core client and local Core tray/menu-bar controller       |
-| `@cinba/deploy`       | Safe release preparation, activation, verification, and rollback         |
+| Package                  | Responsibility                                                   |
+| ------------------------ | ---------------------------------------------------------------- |
+| `@cinba/contract`        | Browser-safe protocol, ledger, commands, and shared labels       |
+| `@cinba/core-client`     | Shared Core connection used by every client                      |
+| `@cinba/core-manager`    | Starts, inspects, and safely stops one local Core                |
+| `@cinba/server`          | HTTP, WebSocket, sessions, credentials, draining, and health     |
+| `@cinba/agent`           | Pi process lifecycle, RPC transport, events, and stored sessions |
+| `@cinba/extensions`      | Pi extensions, including the mandatory permission gate           |
+| `@cinba/web`             | React Web interface                                              |
+| `@cinba/tui`             | Terminal interface built with `pi-tui`                           |
+| `@cinba/desktop`         | Electron client and local Core tray/menu-bar controller          |
+| `@cinba/installer`       | Release contracts, installation, update, rollback, and services  |
+| `@cinba/product-runtime` | Installed CLI, product identity, lifecycle, and diagnostics      |
 
-Runtime configuration and private Pi data live outside the repository. Source development uses the
-native `Cinba Dev` data, state, cache, and log trees; a formal release uses separate `Cinba` trees.
-A release switch changes program files without replacing conversations, configuration, credentials,
-or user projects.
+## Release process
 
-## Quality checks
-
-```powershell
-npm run check
-```
-
-This is the repository gate and runs formatting checks, linting, TypeScript checks, unit tests,
-end-to-end tests, and the Web build.
-
-Individual commands are also available:
-
-```powershell
-npm run format:check
-npm run lint
-npm run typecheck
-npm test
-npm run test:e2e
-npm run build
-```
+The root `package.json` version is the only product version. The manual **Prepare product release**
+workflow locks one full commit from `master`, runs the repository gate, builds on native Windows,
+macOS Apple Silicon, and Linux runners, generates artifact attestations and release metadata, and
+creates a draft GitHub Release only after the complete platform set passes. A human reviews and
+publishes the draft. Repository release immutability must be enabled before publication.
 
 ## Documentation
 
-The design history is intentionally kept in Chinese because it records not only decisions, but why
-they were made:
+Design records are written in Chinese:
 
-- [Main design](docs/specs/2026-09-06-cinba-design.md)
-- [VPS and Tailscale design](docs/specs/2026-09-12-phase3b2-vps-tailscale-design.md)
+- [Product distribution design](docs/specs/2026-09-17-cinba-product-distribution-design.md)
+- [Product distribution implementation plan](docs/plans/2026-09-17-cinba-product-distribution.md)
+- [Cinba Sync product experience](docs/specs/2026-09-17-cinba-sync-product-experience.md)
+- [Other specifications](docs/specs/)
 - [Implementation plans](docs/plans/)
 - [Research and verification notes](docs/notes/)
-
-## Roadmap
-
-The current sequence is:
-
-1. ~~complete and verify the first VPS deployment through Tailscale and Caddy~~ — completed;
-2. adapt the Web interface for phones — next;
-3. consider a Core switcher only after switching between two real Cores becomes a recurring need;
-4. continue UI and conversation-tree refinement.
 
 ## License
 

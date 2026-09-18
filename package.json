@@ -28,7 +28,6 @@
     "dev": "node scripts/launch.ts dev",
     "sync:dev": "node scripts/launch.ts sync",
     "tui": "node scripts/launch.ts tui",
-    "promote": "node scripts/promote.ts",
     "format": "prettier --write \"packages/**/*.{ts,tsx,css,json}\" \"scripts/**/*.ts\" \"*.json\"",
     "format:check": "prettier --check \"packages/**/*.{ts,tsx,css,json}\" \"scripts/**/*.ts\" \"*.json\"",
     "lint": "oxlint packages scripts",
