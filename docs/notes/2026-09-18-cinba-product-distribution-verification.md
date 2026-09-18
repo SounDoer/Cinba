@@ -45,8 +45,8 @@
 
 ## 首个正式 Release workflow
 
-GitHub Actions 已从提交 `fdbe7357edbc52e001c6097434249392f6bdedfd` 成功完成
-[Prepare product release](https://github.com/SounDoer/Cinba/actions/runs/35363804983)：
+GitHub Actions 已从提交 `8eec5f15e0dd66e17804c65ed4aedc37bdd0743e` 成功完成
+[Prepare product release](https://github.com/SounDoer/Cinba/actions/runs/35368865710)：
 
 - Windows、macOS、Linux runner 均通过完整 `npm run check`，构建并上传原生 artifact；
 - Draft Release `Cinba 0.1.0` 已创建，尚未正式发布，也尚未创建不可变 Git tag；
@@ -58,6 +58,22 @@ GitHub Actions 已从提交 `fdbe7357edbc52e001c6097434249392f6bdedfd` 成功完
   bootstrap、手工安装和更新说明。
 
 正式发布前仍需完成三平台真实用户安装验收；Draft 不能因为自动化通过就直接发布。
+
+## 当前 macOS 安装探针
+
+在 Apple Silicon macOS 15 当前用户上下载 Draft DMG，核对 GitHub asset digest 后完成了首次安装和
+同版本修复安装：
+
+- Cinba 安装到 `~/Applications/Cinba.app`，`~/.local/bin/cinba` 在新 Zsh 中可直接解析；
+- `cinba version` 报告 `0.1.0` 和 release revision
+  `8eec5f15e0dd66e17804c65ed4aedc37bdd0743e`；
+- `cinba doctor` 对平台、内置 Node 24.20.0、payload、current pointer 和 Core 全部报告通过；
+- Desktop 与 On-demand Core 能从正式安装目录启动；
+- Core 可从 On-demand 切换到健康的 Background LaunchAgent，再切回 On-demand；切回后 plist 被清理；
+- 同版本修复安装保留了已有正式数据和服务状态。
+
+这台机器装有开发工具，且尚未执行 Gatekeeper 阻止场景、普通卸载、purge 和干净账号重装，因此下方
+完整 macOS 验收项仍保持未勾选。
 
 ## 正式发版前置检查
 
