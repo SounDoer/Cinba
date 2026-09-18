@@ -33,7 +33,7 @@ function update(): Extract<UpdateDiscovery, { state: "available" }> {
       revision,
       protocolVersion: 1,
       dataFormatVersion: 1,
-      publishedAt: "2026-09-18T01:02:03Z",
+      builtAt: "2026-09-18T01:02:03Z",
       artifacts: [
         {
           target: "windows-x64",

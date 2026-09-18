@@ -29,7 +29,7 @@ test("one complete platform set becomes a strict manifest and checksum list", as
       artifactsDirectory: directory,
       version: VERSION,
       revision: REVISION,
-      publishedAt: "2026-09-18T00:00:00.000Z",
+      builtAt: "2026-09-18T00:00:00.000Z",
     });
     const manifest = parseReleaseManifest(
       JSON.parse(await readFile(result.manifestPath, "utf8")) as unknown,
@@ -58,7 +58,7 @@ test("release assembly refuses an incomplete platform set", async () => {
         artifactsDirectory: directory,
         version: VERSION,
         revision: REVISION,
-        publishedAt: "2026-09-18T00:00:00.000Z",
+        builtAt: "2026-09-18T00:00:00.000Z",
       }),
       /macos-arm64\.dmg/,
     );
@@ -75,7 +75,7 @@ test("release assembly validates version and revision before publishing metadata
         artifactsDirectory: directory,
         version: "latest",
         revision: REVISION,
-        publishedAt: "2026-09-18T00:00:00.000Z",
+        builtAt: "2026-09-18T00:00:00.000Z",
       }),
       /release version must be a stable SemVer/,
     );

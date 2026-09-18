@@ -24,7 +24,7 @@ function manifest(version = "0.2.0") {
     revision,
     protocolVersion: 1,
     dataFormatVersion: 1,
-    publishedAt: "2026-09-18T01:02:03Z",
+    builtAt: "2026-09-18T01:02:03Z",
     artifacts: [
       {
         target: "windows-x64",
@@ -60,7 +60,7 @@ function githubRelease(version = "0.2.0") {
     draft: false,
     prerelease: false,
     immutable: true,
-    published_at: releaseManifest.publishedAt,
+    published_at: "2026-09-18T01:02:03Z",
     assets: [
       {
         name: "cinba-release.json",

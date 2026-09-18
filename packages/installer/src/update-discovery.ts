@@ -24,7 +24,6 @@ type GitHubRelease = {
   draft: boolean;
   prerelease: boolean;
   immutable: boolean;
-  publishedAt: string;
   assets: GitHubAsset[];
 };
 
@@ -199,7 +198,6 @@ function parseGitHubRelease(value: unknown): GitHubRelease {
     draft: parsed.draft,
     prerelease: parsed.prerelease,
     immutable: parsed.immutable,
-    publishedAt: requiredString(parsed.published_at, "GitHub latest release published_at"),
     assets: parsed.assets.map(parseAsset),
   };
 }
@@ -339,7 +337,7 @@ export async function discoverCinbaUpdate(options: {
       1_000_000,
     ),
   );
-  if (release.tagName !== `v${manifest.version}` || release.publishedAt !== manifest.publishedAt) {
+  if (release.tagName !== `v${manifest.version}`) {
     throw new Error("GitHub release identity does not match its manifest");
   }
   if (

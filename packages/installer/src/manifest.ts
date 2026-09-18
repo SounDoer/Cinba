@@ -40,7 +40,7 @@ export type ReleaseManifest = {
   revision: string;
   protocolVersion: number;
   dataFormatVersion: number;
-  publishedAt: string;
+  builtAt: string;
   artifacts: ReleaseArtifact[];
 };
 
@@ -177,7 +177,7 @@ export function parseReleaseManifest(value: unknown): ReleaseManifest {
       "revision",
       "protocolVersion",
       "dataFormatVersion",
-      "publishedAt",
+      "builtAt",
       "artifacts",
     ],
     "release manifest",
@@ -196,12 +196,12 @@ export function parseReleaseManifest(value: unknown): ReleaseManifest {
   if (!REVISION.test(revision)) {
     throw new Error("release manifest revision must be a full lowercase Git commit");
   }
-  const publishedAt = string(parsed.publishedAt, "release manifest publishedAt");
+  const builtAt = string(parsed.builtAt, "release manifest builtAt");
   if (
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(publishedAt) ||
-    Number.isNaN(Date.parse(publishedAt))
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(builtAt) ||
+    Number.isNaN(Date.parse(builtAt))
   ) {
-    throw new Error("release manifest publishedAt must be an ISO UTC timestamp");
+    throw new Error("release manifest builtAt must be an ISO UTC timestamp");
   }
   if (!Array.isArray(parsed.artifacts)) {
     throw new Error("release manifest artifacts must be an array");
@@ -225,7 +225,7 @@ export function parseReleaseManifest(value: unknown): ReleaseManifest {
       parsed.dataFormatVersion,
       "release manifest dataFormatVersion",
     ),
-    publishedAt,
+    builtAt,
     artifacts,
   };
 }

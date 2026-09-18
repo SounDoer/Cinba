@@ -12,7 +12,7 @@ function manifest(): unknown {
     revision: "0123456789abcdef0123456789abcdef01234567",
     protocolVersion: 1,
     dataFormatVersion: 1,
-    publishedAt: "2026-09-17T12:00:00Z",
+    builtAt: "2026-09-17T12:00:00Z",
     artifacts: [
       {
         target: "windows-x64",
@@ -59,7 +59,7 @@ test("requires SemVer, a full revision, positive versions, and an ISO timestamp"
     ["revision", "abc123", /full lowercase Git commit/],
     ["protocolVersion", 0, /protocolVersion must be a positive integer/],
     ["dataFormatVersion", -1, /dataFormatVersion must be a positive integer/],
-    ["publishedAt", "September 17", /ISO UTC timestamp/],
+    ["builtAt", "September 17", /ISO UTC timestamp/],
   ] as const) {
     const valueWithError = manifest() as Record<string, unknown>;
     valueWithError[field] = value;

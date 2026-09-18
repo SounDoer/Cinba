@@ -70,7 +70,7 @@ export async function assembleRelease(options: {
   artifactsDirectory: string;
   version: string;
   revision: string;
-  publishedAt: string;
+  builtAt: string;
 }): Promise<{ manifestPath: string; checksumsPath: string; manifest: ReleaseManifest }> {
   if (!isAbsolute(options.artifactsDirectory)) {
     throw new Error("release artifactsDirectory must be absolute");
@@ -81,8 +81,8 @@ export async function assembleRelease(options: {
   if (!/^[0-9a-f]{40}$/.test(options.revision)) {
     throw new Error("release revision must be a full lowercase Git commit");
   }
-  if (!options.publishedAt.endsWith("Z") || Number.isNaN(Date.parse(options.publishedAt))) {
-    throw new Error("release publishedAt must be an ISO UTC timestamp");
+  if (!options.builtAt.endsWith("Z") || Number.isNaN(Date.parse(options.builtAt))) {
+    throw new Error("release builtAt must be an ISO UTC timestamp");
   }
   const directory = resolve(options.artifactsDirectory);
   const installScript = join(directory, INSTALL_SCRIPT_FILE_NAME);
@@ -100,7 +100,7 @@ export async function assembleRelease(options: {
     revision: options.revision,
     protocolVersion: PRODUCT_PROTOCOL_VERSION,
     dataFormatVersion: PRODUCT_DATA_FORMAT_VERSION,
-    publishedAt: options.publishedAt,
+    builtAt: options.builtAt,
     artifacts,
   });
   const manifestPath = join(directory, RELEASE_MANIFEST_FILE_NAME);
@@ -152,7 +152,7 @@ if (import.meta.main) {
     artifactsDirectory,
     version: await packageVersion(),
     revision: gitRevision(),
-    publishedAt: new Date().toISOString(),
+    builtAt: new Date().toISOString(),
   });
   console.log(`[release] Built ${basename(result.manifestPath)}`);
   console.log(`[release] Built ${basename(result.checksumsPath)}`);
