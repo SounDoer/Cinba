@@ -30,7 +30,6 @@ export function createDesktopBuildConfiguration(options: {
     productName: "Cinba",
     asar: true,
     npmRebuild: false,
-    electronDist: join(REPOSITORY_ROOT, "node_modules", "electron", "dist"),
     directories: {
       app: STAGING_DIRECTORY,
       output: options.outputDirectory,

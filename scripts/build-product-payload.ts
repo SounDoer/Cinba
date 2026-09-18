@@ -104,7 +104,10 @@ async function copyPiRuntime(payload: string, productTarget: ProductTarget): Pro
   await Promise.all([
     cp(join(source, "dist"), join(target, "dist"), { recursive: true }),
     cp(join(source, "package.json"), join(target, "package.json")),
-    cp(join(source, "node_modules"), join(target, "node_modules"), { recursive: true }),
+    cp(join(source, "node_modules"), join(target, "node_modules"), {
+      recursive: true,
+      dereference: true,
+    }),
   ]);
   const native = NATIVE_DEPENDENCIES[productTarget];
   await keepDirectories(join(target, "node_modules", "@esbuild"), new Set([native.esbuild]));

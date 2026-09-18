@@ -65,6 +65,9 @@ export async function buildProductLauncher(): Promise<string> {
     windowsHide: true,
   });
   await copyFile(process.execPath, executable);
+  if (target !== "windows-x64") {
+    await chmod(executable, 0o755);
+  }
 
   if (target === "macos-arm64") {
     await execute("codesign", ["--remove-signature", executable]);
@@ -75,8 +78,6 @@ export async function buildProductLauncher(): Promise<string> {
   });
   if (target === "macos-arm64") {
     await execute("codesign", ["--sign", "-", executable]);
-  } else if (target === "linux-x64-gnu") {
-    await chmod(executable, 0o755);
   }
   await rm(workDirectory, { recursive: true, force: true });
   return executable;

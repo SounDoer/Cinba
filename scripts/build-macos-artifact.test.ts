@@ -19,6 +19,7 @@ test("the macOS DMG embeds one self-installing application without a system Appl
     "Cinba-0.1.0-macos-arm64.${ext}",
   );
   assert.deepEqual(configuration.extraResources, [{ from: bundleDirectory, to: "cinba-bundle" }]);
+  assert.equal(configuration.electronDist, undefined);
   assert.deepEqual(configuration.dmg?.contents, [{ x: 220, y: 200, type: "file" }]);
 });
 
