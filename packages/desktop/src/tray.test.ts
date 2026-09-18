@@ -136,6 +136,24 @@ test("release tray keeps progress informational and makes a ready update actiona
     }).updateAction,
     { label: "Update 0.2.0 Failed", enabled: false },
   );
+  assert.deepEqual(
+    createTrayViewModel(stopped, undefined, undefined, "Cinba", {
+      phase: "blocked",
+      reason: "incompatible",
+      candidateVersion: "0.2.0",
+      message: "details",
+    }).updateAction,
+    { label: "Update 0.2.0 Requires a Newer System", enabled: false },
+  );
+  assert.deepEqual(
+    createTrayViewModel(stopped, undefined, undefined, "Cinba", {
+      phase: "blocked",
+      reason: "unverified",
+      candidateVersion: "0.2.0",
+      message: "details",
+    }).updateAction,
+    { label: "Update 0.2.0 Compatibility Unknown", enabled: false },
+  );
 });
 
 test("tray hides inactive and development update states", () => {

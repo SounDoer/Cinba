@@ -407,6 +407,10 @@ export function createTuiInstallReadyUpdate(
         return;
       }
       const update = options.getUpdate();
+      if (update?.phase === "blocked") {
+        options.showNotice(update.message);
+        return;
+      }
       if (update?.phase !== "ready") {
         options.showNotice("No ready Cinba update is available.");
         return;

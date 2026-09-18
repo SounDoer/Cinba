@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter, getEventListeners } from "node:events";
 import { resolve } from "node:path";
 import test from "node:test";
+import type { ProductUpdateViewModel } from "@cinba/product-runtime";
 import { InteractionOwner } from "./interaction-owner.ts";
 import {
   TUI_HANDOFF_TIMEOUT_MS,
@@ -48,7 +49,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
   const calls: unknown[] = [];
   const handoffController = new TuiUpdateHandoffController();
   const state = {
-    update: ready() as ReturnType<typeof ready> | { phase: "idle" } | { phase: "checking" },
+    update: ready() as ProductUpdateViewModel,
     busy: false,
     compacting: false,
   };
@@ -105,6 +106,18 @@ test("development, non-ready, and busy TUI update requests show clear notices", 
   nonReady.state.update = { phase: "checking" };
   await nonReady.install();
   assert.deepEqual(nonReady.calls, [["notice", "No ready Cinba update is available."]]);
+
+  const blocked = fixture();
+  blocked.state.update = {
+    phase: "blocked",
+    reason: "incompatible",
+    candidateVersion: "0.2.0",
+    message: "Cinba 0.2.0 requires a newer system and cannot be installed.",
+  };
+  await blocked.install();
+  assert.deepEqual(blocked.calls, [
+    ["notice", "Cinba 0.2.0 requires a newer system and cannot be installed."],
+  ]);
 
   for (const activity of ["busy", "compacting"] as const) {
     const active = fixture();

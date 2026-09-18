@@ -83,6 +83,34 @@ test("Desktop update presentation is shared and hides inactive states", () => {
       ariaLabel: "Cinba 0.2.0 update installation failed",
     },
   );
+  assert.deepEqual(
+    createDesktopUpdatePresentation("Cinba", {
+      phase: "blocked",
+      reason: "incompatible",
+      candidateVersion: "0.2.0",
+      message: "details",
+    }),
+    {
+      hidden: false,
+      label: "Update 0.2.0 Requires a Newer System",
+      actionable: false,
+      ariaLabel: "Cinba 0.2.0 requires a newer system",
+    },
+  );
+  assert.deepEqual(
+    createDesktopUpdatePresentation("Cinba", {
+      phase: "blocked",
+      reason: "unverified",
+      candidateVersion: "0.2.0",
+      message: "details",
+    }),
+    {
+      hidden: false,
+      label: "Update 0.2.0 Compatibility Unknown",
+      actionable: false,
+      ariaLabel: "Cinba 0.2.0 system compatibility is unknown",
+    },
+  );
 });
 
 test("Desktop update activation calls install only for an actionable ready update", async () => {

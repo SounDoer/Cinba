@@ -53,6 +53,22 @@ test("an explicit current check bypasses automatic throttling and reports clearl
   assert.deepEqual(output, ["Cinba 0.1.0 is current."]);
 });
 
+test("an explicit update preserves detailed system compatibility errors", async () => {
+  const detail = "Cinba 0.2.0 requires Windows 10.0 or newer; current Windows version is 6.3.";
+  await assert.rejects(
+    runExplicitProductUpdate({
+      interactive: true,
+      prepare: async () => {
+        throw new Error(detail);
+      },
+      confirm: async () => assert.fail("blocked updates must not prompt"),
+      install: async () => assert.fail("blocked updates must not install"),
+      write: () => assert.fail("blocked updates must not report ready"),
+    }),
+    (error) => error instanceof Error && error.message === detail,
+  );
+});
+
 test("a non-interactive update never installs silently", async () => {
   const output: string[] = [];
   let installed = false;

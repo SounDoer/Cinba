@@ -25,6 +25,24 @@ test("update status hides idle and current and styles active phases", () => {
     }),
     `${YELLOW}${BOLD} · Update 0.2.0 Failed${RESET}`,
   );
+  assert.equal(
+    formatProductUpdate({
+      phase: "blocked",
+      reason: "incompatible",
+      candidateVersion: "0.2.0",
+      message: "details",
+    }),
+    `${YELLOW}${BOLD} · Update 0.2.0 Needs Newer System${RESET}`,
+  );
+  assert.equal(
+    formatProductUpdate({
+      phase: "blocked",
+      reason: "unverified",
+      candidateVersion: "0.2.0",
+      message: "details",
+    }),
+    `${YELLOW}${BOLD} · Update 0.2.0 Compatibility Unknown${RESET}`,
+  );
 });
 
 test("status bar keeps existing fields and truncates update ANSI at narrow widths", () => {
@@ -49,6 +67,24 @@ test("80-column status keeps every active update visible ahead of long metadata"
     {
       update: { phase: "ready", candidateVersion: "123.45.67" } as const,
       expected: /Update 123\.45\.67 Ready/,
+    },
+    {
+      update: {
+        phase: "blocked",
+        reason: "incompatible",
+        candidateVersion: "123.45.67",
+        message: "details",
+      } as const,
+      expected: /Update 123\.45\.67 Needs Newer System/,
+    },
+    {
+      update: {
+        phase: "blocked",
+        reason: "unverified",
+        candidateVersion: "123.45.67",
+        message: "details",
+      } as const,
+      expected: /Update 123\.45\.67 Compatibility Unknown/,
     },
   ];
 

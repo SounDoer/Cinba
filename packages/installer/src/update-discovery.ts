@@ -6,6 +6,7 @@ import {
   detectCurrentSystem,
   systemMeetsArtifactMinimum,
 } from "./system-compatibility.ts";
+import { type UpdateCandidate, parseUpdateState } from "./update-state.ts";
 
 export const CINBA_RELEASE_API = "https://api.github.com/repos/SounDoer/Cinba/releases/latest";
 export const CINBA_RELEASE_MANIFEST_ASSET = RELEASE_MANIFEST_FILE_NAME;
@@ -43,6 +44,111 @@ export type UpdateDiscovery =
       artifact: ReleaseArtifact;
       downloadUrl: string;
     };
+
+type AvailableUpdate = Extract<UpdateDiscovery, { state: "available" }>;
+export type UpdateDiscoveryFailure = "system-incompatible" | "system-unverified";
+export const UPDATE_DISCOVERY_FAILURE_CODE = "CINBA_UPDATE_DISCOVERY_FAILURE";
+const MAX_UPDATE_DISCOVERY_FAILURE_MESSAGE_LENGTH = 2_048;
+const UPDATE_DISCOVERY_FAILURE_FIELDS = new Set(["code", "failure", "candidate", "message"]);
+
+export type UpdateDiscoveryFailureDetails = {
+  readonly code: typeof UPDATE_DISCOVERY_FAILURE_CODE;
+  readonly failure: UpdateDiscoveryFailure;
+  readonly candidate: Readonly<UpdateCandidate>;
+  readonly message: string;
+};
+
+function candidateFrom(update: AvailableUpdate): UpdateCandidate {
+  return {
+    version: update.latestVersion,
+    revision: update.manifest.revision,
+    target: update.artifact.target,
+    artifactPath: null,
+    size: update.artifact.size,
+    sha256: update.artifact.sha256,
+    releaseUrl: update.releaseUrl,
+  };
+}
+
+export class UpdateDiscoveryFailureError extends Error {
+  readonly code = UPDATE_DISCOVERY_FAILURE_CODE;
+  readonly failure: UpdateDiscoveryFailure;
+  readonly candidate: UpdateCandidate;
+
+  constructor(
+    failure: UpdateDiscoveryFailure,
+    update: AvailableUpdate,
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(
+      (message || "Cinba update compatibility could not be determined.").slice(
+        0,
+        MAX_UPDATE_DISCOVERY_FAILURE_MESSAGE_LENGTH,
+      ),
+      options,
+    );
+    Object.defineProperty(this, "name", {
+      value: "UpdateDiscoveryFailureError",
+      configurable: true,
+      writable: true,
+    });
+    this.failure = failure;
+    this.candidate = candidateFrom(update);
+  }
+}
+
+function dataValue(descriptors: PropertyDescriptorMap, field: string): unknown {
+  const descriptor = descriptors[field];
+  if (!descriptor || !Object.hasOwn(descriptor, "value")) {
+    throw new Error(`update discovery failure ${field} must be an own data property`);
+  }
+  return descriptor.value;
+}
+
+export function parseUpdateDiscoveryFailure(
+  value: unknown,
+): Readonly<UpdateDiscoveryFailureDetails> | undefined {
+  try {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    if (
+      Object.entries(descriptors).some(
+        ([field, descriptor]) =>
+          descriptor.enumerable && !UPDATE_DISCOVERY_FAILURE_FIELDS.has(field),
+      )
+    ) {
+      return undefined;
+    }
+    const code = dataValue(descriptors, "code");
+    const failure = dataValue(descriptors, "failure");
+    const candidateValue = dataValue(descriptors, "candidate");
+    const message = dataValue(descriptors, "message");
+    if (
+      code !== UPDATE_DISCOVERY_FAILURE_CODE ||
+      (failure !== "system-incompatible" && failure !== "system-unverified") ||
+      typeof message !== "string" ||
+      message.length < 1 ||
+      message.length > MAX_UPDATE_DISCOVERY_FAILURE_MESSAGE_LENGTH
+    ) {
+      return undefined;
+    }
+    const state = parseUpdateState({
+      schemaVersion: 1,
+      phase: "failed",
+      currentVersion: "0.0.0",
+      checkedAt: "1970-01-01T00:00:00.000Z",
+      candidate: candidateValue,
+      failure,
+    });
+    const candidate = Object.freeze({ ...state.candidate! });
+    return Object.freeze({ code, failure, candidate, message });
+  } catch {
+    return undefined;
+  }
+}
 
 function record(value: unknown, context: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -115,7 +221,7 @@ function stableVersionParts(value: string): [number, number, number] {
   return [Number(match[1]), Number(match[2]), Number(match[3])];
 }
 
-function compareSemVer(left: string, right: string): number {
+export function compareStableVersions(left: string, right: string): number {
   const leftParts = stableVersionParts(left);
   const rightParts = stableVersionParts(right);
   for (let index = 0; index < leftParts.length; index += 1) {
@@ -140,6 +246,48 @@ async function jsonResponse(response: Response, context: string, maximumBytes: n
   } catch {
     throw new Error(`${context} response is not valid JSON`);
   }
+}
+
+function minimumSystemDescription(artifact: ReleaseArtifact): string {
+  if (artifact.target === "windows-x64") {
+    return `Windows ${artifact.minimumSystem.version}`;
+  }
+  if (artifact.target === "macos-arm64") {
+    return `macOS ${artifact.minimumSystem.version}`;
+  }
+  return `Linux kernel ${artifact.minimumSystem.kernel} and glibc ${artifact.minimumSystem.glibc}`;
+}
+
+function detectedSystemDescription(system: DetectedSystem): string {
+  if (system.platform === "windows") {
+    return `Windows version ${system.version}`;
+  }
+  if (system.platform === "macos") {
+    return `macOS version ${system.version}`;
+  }
+  return `Linux kernel ${system.kernel} and glibc ${system.glibc}`;
+}
+
+function validDottedVersion(value: unknown): value is string {
+  return typeof value === "string" && /^(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*))*$/.test(value);
+}
+
+function isDetectedSystem(value: unknown, target: ProductTarget): value is DetectedSystem {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const system = value as Record<string, unknown>;
+  if (target === "windows-x64") {
+    return system.platform === "windows" && validDottedVersion(system.version);
+  }
+  if (target === "macos-arm64") {
+    return system.platform === "macos" && validDottedVersion(system.version);
+  }
+  return (
+    system.platform === "linux-gnu" &&
+    validDottedVersion(system.kernel) &&
+    validDottedVersion(system.glibc)
+  );
 }
 
 export async function discoverCinbaUpdate(options: {
@@ -213,7 +361,7 @@ export async function discoverCinbaUpdate(options: {
     release.tagName,
     artifact.fileName,
   );
-  const comparison = compareSemVer(manifest.version, options.currentVersion);
+  const comparison = compareStableVersions(manifest.version, options.currentVersion);
   if (comparison <= 0) {
     return {
       state: "current",
@@ -222,18 +370,7 @@ export async function discoverCinbaUpdate(options: {
       releaseUrl: release.htmlUrl,
     };
   }
-  let system: DetectedSystem;
-  try {
-    system = await (options.probeSystem ?? detectCurrentSystem)(options.target);
-  } catch (error) {
-    throw new Error("A new Cinba version exists, but system compatibility is unverifiable", {
-      cause: error,
-    });
-  }
-  if (!systemMeetsArtifactMinimum(artifact, system)) {
-    throw new Error("A new Cinba version exists, but this system is incompatible");
-  }
-  return {
+  const update: AvailableUpdate = {
     state: "available",
     currentVersion: options.currentVersion,
     latestVersion: manifest.version,
@@ -242,4 +379,28 @@ export async function discoverCinbaUpdate(options: {
     artifact,
     downloadUrl,
   };
+  let system: DetectedSystem;
+  try {
+    const detected: unknown = await (options.probeSystem ?? detectCurrentSystem)(options.target);
+    if (!isDetectedSystem(detected, options.target)) {
+      throw new Error("system probe returned unsupported output");
+    }
+    system = detected;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new UpdateDiscoveryFailureError(
+      "system-unverified",
+      update,
+      `Cinba ${manifest.version} compatibility is unknown: could not verify ${minimumSystemDescription(artifact)} requirements (${detail}).`,
+      { cause: error },
+    );
+  }
+  if (!systemMeetsArtifactMinimum(artifact, system)) {
+    throw new UpdateDiscoveryFailureError(
+      "system-incompatible",
+      update,
+      `Current ${detectedSystemDescription(system)} cannot install Cinba ${manifest.version}; it requires ${minimumSystemDescription(artifact)} or newer.`,
+    );
+  }
+  return update;
 }

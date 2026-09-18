@@ -349,6 +349,44 @@ test("automatic update errors report idle without exposing the failure", async (
   assert.deepEqual(updates, [{ phase: "checking" }, { phase: "idle" }]);
 });
 
+test("automatic system failures recover from state as visible blocked updates", async () => {
+  for (const [failure, reason] of [
+    ["system-incompatible", "incompatible"],
+    ["system-unverified", "unverified"],
+  ] as const) {
+    const updates: unknown[] = [];
+    await checkForProductUpdatesAutomatically(
+      {
+        release,
+        paths: { stateDirectory: "C:\\state", cacheDirectory: "C:\\cache" },
+        onUpdate: (update) => updates.push(update),
+      },
+      {
+        prepare: async () => {
+          throw new Error("detailed system information belongs to the explicit command");
+        },
+        readState: async () => ({
+          ...current,
+          phase: "failed",
+          candidate: { ...candidate, artifactPath: null },
+          failure,
+        }),
+      },
+    );
+    assert.deepEqual(updates, [
+      {
+        phase: "blocked",
+        reason,
+        candidateVersion: "0.2.0",
+        message:
+          reason === "incompatible"
+            ? "Cinba 0.2.0 requires a newer system and cannot be installed. Run cinba update for details."
+            : "Cinba 0.2.0 system compatibility is unknown, so it cannot be installed. Run cinba update for details.",
+      },
+    ]);
+  }
+});
+
 test("strict update states map to a minimal foreground view", () => {
   assert.deepEqual(toAutomaticUpdateViewModel(undefined), { phase: "idle" });
   assert.deepEqual(toAutomaticUpdateViewModel(current), { phase: "current" });
@@ -395,6 +433,36 @@ test("strict update states map to a minimal foreground view", () => {
       phase: "failed",
       candidateVersion: "0.2.0",
       message: "Cinba 0.2.0 could not be installed. Run cinba update to retry.",
+    },
+  );
+  assert.deepEqual(
+    toAutomaticUpdateViewModel({
+      ...current,
+      phase: "failed",
+      candidate: { ...candidate, artifactPath: null },
+      failure: "system-incompatible",
+    }),
+    {
+      phase: "blocked",
+      reason: "incompatible",
+      candidateVersion: "0.2.0",
+      message:
+        "Cinba 0.2.0 requires a newer system and cannot be installed. Run cinba update for details.",
+    },
+  );
+  assert.deepEqual(
+    toAutomaticUpdateViewModel({
+      ...current,
+      phase: "failed",
+      candidate: { ...candidate, artifactPath: null },
+      failure: "system-unverified",
+    }),
+    {
+      phase: "blocked",
+      reason: "unverified",
+      candidateVersion: "0.2.0",
+      message:
+        "Cinba 0.2.0 system compatibility is unknown, so it cannot be installed. Run cinba update for details.",
     },
   );
 });

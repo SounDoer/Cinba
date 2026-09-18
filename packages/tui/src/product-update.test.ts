@@ -190,6 +190,66 @@ test("continuous polls of one installation failure append one notice", () => {
   assert.deepEqual(notices, [failed.message]);
 });
 
+test("blocked update notice appears once and defers while the transcript is busy", () => {
+  const notices: string[] = [];
+  let busy = true;
+  const consume = createTuiUpdateConsumer({
+    setStatus: () => {},
+    appendNotice: (notice) => notices.push(notice),
+    requestRender: () => {},
+    canAppendNotice: () => !busy,
+  });
+  const blocked = {
+    phase: "blocked" as const,
+    reason: "incompatible" as const,
+    candidateVersion: "0.2.0",
+    message:
+      "Cinba 0.2.0 requires a newer system and cannot be installed. Run cinba update for details.",
+  };
+
+  consume(blocked);
+  consume(blocked);
+  assert.deepEqual(notices, []);
+  busy = false;
+  consume.flushNotice();
+  consume.flushNotice();
+  consume(blocked);
+  assert.deepEqual(notices, [blocked.message]);
+});
+
+test("blocked notice is cancelled when the update transitions", () => {
+  for (const transition of [
+    { phase: "ready" as const, candidateVersion: "0.2.0" },
+    { phase: "current" as const },
+    { phase: "idle" as const },
+    {
+      phase: "blocked" as const,
+      reason: "unverified" as const,
+      candidateVersion: "0.2.0",
+      message: "compatibility unknown",
+    },
+  ]) {
+    const notices: string[] = [];
+    let busy = true;
+    const consume = createTuiUpdateConsumer({
+      setStatus: () => {},
+      appendNotice: (notice) => notices.push(notice),
+      requestRender: () => {},
+      canAppendNotice: () => !busy,
+    });
+    consume({
+      phase: "blocked",
+      reason: "incompatible",
+      candidateVersion: "0.2.0",
+      message: "requires newer system",
+    });
+    consume(transition);
+    busy = false;
+    consume.flushNotice();
+    assert.equal(notices.includes("requires newer system"), false, transition.phase);
+  }
+});
+
 test("every non-failed state starts a new failure attempt for the same version", () => {
   const failed = {
     phase: "failed" as const,

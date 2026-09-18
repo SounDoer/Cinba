@@ -164,6 +164,7 @@ export function createTuiUpdateConsumer(options: {
 }): TuiUpdateConsumer {
   const notices = createDeferredReadyNotice();
   const failures = createDeferredFailureNotice();
+  const blockers = createDeferredFailureNotice();
   const canAppendNotice = options.canAppendNotice ?? (() => true);
   const append = (notice: string | undefined): void => {
     if (notice) {
@@ -174,21 +175,36 @@ export function createTuiUpdateConsumer(options: {
     options.setStatus(update);
     if (update.phase === "ready") {
       failures.reset();
+      blockers.reset();
       append(notices.receive(update.candidateVersion, canAppendNotice()));
     } else if (update.phase === "failed") {
       notices.reset();
+      blockers.reset();
       append(failures.receive(update.candidateVersion, update.message, canAppendNotice()));
+    } else if (update.phase === "blocked") {
+      notices.reset();
+      failures.reset();
+      append(
+        blockers.receive(
+          `${update.reason}:${update.candidateVersion}`,
+          update.message,
+          canAppendNotice(),
+        ),
+      );
     } else {
       notices.reset();
       failures.reset();
+      blockers.reset();
     }
     options.requestRender();
   }) as TuiUpdateConsumer;
   consume.flushNotice = () => {
     const canShow = canAppendNotice();
-    const pending = [notices.flush(canShow), failures.flush(canShow)].filter(
-      (notice): notice is string => notice !== undefined,
-    );
+    const pending = [
+      notices.flush(canShow),
+      failures.flush(canShow),
+      blockers.flush(canShow),
+    ].filter((notice): notice is string => notice !== undefined);
     if (pending.length > 0) {
       for (const notice of pending) {
         options.appendNotice(notice);

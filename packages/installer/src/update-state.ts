@@ -4,7 +4,12 @@ import { dirname, isAbsolute, join } from "node:path";
 import { type ProductTarget, isProductTarget } from "./platform.ts";
 
 export type UpdatePhase = "current" | "checking" | "downloading" | "ready" | "failed";
-export type UpdateFailure = "discovery-failed" | "download-failed" | "installation-failed";
+export type UpdateFailure =
+  | "discovery-failed"
+  | "system-incompatible"
+  | "system-unverified"
+  | "download-failed"
+  | "installation-failed";
 export type UpdateCandidate = {
   version: string;
   revision: string;
@@ -31,6 +36,8 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const PHASES = new Set<UpdatePhase>(["current", "checking", "downloading", "ready", "failed"]);
 const FAILURES = new Set<UpdateFailure>([
   "discovery-failed",
+  "system-incompatible",
+  "system-unverified",
   "download-failed",
   "installation-failed",
 ]);
@@ -43,12 +50,21 @@ function exactRecord(
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${context} must be an object`);
   }
-  const parsed = value as Record<string, unknown>;
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const parsed: Record<string, unknown> = {};
   if (
-    Object.keys(parsed).some((field) => !fields.includes(field)) ||
-    fields.some((field) => !Object.hasOwn(parsed, field))
+    Object.entries(descriptors).some(
+      ([field, descriptor]) => descriptor.enumerable && !fields.includes(field),
+    )
   ) {
     throw new Error(`${context} fields are invalid`);
+  }
+  for (const field of fields) {
+    const descriptor = descriptors[field];
+    if (!descriptor || !Object.hasOwn(descriptor, "value")) {
+      throw new Error(`${context} fields are invalid`);
+    }
+    parsed[field] = descriptor.value;
   }
   return parsed;
 }
@@ -131,14 +147,22 @@ export function parseUpdateState(value: unknown): UpdateState {
   if ((phase === "downloading" || phase === "ready") && !candidate) {
     throw new Error(`${phase} update state requires a candidate`);
   }
-  if (phase === "ready" && !candidate?.artifactPath) {
-    throw new Error("ready update state requires a downloaded artifact");
-  }
   if (phase === "failed" ? parsed.failure === null : parsed.failure !== null) {
     throw new Error("update state failure does not match its phase");
   }
+  if (phase === "ready" && !candidate?.artifactPath) {
+    throw new Error("ready update state requires a downloaded artifact");
+  }
   if (parsed.failure === "installation-failed" && !candidate?.artifactPath) {
-    throw new Error("update installation failure requires a candidate");
+    throw new Error("update installation failure requires a candidate with a downloaded artifact");
+  }
+  if (
+    (parsed.failure === "system-incompatible" || parsed.failure === "system-unverified") &&
+    (!candidate || candidate.artifactPath !== null)
+  ) {
+    throw new Error(
+      "update system failure requires an undownloaded candidate with null artifactPath",
+    );
   }
   return {
     schemaVersion: 1,

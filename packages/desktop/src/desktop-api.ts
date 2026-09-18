@@ -50,6 +50,19 @@ export function createDesktopUpdatePresentation(
       ariaLabel: `Cinba ${update.candidateVersion} update installation failed`,
     };
   }
+  if (update.phase === "blocked") {
+    const incompatible = update.reason === "incompatible";
+    return {
+      hidden: false,
+      label: incompatible
+        ? `Update ${update.candidateVersion} Requires a Newer System`
+        : `Update ${update.candidateVersion} Compatibility Unknown`,
+      actionable: false,
+      ariaLabel: incompatible
+        ? `Cinba ${update.candidateVersion} requires a newer system`
+        : `Cinba ${update.candidateVersion} system compatibility is unknown`,
+    };
+  }
   return {
     hidden: false,
     label: update.phase === "checking" ? "Checking for Updates" : "Downloading Update",

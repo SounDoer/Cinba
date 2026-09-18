@@ -13,6 +13,11 @@ export function formatProductUpdate(update: ProductUpdateViewModel): string {
   if (update.phase === "failed") {
     return `${YELLOW}${BOLD} · Update ${update.candidateVersion} Failed${RESET}`;
   }
+  if (update.phase === "blocked") {
+    const reason =
+      update.reason === "incompatible" ? "Needs Newer System" : "Compatibility Unknown";
+    return `${YELLOW}${BOLD} · Update ${update.candidateVersion} ${reason}${RESET}`;
+  }
   return `${DIM} · ${update.phase} update${RESET}`;
 }
 

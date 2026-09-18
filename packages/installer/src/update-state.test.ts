@@ -58,6 +58,34 @@ test("update state rejects incomplete phases and unknown fields", () => {
   assert.throws(() => parseUpdateState({ ...ready, progress: 50 }), /fields are invalid/);
 });
 
+test("system failures require an undownloaded candidate and no other phase accepts them", () => {
+  for (const failure of ["system-incompatible", "system-unverified"] as const) {
+    const blocked = {
+      ...ready,
+      phase: "failed",
+      candidate: { ...ready.candidate, artifactPath: null },
+      failure,
+    };
+    assert.deepEqual(parseUpdateState(blocked), blocked);
+    assert.throws(() => parseUpdateState({ ...blocked, candidate: null }), /system failure/);
+    assert.throws(
+      () => parseUpdateState({ ...blocked, candidate: ready.candidate }),
+      /artifactPath/,
+    );
+    assert.throws(() => parseUpdateState({ ...blocked, phase: "ready" }), /failure does not match/);
+  }
+  assert.throws(
+    () =>
+      parseUpdateState({
+        ...ready,
+        phase: "failed",
+        candidate: { ...ready.candidate, artifactPath: null },
+        failure: "installation-failed",
+      }),
+    /downloaded artifact/,
+  );
+});
+
 test("automatic checks are shared and limited to once per day", () => {
   assert.equal(
     automaticUpdateCheckIsDue({

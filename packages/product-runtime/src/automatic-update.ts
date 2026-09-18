@@ -12,6 +12,12 @@ export type ProductUpdateViewModel =
   | { phase: "checking" }
   | { phase: "downloading" }
   | { phase: "ready"; candidateVersion: string }
+  | {
+      phase: "blocked";
+      reason: "incompatible" | "unverified";
+      candidateVersion: string;
+      message: string;
+    }
   | { phase: "failed"; candidateVersion: string; message: string };
 
 export type ProductUpdateReadinessReason =
@@ -192,6 +198,21 @@ export async function checkForProductUpdatesAutomatically(
 }
 
 export function toAutomaticUpdateViewModel(state: UpdateState | undefined): ProductUpdateViewModel {
+  if (
+    state?.phase === "failed" &&
+    (state.failure === "system-incompatible" || state.failure === "system-unverified") &&
+    state.candidate
+  ) {
+    const incompatible = state.failure === "system-incompatible";
+    return {
+      phase: "blocked",
+      reason: incompatible ? "incompatible" : "unverified",
+      candidateVersion: state.candidate.version,
+      message: incompatible
+        ? `Cinba ${state.candidate.version} requires a newer system and cannot be installed. Run cinba update for details.`
+        : `Cinba ${state.candidate.version} system compatibility is unknown, so it cannot be installed. Run cinba update for details.`,
+    };
+  }
   if (state?.phase === "failed" && state.failure === "installation-failed" && state.candidate) {
     return {
       phase: "failed",

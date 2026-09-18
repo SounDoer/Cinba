@@ -1,6 +1,11 @@
 import { resolve } from "node:path";
 import { type DownloadedUpdate, downloadUpdateCandidate } from "./update-download.ts";
-import { type UpdateDiscovery, discoverCinbaUpdate } from "./update-discovery.ts";
+import {
+  type UpdateDiscovery,
+  compareStableVersions,
+  discoverCinbaUpdate,
+  parseUpdateDiscoveryFailure,
+} from "./update-discovery.ts";
 import type { ProductTarget } from "./platform.ts";
 import { type ProductUpdateLease, acquireProductUpdateLease } from "./update-lock.ts";
 import {
@@ -112,7 +117,19 @@ export async function prepareProductUpdate(options: {
     options.onStateChange?.(ready);
     return ready;
   } catch (error) {
-    const failure = operation === "discovery" ? "discovery-failed" : "download-failed";
+    let systemFailure: UpdateFailure | undefined;
+    const parsedFailure =
+      operation === "discovery" ? parseUpdateDiscoveryFailure(error) : undefined;
+    if (
+      parsedFailure &&
+      parsedFailure.candidate.target === options.target &&
+      compareStableVersions(parsedFailure.candidate.version, options.currentVersion) > 0
+    ) {
+      systemFailure = parsedFailure.failure;
+      candidate = parsedFailure.candidate;
+    }
+    const failure =
+      systemFailure ?? (operation === "discovery" ? "discovery-failed" : "download-failed");
     const failed = state("failed", options.currentVersion, checkedAt, candidate, failure);
     await writeUpdateState(options.stateDirectory, failed);
     options.onStateChange?.(failed);

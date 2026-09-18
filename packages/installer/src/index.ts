@@ -80,9 +80,16 @@ export {
 export {
   CINBA_RELEASE_API,
   CINBA_RELEASE_MANIFEST_ASSET,
+  UPDATE_DISCOVERY_FAILURE_CODE,
+  UpdateDiscoveryFailureError,
   discoverCinbaUpdate,
+  parseUpdateDiscoveryFailure,
 } from "./update-discovery.ts";
-export type { UpdateDiscovery } from "./update-discovery.ts";
+export type {
+  UpdateDiscovery,
+  UpdateDiscoveryFailure,
+  UpdateDiscoveryFailureDetails,
+} from "./update-discovery.ts";
 export { downloadUpdateCandidate } from "./update-download.ts";
 export type { DownloadedUpdate } from "./update-download.ts";
 export {
