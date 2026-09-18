@@ -10,6 +10,8 @@
   "dependencies": {
     "@cinba/core-client": "*",
     "@cinba/contract": "*",
+    "@cinba/installer": "*",
+    "@cinba/product-runtime": "*",
     "@earendil-works/pi-tui": "^0.85.1"
   }
 }

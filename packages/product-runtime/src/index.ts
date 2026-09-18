@@ -14,6 +14,7 @@ export type {
   ProductServiceProcess,
 } from "./cli.ts";
 export {
+  CINBA_UPDATE_STATE_DIRECTORY_ENV,
   checkForProductUpdatesAutomatically,
   toAutomaticUpdateViewModel,
 } from "./automatic-update.ts";

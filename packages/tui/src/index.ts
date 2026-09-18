@@ -24,14 +24,11 @@ import {
   type TUI,
   TuiMainScreen,
   matchesKey,
-  truncateToWidth,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import {
-  type AgentActivity,
   COMMANDS,
   type Command,
-  type ContextUsage,
   type Entry,
   type RecoveredDraft,
   type Session,
@@ -44,28 +41,18 @@ import {
   createSession,
   isCommand,
   isThinkingLevel,
-  nameColourIndex,
   sessionSubtitle,
   sessionTitle,
 } from "@cinba/contract";
 import { CoreClient, CoreSyncControlClient } from "@cinba/core-client";
-import {
-  BLUE,
-  BOLD,
-  CORE_COLOURS,
-  DIM,
-  GREEN,
-  MAGENTA,
-  RED,
-  RESET,
-  SELECT_THEME,
-  YELLOW,
-} from "./theme.ts";
+import { BLUE, BOLD, DIM, GREEN, MAGENTA, RED, RESET, SELECT_THEME, YELLOW } from "./theme.ts";
 import { Transcript } from "./transcript.ts";
 import { PromptInput } from "./prompt-input.ts";
 import { ProviderFlow } from "./provider-flow.ts";
 import { WebToolsFlow } from "./web-tools-flow.ts";
 import { SyncFlow } from "./sync-flow.ts";
+import { createTuiUpdateConsumer, startProductUpdateObserver } from "./product-update.ts";
+import { StatusBar } from "./status-bar.ts";
 
 /**
  * Which core to talk to. Nothing here starts one: the service has to be running.
@@ -76,71 +63,6 @@ import { SyncFlow } from "./sync-flow.ts";
  * composes with cinba-tui.cmd, which already spends its argument on a folder.
  */
 const SERVER_URL = process.env.CINBA_SERVER || "ws://127.0.0.1:4517/ws";
-
-/** The bottom line: cumulative usage and the keys available right now. */
-class StatusBar implements Component {
-  totalTokens = 0;
-  totalCost = 0;
-  activity: AgentActivity = { type: "idle" };
-  context: ContextUsage = {
-    tokens: null,
-    contextWindow: null,
-    percent: null,
-    estimated: false,
-  };
-  model = "";
-  thinkingLevel = "off";
-  /** Which machine this terminal is talking to. Empty until the core says. */
-  core = "";
-  pendingCount = 0;
-  recoveredCount = 0;
-
-  invalidate(): void {}
-
-  render(width: number): string[] {
-    const where =
-      this.core === ""
-        ? ""
-        : ` · ${CORE_COLOURS[nameColourIndex(this.core)]}${BOLD}● ${this.core}${RESET}`;
-    const context = formatContextUsage(this.context);
-    const usage = `${DIM}${context} · session ${this.totalTokens.toLocaleString("en-US")} tokens · $${this.totalCost.toFixed(4)}${RESET}`;
-    // Highlight while busy: this line sits pinned at the bottom of a fast-scrolling screen, and all-dim means invisible.
-    const pending = this.pendingCount > 0 ? ` · ${this.pendingCount} queued` : "";
-    const recovered = this.recoveredCount > 0 ? ` · ${this.recoveredCount} drafts (Alt+Up)` : "";
-    let hint = `${DIM}/ for commands · ^C exit${RESET}`;
-    if (this.activity.type === "answering") {
-      hint = `${YELLOW}${BOLD}⏳ answering${pending} - Enter steer · Alt+Enter follow-up · Esc stop${RESET}`;
-    }
-    if (this.activity.type === "tool") {
-      hint = `${YELLOW}${BOLD}⏳ running ${this.activity.toolName}${pending} · Esc stop${RESET}`;
-    }
-    if (this.activity.type === "permission") {
-      hint = `${YELLOW}${BOLD}⏳ waiting for permission · ${this.activity.toolName}${RESET}`;
-    }
-    if (this.activity.type === "retrying") {
-      const seconds = Math.max(0, Math.ceil((this.activity.retryAt - Date.now()) / 1_000));
-      hint = `${YELLOW}${BOLD}⏳ retrying ${this.activity.attempt}/${this.activity.maxAttempts} in ${seconds}s · Esc stop retrying${RESET}`;
-    }
-    if (this.activity.type === "compacting") {
-      hint = `${YELLOW}${BOLD}⏳ compacting context · Esc stop${RESET}`;
-    }
-    const model = this.model
-      ? `${DIM} · ${this.model} · thinking ${this.thinkingLevel}${RESET}`
-      : "";
-    // Truncated by display columns as well; see the note in Transcript.render.
-    return [truncateToWidth(`${usage}${where}${model}${recovered}    ${hint}`, width)];
-  }
-}
-
-function formatContextUsage(context: ContextUsage): string {
-  if (context.contextWindow === null) {
-    return "context unavailable";
-  }
-  const used = context.tokens === null ? "—" : context.tokens.toLocaleString("en-US");
-  const percent = context.percent === null ? "—" : `${Math.round(context.percent)}%`;
-  const estimate = context.estimated ? "~" : "";
-  return `context ${estimate}${used}/${context.contextWindow.toLocaleString("en-US")} (${percent})`;
-}
 
 /** The permission confirmation. While it is up, it stands in for the input at the bottom. */
 class ConfirmDialog implements Component {
@@ -266,6 +188,14 @@ const tui: TUI = new TuiMainScreen(terminal);
 const transcript = new Transcript();
 const promptInput = new PromptInput();
 const statusBar = new StatusBar();
+const consumeProductUpdate = createTuiUpdateConsumer({
+  setStatus: (update) => {
+    statusBar.update = update;
+  },
+  appendNotice: (notice) => transcript.append(`${YELLOW}[${notice}]${RESET}`),
+  requestRender: () => tui.requestRender(),
+  canAppendNotice: () => statusBar.activity.type === "idle" && !redrawQueued,
+});
 
 const root = new Container();
 root.addChild(transcript);
@@ -302,6 +232,7 @@ let exiting = false;
 let recoveredDrafts: RecoveredDraft[] = [];
 let skillCommands: SkillCommand[] = [];
 let retryRenderTimer: NodeJS.Timeout | undefined;
+let productUpdateObserver: { dispose(): void } | undefined;
 
 function refreshActivity(snapshot: Snapshot): void {
   statusBar.activity = agentActivity(snapshot);
@@ -312,6 +243,7 @@ function refreshActivity(snapshot: Snapshot): void {
     clearInterval(retryRenderTimer);
     retryRenderTimer = undefined;
   }
+  consumeProductUpdate.flushNotice();
 }
 
 /**
@@ -545,6 +477,10 @@ const coreClient = new CoreClient(SERVER_URL, {
     sessionId = state.sessionId;
     statusModel = state.model?.id ?? "";
     drawSnapshot(state.snapshot);
+    productUpdateObserver ??= startProductUpdateObserver({
+      environment: process.env,
+      onUpdate: consumeProductUpdate,
+    });
   },
   onActions: (actions) => {
     for (const action of actions) {
@@ -861,6 +797,7 @@ promptInput.input.onEscape = () => {
 
 function exit(): void {
   exiting = true;
+  productUpdateObserver?.dispose();
   if (retryRenderTimer) {
     clearInterval(retryRenderTimer);
   }

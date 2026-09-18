@@ -10,7 +10,10 @@ import {
   stopLocalCore,
 } from "@cinba/core-manager";
 import { type ServiceMode, requireProductTarget, resolveProductPaths } from "@cinba/installer";
-import { checkForProductUpdatesAutomatically } from "./automatic-update.ts";
+import {
+  CINBA_UPDATE_STATE_DIRECTORY_ENV,
+  checkForProductUpdatesAutomatically,
+} from "./automatic-update.ts";
 import { resolveProductPayloadLayout } from "./layout.ts";
 import { formatInstalledDoctorReport, runInstalledDoctor } from "./doctor.ts";
 import {
@@ -151,6 +154,16 @@ export function parseProductCommand(
     return { type: "tui", workingDirectory: resolve(arguments_[0]!) };
   }
   throw new Error("run 'cinba help' for usage");
+}
+
+export function createProductTuiEnvironment(
+  stateDirectory: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  return {
+    ...environment,
+    [CINBA_UPDATE_STATE_DIRECTORY_ENV]: stateDirectory,
+  };
 }
 
 export function createProductServiceProcess(
@@ -393,7 +406,7 @@ export async function runProductCli(
           cwd: command.workingDirectory,
           stdio: "inherit",
           windowsHide: true,
-          env: process.env,
+          env: createProductTuiEnvironment(paths.stateDirectory),
         }),
       );
       if (code !== 0) {

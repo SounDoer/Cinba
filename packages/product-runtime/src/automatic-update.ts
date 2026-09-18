@@ -13,6 +13,8 @@ export type ProductUpdateViewModel =
   | { phase: "downloading" }
   | { phase: "ready"; candidateVersion: string };
 
+export const CINBA_UPDATE_STATE_DIRECTORY_ENV = "CINBA_UPDATE_STATE_DIR";
+
 type AutomaticUpdateDependencies = {
   prepare: typeof prepareProductUpdate;
   readState: typeof readUpdateState;
