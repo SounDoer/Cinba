@@ -23,6 +23,8 @@ export type UpdateState = {
   failure: UpdateFailure | null;
 };
 
+export const AUTOMATIC_UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1_000;
+
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const REVISION = /^[0-9a-f]{40}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -146,6 +148,26 @@ export function updateStatePath(stateDirectory: string): string {
     throw new Error("update stateDirectory must be absolute");
   }
   return join(stateDirectory, "update.json");
+}
+
+export function automaticUpdateCheckIsDue(options: {
+  state: UpdateState | undefined;
+  currentVersion: string;
+  now?: Date;
+  intervalMs?: number;
+}): boolean {
+  const intervalMs = options.intervalMs ?? AUTOMATIC_UPDATE_CHECK_INTERVAL_MS;
+  if (!Number.isSafeInteger(intervalMs) || intervalMs < 1) {
+    throw new Error("automatic update check interval must be a positive integer");
+  }
+  const state = options.state;
+  if (!state || state.currentVersion !== options.currentVersion) {
+    return true;
+  }
+  if (state.phase === "checking" || state.phase === "downloading") {
+    return true;
+  }
+  return (options.now ?? new Date()).getTime() - Date.parse(state.checkedAt) >= intervalMs;
 }
 
 export async function readUpdateState(stateDirectory: string): Promise<UpdateState | undefined> {

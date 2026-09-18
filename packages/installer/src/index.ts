@@ -74,6 +74,8 @@ export type { UpdateDiscovery } from "./update-discovery.ts";
 export { downloadUpdateCandidate } from "./update-download.ts";
 export type { DownloadedUpdate } from "./update-download.ts";
 export {
+  AUTOMATIC_UPDATE_CHECK_INTERVAL_MS,
+  automaticUpdateCheckIsDue,
   parseUpdateState,
   readUpdateState,
   updateStatePath,

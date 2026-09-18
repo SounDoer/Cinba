@@ -5,9 +5,12 @@ import { type DownloadedUpdate, downloadUpdateCandidate } from "./update-downloa
 import { type UpdateDiscovery, discoverCinbaUpdate } from "./update-discovery.ts";
 import type { ProductTarget } from "./platform.ts";
 import {
+  AUTOMATIC_UPDATE_CHECK_INTERVAL_MS,
   type UpdateCandidate,
   type UpdateFailure,
   type UpdateState,
+  automaticUpdateCheckIsDue,
+  readUpdateState,
   writeUpdateState,
 } from "./update-state.ts";
 
@@ -104,6 +107,8 @@ export async function prepareProductUpdate(options: {
   now?: () => Date;
   processId?: number;
   signal?: AbortSignal;
+  automatic?: boolean;
+  checkIntervalMs?: number;
   discover?: typeof discoverCinbaUpdate;
   download?: typeof downloadUpdateCandidate;
 }): Promise<UpdateState> {
@@ -112,6 +117,20 @@ export async function prepareProductUpdate(options: {
   let candidate: UpdateCandidate | null = null;
   let operation: "discovery" | "download" = "discovery";
   try {
+    if (options.automatic) {
+      const existing = await readUpdateState(options.stateDirectory);
+      if (
+        existing &&
+        !automaticUpdateCheckIsDue({
+          state: existing,
+          currentVersion: options.currentVersion,
+          now: new Date(checkedAt),
+          intervalMs: options.checkIntervalMs ?? AUTOMATIC_UPDATE_CHECK_INTERVAL_MS,
+        })
+      ) {
+        return existing;
+      }
+    }
     await writeUpdateState(
       options.stateDirectory,
       state("checking", options.currentVersion, checkedAt, null),

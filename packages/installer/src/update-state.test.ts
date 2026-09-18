@@ -3,7 +3,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { parseUpdateState, readUpdateState, writeUpdateState } from "./update-state.ts";
+import {
+  AUTOMATIC_UPDATE_CHECK_INTERVAL_MS,
+  automaticUpdateCheckIsDue,
+  parseUpdateState,
+  readUpdateState,
+  writeUpdateState,
+} from "./update-state.ts";
 
 const ready = {
   schemaVersion: 1 as const,
@@ -39,4 +45,46 @@ test("update state rejects incomplete phases and unknown fields", () => {
     /failure does not match/,
   );
   assert.throws(() => parseUpdateState({ ...ready, progress: 50 }), /fields are invalid/);
+});
+
+test("automatic checks are shared and limited to once per day", () => {
+  assert.equal(
+    automaticUpdateCheckIsDue({
+      state: ready,
+      currentVersion: ready.currentVersion,
+      now: new Date(Date.parse(ready.checkedAt) + AUTOMATIC_UPDATE_CHECK_INTERVAL_MS - 1),
+    }),
+    false,
+  );
+  assert.equal(
+    automaticUpdateCheckIsDue({
+      state: ready,
+      currentVersion: ready.currentVersion,
+      now: new Date(Date.parse(ready.checkedAt) + AUTOMATIC_UPDATE_CHECK_INTERVAL_MS),
+    }),
+    true,
+  );
+  assert.equal(
+    automaticUpdateCheckIsDue({
+      state: ready,
+      currentVersion: "0.3.0",
+      now: new Date(ready.checkedAt),
+    }),
+    true,
+  );
+});
+
+test("an interrupted transient update operation can retry immediately", () => {
+  assert.equal(
+    automaticUpdateCheckIsDue({
+      state: {
+        ...ready,
+        phase: "downloading",
+        candidate: { ...ready.candidate, artifactPath: null },
+      },
+      currentVersion: ready.currentVersion,
+      now: new Date(ready.checkedAt),
+    }),
+    true,
+  );
 });

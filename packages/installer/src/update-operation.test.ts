@@ -91,3 +91,36 @@ test("download failure leaves a retryable candidate and a safe failure code", as
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("automatic callers reuse a recent shared result without another request", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-update-throttle-"));
+  let discoveries = 0;
+  const common = {
+    currentVersion: "0.1.0",
+    currentRevision: "0".repeat(40),
+    target: "windows-x64" as const,
+    stateDirectory: join(root, "state"),
+    cacheDirectory: join(root, "cache"),
+    automatic: true,
+    discover: async () => {
+      discoveries += 1;
+      return {
+        state: "current" as const,
+        currentVersion: "0.1.0",
+        latestVersion: "0.1.0",
+        releaseUrl: "https://github.com/SounDoer/Cinba/releases/tag/v0.1.0",
+      };
+    },
+  };
+  try {
+    await prepareProductUpdate({ ...common, now: () => new Date("2026-09-18T01:00:00Z") });
+    const reused = await prepareProductUpdate({
+      ...common,
+      now: () => new Date("2026-09-18T02:00:00Z"),
+    });
+    assert.equal(reused.phase, "current");
+    assert.equal(discoveries, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
