@@ -11,9 +11,11 @@ const offlineTitle = document.querySelector<HTMLElement>("#offline-title")!;
 const offlineMessage = document.querySelector<HTMLElement>("#offline-message")!;
 const offlineRetry = document.querySelector<HTMLButtonElement>("#offline-retry")!;
 const offlineManage = document.querySelector<HTMLButtonElement>("#offline-manage")!;
+const brand = document.querySelector<HTMLElement>("#product-name")!;
 
 function render(state: DesktopShellState): void {
   const existing = new Map([...profile.options].map((option) => [option.value, option]));
+  brand.textContent = state.productName;
   profile.replaceChildren(
     ...state.profiles.map((item) => {
       const option = existing.get(item.id) ?? document.createElement("option");
@@ -31,7 +33,7 @@ function render(state: DesktopShellState): void {
   const selectedLabel = selected?.label ?? "Core";
   offlineTitle.textContent = `${selectedLabel} is unavailable`;
   offlineMessage.textContent = state.message ?? "The Core did not respond.";
-  document.title = `Cinba Dev — ${selectedLabel}`;
+  document.title = `${state.productName} — ${selectedLabel}`;
 }
 
 profile.addEventListener("change", () => void desktopApi.selectProfile(profile.value));

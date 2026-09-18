@@ -83,6 +83,7 @@ export function createTrayViewModel(
   status: LocalCoreStatus,
   operation?: TrayOperation,
   error?: string,
+  productName = "Cinba Dev",
 ): TrayViewModel {
   const detailLabels: string[] = [];
   if (status.pid !== undefined) {
@@ -108,7 +109,7 @@ export function createTrayViewModel(
   if (operation) {
     const action = operation === "starting" ? "starting" : "stopping";
     return {
-      tooltip: `Cinba Dev Local Core: ${action}`,
+      tooltip: `${productName} Local Core: ${action}`,
       iconTone: error ? "error" : "busy",
       statusLabel: `Local Core: ${action}`,
       detailLabels,
@@ -119,7 +120,9 @@ export function createTrayViewModel(
 
   if (!status.running) {
     return {
-      tooltip: error ? "Cinba Dev Local Core: status error" : "Cinba Dev Local Core: stopped",
+      tooltip: error
+        ? `${productName} Local Core: status error`
+        : `${productName} Local Core: stopped`,
       iconTone: error ? "error" : "stopped",
       statusLabel: "Local Core: stopped",
       detailLabels,
@@ -141,7 +144,9 @@ export function createTrayViewModel(
     iconTone = "error";
   }
   return {
-    tooltip: error ? "Cinba Dev Local Core: status error" : `Cinba Dev Local Core: ${state}`,
+    tooltip: error
+      ? `${productName} Local Core: status error`
+      : `${productName} Local Core: ${state}`,
     iconTone,
     statusLabel: `Local Core: ${state}`,
     detailLabels,
@@ -161,6 +166,8 @@ export async function createSystemTrayController(options: {
   profiles: CoreProfileStore;
   currentProfileId: () => string;
   localConfig?: LocalCoreConfig;
+  expectedRevision?: string;
+  productName?: "Cinba" | "Cinba Dev";
 }): Promise<SystemTrayController> {
   const { Menu, Tray, app, nativeImage, shell } = await import("electron");
   let status = STOPPED;
@@ -186,12 +193,13 @@ export async function createSystemTrayController(options: {
   const tray = new Tray(createTrayIcon("stopped"));
 
   function render(): void {
-    const view = createTrayViewModel(status, operation, recentError);
+    const productName = options.productName ?? "Cinba Dev";
+    const view = createTrayViewModel(status, operation, recentError, productName);
     tray.setImage(createTrayIcon(view.iconTone));
     tray.setToolTip(view.tooltip);
     tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: "Open Cinba Dev", enabled: !operation, click: () => void openWindow() },
+        { label: `Open ${productName}`, enabled: !operation, click: () => void openWindow() },
         {
           label: "Open Core",
           submenu: createCoreMenuItems(options.profiles.list(), options.currentProfileId()).map(
@@ -220,7 +228,7 @@ export async function createSystemTrayController(options: {
           click: () => void refreshStatus(),
         },
         { label: "Open Local Core Log", click: () => void openCoreLog() },
-        { label: "Quit Cinba Dev", click: () => app.quit() },
+        { label: `Quit ${productName}`, click: () => app.quit() },
       ]),
     );
   }
@@ -265,7 +273,14 @@ export async function createSystemTrayController(options: {
 
   async function startCore(): Promise<void> {
     await runOperation("starting", () =>
-      ensureLocalCore(options.localConfig ? { config: options.localConfig } : undefined),
+      ensureLocalCore(
+        options.localConfig
+          ? {
+              config: options.localConfig,
+              ...(options.expectedRevision ? { expectedRevision: options.expectedRevision } : {}),
+            }
+          : undefined,
+      ),
     );
   }
 

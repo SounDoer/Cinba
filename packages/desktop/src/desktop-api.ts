@@ -1,6 +1,7 @@
 import type { ShellViewModel } from "./shell-view.ts";
 
 export type DesktopShellState = ShellViewModel & {
+  productName: "Cinba" | "Cinba Dev";
   problem?: string;
   canRecoverProfiles: boolean;
 };

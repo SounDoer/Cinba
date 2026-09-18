@@ -15,6 +15,7 @@ const formMessage = document.querySelector<HTMLElement>("#form-message")!;
 const testButton = document.querySelector<HTMLButtonElement>("#test")!;
 const cancelButton = document.querySelector<HTMLButtonElement>("#cancel")!;
 let state: DesktopShellState;
+const productName = document.querySelector<HTMLElement>("#product-name")!;
 
 function input(): ProfileInput {
   return { label: labelInput.value, baseUrl: urlInput.value };
@@ -84,6 +85,8 @@ function profileCard(profile: CoreProfile): HTMLElement {
 
 function render(next: DesktopShellState): void {
   state = next;
+  productName.textContent = `${state.productName} Desktop`;
+  document.title = `Manage Connections — ${state.productName}`;
   list.replaceChildren(...state.profiles.map(profileCard));
   problem.hidden = !state.problem;
   problem.textContent = state.problem ?? "";

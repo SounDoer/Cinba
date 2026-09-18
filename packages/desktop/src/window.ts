@@ -63,7 +63,12 @@ export type DesktopWindowController = {
 export function createDesktopWindowController(
   profiles: CoreProfileStore,
   localConfig?: LocalCoreConfig,
+  options: {
+    productName?: "Cinba" | "Cinba Dev";
+    expectedRevision?: string;
+  } = {},
 ): DesktopWindowController {
+  const productName = options.productName ?? "Cinba Dev";
   let window: BrowserWindow | undefined;
   let manager: BrowserWindow | undefined;
   let coreView: WebContentsView | undefined;
@@ -73,7 +78,14 @@ export function createDesktopWindowController(
 
   const navigator = createCoreNavigator({
     ensureLocal: async () => {
-      await ensureLocalCore(localConfig ? { config: localConfig } : undefined);
+      await ensureLocalCore(
+        localConfig
+          ? {
+              config: localConfig,
+              ...(options.expectedRevision ? { expectedRevision: options.expectedRevision } : {}),
+            }
+          : undefined,
+      );
     },
     probe: async (baseUrl) => Boolean(await probeCore(baseUrl)),
     load: async (baseUrl) => {
@@ -93,6 +105,7 @@ export function createDesktopWindowController(
     const core = createShellViewModel(profiles.list(), currentConnection());
     const state = {
       ...core,
+      productName,
       canRecoverProfiles: profiles.canRecover(),
       ...(problem ? { problem } : {}),
     };
@@ -126,7 +139,7 @@ export function createDesktopWindowController(
       return;
     }
     coreView.setVisible(state.type === "online");
-    window.setTitle(`Cinba Dev — ${state.profile.label}`);
+    window.setTitle(`${productName} — ${state.profile.label}`);
     broadcast();
   }
 
@@ -191,7 +204,7 @@ export function createDesktopWindowController(
     window = new BrowserWindow({
       width: 980,
       height: 760,
-      title: "Cinba Dev",
+      title: productName,
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
@@ -253,7 +266,7 @@ export function createDesktopWindowController(
     manager = new BrowserWindow({
       width: 760,
       height: 720,
-      title: "Manage Connections — Cinba Dev",
+      title: `Manage Connections — ${productName}`,
       parent: window,
       webPreferences: {
         contextIsolation: true,
