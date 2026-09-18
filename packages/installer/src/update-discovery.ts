@@ -1,6 +1,11 @@
 import { type ProductTarget } from "./platform.ts";
 import { type ReleaseArtifact, type ReleaseManifest, parseReleaseManifest } from "./manifest.ts";
 import { RELEASE_MANIFEST_FILE_NAME } from "./product-release-constants.ts";
+import {
+  type DetectedSystem,
+  detectCurrentSystem,
+  systemMeetsArtifactMinimum,
+} from "./system-compatibility.ts";
 
 export const CINBA_RELEASE_API = "https://api.github.com/repos/SounDoer/Cinba/releases/latest";
 export const CINBA_RELEASE_MANIFEST_ASSET = RELEASE_MANIFEST_FILE_NAME;
@@ -142,6 +147,7 @@ export async function discoverCinbaUpdate(options: {
   currentRevision: string;
   target: ProductTarget;
   fetch?: typeof fetch;
+  probeSystem?: (target: ProductTarget) => Promise<DetectedSystem>;
 }): Promise<UpdateDiscovery> {
   stableVersionParts(options.currentVersion);
   const fetcher = options.fetch ?? fetch;
@@ -206,6 +212,17 @@ export async function discoverCinbaUpdate(options: {
       latestVersion: manifest.version,
       releaseUrl: release.htmlUrl,
     };
+  }
+  let system: DetectedSystem;
+  try {
+    system = await (options.probeSystem ?? detectCurrentSystem)(options.target);
+  } catch (error) {
+    throw new Error("A new Cinba version exists, but system compatibility is unverifiable", {
+      cause: error,
+    });
+  }
+  if (!systemMeetsArtifactMinimum(artifact, system)) {
+    throw new Error("A new Cinba version exists, but this system is incompatible");
   }
   return {
     state: "available",

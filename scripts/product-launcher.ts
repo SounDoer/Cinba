@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
+import { createInterface } from "node:readline/promises";
 import {
   configurePosixLauncherPath,
   configureWindowsProductIntegration,
@@ -10,7 +11,10 @@ import {
   resolveProductPaths,
   runInstalledProductCommand,
 } from "@cinba/installer";
-import { parseStableLauncherCommand } from "./product-launcher-command.ts";
+import {
+  parseExpectedProductInstallRelease,
+  parseStableLauncherCommand,
+} from "./product-launcher-command.ts";
 import {
   MACOS_INSTALL_PARENT_PROCESS_ID,
   parseMacosInstallHandoff,
@@ -22,6 +26,7 @@ import {
   runUninstallHelper,
   stopProductForUninstall,
 } from "./product-uninstall.ts";
+import { runStableProductUpdate, runWindowsUpdateHelper } from "./product-update.ts";
 
 function openMacosApplication(applicationPath: string): void {
   const child = spawn("/usr/bin/open", [applicationPath], {
@@ -45,6 +50,16 @@ function showMacosInstallationFailure(): void {
   child.unref();
 }
 
+async function confirmUpdateInstallation(version: string): Promise<boolean> {
+  const prompt = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await prompt.question(`Install Cinba ${version} now? [y/N] `);
+    return answer.trim().toLowerCase() === "y" || answer.trim().toLowerCase() === "yes";
+  } finally {
+    prompt.close();
+  }
+}
+
 async function run(): Promise<void> {
   const target = requireProductTarget();
   const platform = process.platform;
@@ -57,6 +72,10 @@ async function run(): Promise<void> {
     environment: process.env,
   });
   const launcherCommand = parseStableLauncherCommand(process.argv.slice(2), process.execPath);
+  if (launcherCommand.type === "update-helper") {
+    await runWindowsUpdateHelper(launcherCommand);
+    return;
+  }
   if (launcherCommand.type === "uninstall-helper") {
     await runUninstallHelper(launcherCommand);
     return;
@@ -70,6 +89,16 @@ async function run(): Promise<void> {
     console.log("Cinba uninstall started.");
     return;
   }
+  if (launcherCommand.type === "update") {
+    await runStableProductUpdate({
+      platform,
+      paths,
+      target,
+      interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+      confirm: confirmUpdateInstallation,
+    });
+    return;
+  }
   if (launcherCommand.type === "install") {
     const macosHandoff = parseMacosInstallHandoff(process.env);
     if (macosHandoff) {
@@ -81,10 +110,12 @@ async function run(): Promise<void> {
     if (platform === "linux" && typeof process.getuid === "function" && process.getuid() === 0) {
       throw new Error("Cinba must be installed as a non-root user");
     }
+    const expectedRelease = parseExpectedProductInstallRelease(process.env);
     const transaction = await installProductBundle({
       bundleDirectory: launcherCommand.bundleDirectory,
       paths,
       target,
+      ...(expectedRelease ? { expectedRelease } : {}),
     });
     console.log(`Cinba ${transaction.candidate.version} installed successfully.`);
     if (platform === "win32") {

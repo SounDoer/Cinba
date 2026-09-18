@@ -8,6 +8,7 @@ import {
   automaticUpdateCheckIsDue,
   parseUpdateState,
   readUpdateState,
+  recordUpdateInstallationResult,
   writeUpdateState,
 } from "./update-state.ts";
 
@@ -43,6 +44,16 @@ test("update state rejects incomplete phases and unknown fields", () => {
   assert.throws(
     () => parseUpdateState({ ...ready, phase: "current", failure: "download-failed" }),
     /failure does not match/,
+  );
+  assert.throws(
+    () =>
+      parseUpdateState({
+        ...ready,
+        phase: "failed",
+        candidate: null,
+        failure: "installation-failed",
+      }),
+    /installation failure requires a candidate/,
   );
   assert.throws(() => parseUpdateState({ ...ready, progress: 50 }), /fields are invalid/);
 });
@@ -87,4 +98,56 @@ test("an interrupted transient update operation can retry immediately", () => {
     }),
     true,
   );
+});
+
+test("successful installation replaces stale ready state with the new current version", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-update-installed-"));
+  try {
+    await recordUpdateInstallationResult({
+      stateDirectory: root,
+      currentVersion: ready.currentVersion,
+      candidate: ready.candidate,
+      result: "installed",
+      now: () => new Date("2026-09-18T02:00:00Z"),
+    });
+    const saved = await readUpdateState(root);
+    assert.deepEqual(saved, {
+      schemaVersion: 1,
+      phase: "current",
+      currentVersion: "0.2.0",
+      checkedAt: "2026-09-18T02:00:00.000Z",
+      candidate: null,
+      failure: null,
+    });
+    assert.equal(
+      automaticUpdateCheckIsDue({
+        state: saved,
+        currentVersion: "0.2.0",
+        now: new Date("2026-09-18T03:00:00Z"),
+      }),
+      false,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("installation failure retains the verified candidate for retry", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-update-install-failed-"));
+  try {
+    await recordUpdateInstallationResult({
+      stateDirectory: root,
+      currentVersion: ready.currentVersion,
+      candidate: ready.candidate,
+      result: "failed",
+      now: () => new Date("2026-09-18T02:00:00Z"),
+    });
+    const saved = await readUpdateState(root);
+    assert.equal(saved?.phase, "failed");
+    assert.equal(saved?.failure, "installation-failed");
+    assert.deepEqual(saved?.candidate, ready.candidate);
+    assert.equal(saved?.currentVersion, "0.1.0");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

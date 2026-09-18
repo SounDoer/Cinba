@@ -92,6 +92,33 @@ test("download failure leaves a retryable candidate and a safe failure code", as
   }
 });
 
+test("an incompatible new release fails before artifact download", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-update-incompatible-"));
+  let downloads = 0;
+  try {
+    await assert.rejects(
+      prepareProductUpdate({
+        currentVersion: "0.1.0",
+        currentRevision: "0".repeat(40),
+        target: "windows-x64",
+        stateDirectory: join(root, "state"),
+        cacheDirectory: join(root, "cache"),
+        discover: async () => {
+          throw new Error("A new Cinba version exists, but this system is incompatible");
+        },
+        download: async () => {
+          downloads += 1;
+          throw new Error("artifact download must not start");
+        },
+      }),
+      /new Cinba version exists.*system is incompatible/,
+    );
+    assert.equal(downloads, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("automatic callers reuse a recent shared result without another request", async () => {
   const root = await mkdtemp(join(tmpdir(), "cinba-update-throttle-"));
   let discoveries = 0;

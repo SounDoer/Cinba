@@ -90,11 +90,25 @@ export {
   automaticUpdateCheckIsDue,
   parseUpdateState,
   readUpdateState,
+  recordUpdateInstallationResult,
   updateStatePath,
   writeUpdateState,
 } from "./update-state.ts";
 export { prepareProductUpdate } from "./update-operation.ts";
+export { cleanupUpdateCandidateCache } from "./update-cache.ts";
+export {
+  acquireProductUpdateLease,
+  claimTransferredProductUpdateLease,
+  runWithProductUpdateLease,
+} from "./update-lock.ts";
+export type { ProductUpdateLease } from "./update-lock.ts";
 export type { UpdateCandidate, UpdateFailure, UpdatePhase, UpdateState } from "./update-state.ts";
+export { installPreparedUpdateArtifact } from "./update-installation.ts";
+export type {
+  RunUpdateInstaller,
+  UpdateInstallerResult,
+  VerifyUpdateArtifact,
+} from "./update-installation.ts";
 export { createManagedServiceDefinitions } from "./services/definitions.ts";
 export type { ManagedServiceDefinition, ServicePlatform } from "./services/definitions.ts";
 export {

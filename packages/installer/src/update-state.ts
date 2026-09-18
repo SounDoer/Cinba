@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join } from "node:path";
 import { type ProductTarget, isProductTarget } from "./platform.ts";
 
 export type UpdatePhase = "current" | "checking" | "downloading" | "ready" | "failed";
-export type UpdateFailure = "discovery-failed" | "download-failed";
+export type UpdateFailure = "discovery-failed" | "download-failed" | "installation-failed";
 export type UpdateCandidate = {
   version: string;
   revision: string;
@@ -29,7 +29,11 @@ const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const REVISION = /^[0-9a-f]{40}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const PHASES = new Set<UpdatePhase>(["current", "checking", "downloading", "ready", "failed"]);
-const FAILURES = new Set<UpdateFailure>(["discovery-failed", "download-failed"]);
+const FAILURES = new Set<UpdateFailure>([
+  "discovery-failed",
+  "download-failed",
+  "installation-failed",
+]);
 
 function exactRecord(
   value: unknown,
@@ -133,6 +137,9 @@ export function parseUpdateState(value: unknown): UpdateState {
   if (phase === "failed" ? parsed.failure === null : parsed.failure !== null) {
     throw new Error("update state failure does not match its phase");
   }
+  if (parsed.failure === "installation-failed" && !candidate?.artifactPath) {
+    throw new Error("update installation failure requires a candidate");
+  }
   return {
     schemaVersion: 1,
     phase,
@@ -197,4 +204,34 @@ export async function writeUpdateState(stateDirectory: string, state: UpdateStat
     await rm(temporary, { force: true });
     throw error;
   }
+}
+
+export async function recordUpdateInstallationResult(options: {
+  stateDirectory: string;
+  currentVersion: string;
+  candidate: UpdateCandidate;
+  result: "installed" | "failed";
+  now?: () => Date;
+}): Promise<void> {
+  const checkedAt = (options.now ?? (() => new Date()))().toISOString();
+  await writeUpdateState(
+    options.stateDirectory,
+    options.result === "installed"
+      ? {
+          schemaVersion: 1,
+          phase: "current",
+          currentVersion: options.candidate.version,
+          checkedAt,
+          candidate: null,
+          failure: null,
+        }
+      : {
+          schemaVersion: 1,
+          phase: "failed",
+          currentVersion: options.currentVersion,
+          checkedAt,
+          candidate: options.candidate,
+          failure: "installation-failed",
+        },
+  );
 }

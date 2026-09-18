@@ -1,9 +1,8 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { resolve } from "node:path";
 import { type DownloadedUpdate, downloadUpdateCandidate } from "./update-download.ts";
 import { type UpdateDiscovery, discoverCinbaUpdate } from "./update-discovery.ts";
 import type { ProductTarget } from "./platform.ts";
+import { type ProductUpdateLease, acquireProductUpdateLease } from "./update-lock.ts";
 import {
   AUTOMATIC_UPDATE_CHECK_INTERVAL_MS,
   type UpdateCandidate,
@@ -13,67 +12,6 @@ import {
   readUpdateState,
   writeUpdateState,
 } from "./update-state.ts";
-
-type UpdateLock = { schemaVersion: 1; pid: number; token: string };
-
-async function readLock(path: string): Promise<UpdateLock | undefined> {
-  try {
-    const parsed = JSON.parse(await readFile(path, "utf8")) as Partial<UpdateLock>;
-    return parsed.schemaVersion === 1 &&
-      Number.isSafeInteger(parsed.pid) &&
-      (parsed.pid ?? 0) > 0 &&
-      typeof parsed.token === "string" &&
-      parsed.token.length > 0
-      ? (parsed as UpdateLock)
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function processIsAlive(processId: number): boolean {
-  try {
-    process.kill(processId, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== "ESRCH";
-  }
-}
-
-async function acquireUpdateLock(
-  stateDirectory: string,
-  processId: number,
-): Promise<() => Promise<void>> {
-  const path = join(stateDirectory, "update-operation");
-  const ownerPath = join(path, "owner.json");
-  const token = randomUUID();
-  await mkdir(stateDirectory, { recursive: true });
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      await mkdir(path);
-      await writeFile(
-        ownerPath,
-        JSON.stringify({ schemaVersion: 1, pid: processId, token } satisfies UpdateLock),
-        { flag: "wx", mode: 0o600 },
-      );
-      return async () => {
-        if ((await readLock(ownerPath))?.token === token) {
-          await rm(path, { recursive: true, force: true });
-        }
-      };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-        throw error;
-      }
-      const owner = await readLock(ownerPath);
-      if (!owner || processIsAlive(owner.pid)) {
-        throw new Error("another Cinba update operation is active", { cause: error });
-      }
-      await rm(path, { recursive: true, force: true });
-    }
-  }
-  throw new Error("could not acquire the Cinba update operation lock");
-}
 
 function candidateFrom(update: Extract<UpdateDiscovery, { state: "available" }>): UpdateCandidate {
   return {
@@ -111,8 +49,17 @@ export async function prepareProductUpdate(options: {
   checkIntervalMs?: number;
   discover?: typeof discoverCinbaUpdate;
   download?: typeof downloadUpdateCandidate;
+  lease?: ProductUpdateLease;
 }): Promise<UpdateState> {
-  const release = await acquireUpdateLock(options.stateDirectory, options.processId ?? process.pid);
+  if (options.lease && options.lease.stateDirectory !== resolve(options.stateDirectory)) {
+    throw new Error("update lease does not belong to this state directory");
+  }
+  const lease =
+    options.lease ??
+    (await acquireProductUpdateLease(options.stateDirectory, {
+      processId: options.processId ?? process.pid,
+    }));
+  const ownsLease = !options.lease;
   const checkedAt = (options.now ?? (() => new Date()))().toISOString();
   let candidate: UpdateCandidate | null = null;
   let operation: "discovery" | "download" = "discovery";
@@ -170,6 +117,8 @@ export async function prepareProductUpdate(options: {
     );
     throw error;
   } finally {
-    await release();
+    if (ownsLease) {
+      await lease.release();
+    }
   }
 }

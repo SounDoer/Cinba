@@ -144,3 +144,34 @@ test("a stable-file collision discards the staged candidate so retry is possible
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("an expected release mismatch fails before staging or stable file changes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-bundle-install-identity-"));
+  const paths = layout(root);
+  let prepared = false;
+  try {
+    const bundle = await createBundle(root);
+    await assert.rejects(
+      installReleaseBundle({
+        bundleDirectory: bundle,
+        layout: paths,
+        expectedTarget: "windows-x64",
+        expectedRelease: {
+          version: "0.2.0",
+          revision: "c".repeat(40),
+          target: "windows-x64",
+        },
+        prepareStableFiles: async () => {
+          prepared = true;
+          throw new Error("must not prepare stable files");
+        },
+      }),
+      /does not match the expected release/,
+    );
+    assert.equal(prepared, false);
+    assert.equal(await readInstallationTransaction(paths), undefined);
+    assert.equal(await readCurrentRelease(paths), undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

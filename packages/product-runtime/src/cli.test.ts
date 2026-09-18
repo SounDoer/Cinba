@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   createProductCoreConfig,
   createProductServiceProcess,
+  formatProductHelp,
   parseProductCommand,
 } from "./cli.ts";
 
@@ -38,6 +39,7 @@ test("the installed command defaults to the TUI and keeps management explicit", 
   assert.throws(() => parseProductCommand(["core", "mode", "disabled"], project), {
     message: "core does not support mode disabled",
   });
+  assert.match(formatProductHelp(), /cinba update/);
 });
 
 test("the installed Core separates durable data, runtime state, logs, and payload", () => {
@@ -82,6 +84,7 @@ test("the internal Sync service is loopback-only and isolated from Core data", (
     platform: "darwin",
     homeDirectory: "/Users/ada",
     environment: {},
+    managedService: true,
   });
   assert.equal(service.entry, join(payload, "lib", "sync.mjs"));
   assert.equal(service.environment.CINBA_SYNC_HOST, "127.0.0.1");
@@ -91,4 +94,18 @@ test("the internal Sync service is loopback-only and isolated from Core data", (
     "/Users/ada/Library/Application Support/com.soundoer.cinba/Data/Sync",
   );
   assert.equal(service.environment.CINBA_SYNC_WEB_ROOT, join(payload, "sync-web"));
+  assert.equal(
+    service.controlStateDirectory,
+    "/Users/ada/Library/Application Support/com.soundoer.cinba/State",
+  );
+});
+
+test("foreground Sync never receives managed ownership records or a control token", () => {
+  const service = createProductServiceProcess(resolve("payload"), "b".repeat(40), "sync", {
+    platform: "linux",
+    homeDirectory: "/home/ada",
+    environment: { CINBA_LOCAL_SYNC_CONTROL_TOKEN: "inherited" },
+  });
+  assert.equal(service.controlStateDirectory, undefined);
+  assert.equal(service.environment.CINBA_LOCAL_SYNC_CONTROL_TOKEN, undefined);
 });

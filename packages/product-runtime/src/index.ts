@@ -28,3 +28,16 @@ export type {
 export { createDevelopmentCoreConfig, createDevelopmentSyncEnvironment } from "./development.ts";
 export { parseProductRelease, readProductRelease } from "./release.ts";
 export type { ProductRelease } from "./release.ts";
+export {
+  createManagedSyncControl,
+  createManagedSyncControlConfig,
+  inspectManagedSyncControl,
+  removeManagedSyncControl,
+  stopManagedSyncControl,
+  waitForManagedSyncExit,
+} from "./sync-control.ts";
+export type {
+  LocalSyncControlStatus,
+  ManagedSyncControlConfig,
+  ManagedSyncStatus,
+} from "./sync-control.ts";

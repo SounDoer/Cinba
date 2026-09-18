@@ -18,6 +18,11 @@ export type InstallReleaseBundleOptions = {
   bundleDirectory: string;
   layout: StageCandidateOptions["layout"];
   expectedTarget: ProductTarget;
+  expectedRelease?: {
+    version: string;
+    revision: string;
+    target: ProductTarget;
+  };
   prepareStableFiles?: (bundle: VerifiedReleaseBundle) => Promise<PreparedStableFiles>;
   verify?: ActivateCandidateOptions["verify"];
   dataMigration?: ActivateCandidateOptions["dataMigration"];
@@ -29,6 +34,14 @@ export async function installReleaseBundle(
   options: InstallReleaseBundleOptions,
 ): Promise<InstallationTransaction> {
   const bundle = await verifyReleaseBundle(options.bundleDirectory, options.expectedTarget);
+  if (
+    options.expectedRelease &&
+    (bundle.metadata.version !== options.expectedRelease.version ||
+      bundle.metadata.revision !== options.expectedRelease.revision ||
+      bundle.metadata.target !== options.expectedRelease.target)
+  ) {
+    throw new Error("release bundle identity does not match the expected release");
+  }
   await stageCandidate({
     sourceDirectory: bundle.payloadDirectory,
     layout: options.layout,

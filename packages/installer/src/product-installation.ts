@@ -84,6 +84,11 @@ export async function installProductBundle(options: {
   bundleDirectory: string;
   paths: ProductPaths;
   target: ProductTarget;
+  expectedRelease?: {
+    version: string;
+    revision: string;
+    target: ProductTarget;
+  };
   transactionId?: string;
   verify?: typeof verifyInstalledProductRelease;
 }): Promise<InstallationTransaction> {
@@ -97,6 +102,7 @@ export async function installProductBundle(options: {
     bundleDirectory: options.bundleDirectory,
     layout: options.paths,
     expectedTarget: options.target,
+    ...(options.expectedRelease ? { expectedRelease: options.expectedRelease } : {}),
     ...(options.transactionId ? { transactionId: options.transactionId } : {}),
     prepareStableFiles: async (bundle) =>
       await prepareStableProductFiles({ bundle, paths: options.paths, mode }),

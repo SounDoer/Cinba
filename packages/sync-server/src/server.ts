@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EventEmitter } from "node:events";
+import { createLocalSyncControlHandler } from "./local-sync-control.ts";
 import { createSyncApiHandler } from "./routes/sync-api-routes.ts";
 import { createSyncWebStaticHandler } from "./routes/sync-web-static.ts";
 import { AdministratorAuthService } from "./services/administrator-auth.ts";
@@ -37,7 +38,13 @@ export function assertLoopbackSyncHost(host: string): void {
   }
 }
 
-export function createSyncServer(options: SyncServerOptions): Server {
+export function createSyncServer(
+  options: SyncServerOptions,
+  localControl: {
+    token?: string;
+    requestStop?: () => void;
+  } = {},
+): Server {
   assertLoopbackSyncHost(options.host);
   const store = createSyncStore(options.stateDirectory, {
     readOnly: () => existsSync(syncMaintenancePath(options.stateDirectory)),
@@ -56,13 +63,49 @@ export function createSyncServer(options: SyncServerOptions): Server {
     options.webRoot ??
     join(dirname(dirname(dirname(fileURLToPath(import.meta.url)))), "sync-web", "dist");
   const staticFiles = createSyncWebStaticHandler(webRoot);
+  let activeRequestCount = 0;
+  let draining = false;
+  const control = createLocalSyncControlHandler({
+    token: localControl.token,
+    snapshot: () => ({ activeRequestCount, draining }),
+    beginStop: () => {
+      if (activeRequestCount > 0 || draining) {
+        return false;
+      }
+      draining = true;
+      return true;
+    },
+    requestStop: localControl.requestStop ?? (() => undefined),
+  });
   return createHttpServer(async (request, response) => {
+    if (control(request, response)) {
+      return;
+    }
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
     if (path === "/health" && request.method === "GET") {
       response.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       response.end(JSON.stringify({ version: 1, status: "ok", serverId: store.serverId() }));
       return;
     }
+    if (draining) {
+      response
+        .writeHead(503, {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+        })
+        .end(JSON.stringify({ version: 1, error: "sync_draining" }));
+      return;
+    }
+    activeRequestCount += 1;
+    let released = false;
+    const release = () => {
+      if (!released) {
+        released = true;
+        activeRequestCount -= 1;
+      }
+    };
+    response.once("finish", release);
+    response.once("close", release);
     const publicUrl = new URL(options.publicOrigin);
     if (
       publicUrl.protocol === "https:" &&
@@ -85,12 +128,27 @@ export function createSyncServer(options: SyncServerOptions): Server {
   });
 }
 
+export function closeSyncServer(server: Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+}
+
 export async function runSyncServer(
   options: SyncServerOptions,
   signals: Pick<EventEmitter, "once"> = process,
 ): Promise<void> {
   assertLoopbackSyncHost(options.host);
-  const server = createSyncServer(options);
+  let requestStop: () => void = () => undefined;
+  const stopping = new Promise<void>((resolve) => {
+    requestStop = resolve;
+  });
+  const server = createSyncServer(options, {
+    ...(process.env.CINBA_LOCAL_SYNC_CONTROL_TOKEN
+      ? { token: process.env.CINBA_LOCAL_SYNC_CONTROL_TOKEN }
+      : {}),
+    requestStop,
+  });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(options.port, options.host, resolve);
@@ -100,18 +158,10 @@ export async function runSyncServer(
   if (status.setupCode) {
     console.log(`[sync] Setup Code: ${status.setupCode}`);
   }
-  await new Promise<void>((resolve) => {
-    let closing = false;
-    const close = () => {
-      if (closing) {
-        return;
-      }
-      closing = true;
-      server.close(() => resolve());
-    };
-    signals.once("SIGINT", close);
-    signals.once("SIGTERM", close);
-  });
+  signals.once("SIGINT", requestStop);
+  signals.once("SIGTERM", requestStop);
+  await stopping;
+  await closeSyncServer(server);
 }
 
 function inspectForStartup(directory: string): { setupCode?: string } {

@@ -4,6 +4,11 @@ import { CINBA_RELEASE_API, discoverCinbaUpdate } from "./update-discovery.ts";
 
 const digest = "ab".repeat(32);
 const revision = "1".repeat(40);
+const supportedSystems = {
+  "windows-x64": { platform: "windows", version: "10.0" },
+  "macos-arm64": { platform: "macos", version: "13.5" },
+  "linux-x64-gnu": { platform: "linux-gnu", kernel: "4.18", glibc: "2.28" },
+} as const;
 
 function manifest(version = "0.2.0") {
   return {
@@ -86,6 +91,7 @@ test("discovers one target artifact from an immutable stable Cinba release", asy
     currentRevision: "0".repeat(40),
     target: "windows-x64",
     fetch: fetchRelease(),
+    probeSystem: async () => supportedSystems["windows-x64"],
   });
   assert.equal(result.state, "available");
   if (result.state === "available") {
@@ -104,8 +110,57 @@ test("a same or older immutable release leaves the installation current", async 
     currentRevision: revision,
     target: "linux-x64-gnu",
     fetch: fetchRelease(),
+    probeSystem: async () => supportedSystems["linux-x64-gnu"],
   });
   assert.equal(result.state, "current");
+});
+
+test("accepts each target exactly at its manifest minimum system boundary", async () => {
+  for (const target of Object.keys(supportedSystems) as Array<keyof typeof supportedSystems>) {
+    const result = await discoverCinbaUpdate({
+      currentVersion: "0.1.0",
+      currentRevision: "0".repeat(40),
+      target,
+      fetch: fetchRelease(),
+      probeSystem: async () => supportedSystems[target],
+    });
+    assert.equal(result.state, "available");
+  }
+});
+
+test("rejects a newer release below each target minimum system boundary", async () => {
+  const systems = {
+    "windows-x64": { platform: "windows", version: "6.3" },
+    "macos-arm64": { platform: "macos", version: "13.4.9" },
+    "linux-x64-gnu": { platform: "linux-gnu", kernel: "4.17", glibc: "2.27" },
+  } as const;
+  for (const target of Object.keys(systems) as Array<keyof typeof systems>) {
+    await assert.rejects(
+      discoverCinbaUpdate({
+        currentVersion: "0.1.0",
+        currentRevision: "0".repeat(40),
+        target,
+        fetch: fetchRelease(),
+        probeSystem: async () => systems[target],
+      }),
+      /new Cinba version exists.*system is incompatible/i,
+    );
+  }
+});
+
+test("fails closed when current system compatibility cannot be verified", async () => {
+  await assert.rejects(
+    discoverCinbaUpdate({
+      currentVersion: "0.1.0",
+      currentRevision: "0".repeat(40),
+      target: "linux-x64-gnu",
+      fetch: fetchRelease(),
+      probeSystem: async () => {
+        throw new Error("glibc unavailable");
+      },
+    }),
+    /new Cinba version exists.*compatibility is unverifiable/i,
+  );
 });
 
 test("rejects prereleases, mutable releases, foreign URLs, and identity conflicts", async () => {
@@ -125,6 +180,7 @@ test("rejects prereleases, mutable releases, foreign URLs, and identity conflict
         currentRevision: "0".repeat(40),
         target: "windows-x64",
         fetch: fakeFetch,
+        probeSystem: async () => supportedSystems["windows-x64"],
       }),
     );
   }
@@ -134,6 +190,7 @@ test("rejects prereleases, mutable releases, foreign URLs, and identity conflict
       currentRevision: "0".repeat(40),
       target: "windows-x64",
       fetch: fetchRelease(),
+      probeSystem: async () => supportedSystems["windows-x64"],
     }),
     /different revisions/,
   );

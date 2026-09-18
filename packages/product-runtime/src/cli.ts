@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, posix, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +18,11 @@ import {
   setProductComponentMode,
 } from "./managed-services.ts";
 import { readProductRelease } from "./release.ts";
+import {
+  createManagedSyncControl,
+  createManagedSyncControlConfig,
+  removeManagedSyncControl,
+} from "./sync-control.ts";
 
 export type ProductCommand =
   | { type: "tui"; workingDirectory: string }
@@ -35,6 +41,7 @@ export type ProductServiceProcess = {
   entry: string;
   workingDirectory: string;
   environment: NodeJS.ProcessEnv;
+  controlStateDirectory?: string;
 };
 
 const HELP = `Cinba
@@ -46,6 +53,7 @@ Usage:
   cinba core mode [on-demand|background]
   cinba sync serve
   cinba sync mode [disabled|on-demand|background]
+  cinba update
   cinba uninstall [--purge]
   cinba doctor
   cinba version
@@ -56,6 +64,7 @@ Commands:
   core      Inspect, start, or gracefully stop the local Core
   sync      Run Cinba Sync in the foreground
   mode      Inspect or change a component's lifecycle mode
+  update    Check, download, and optionally install a product update
   uninstall Remove Cinba; --purge also deletes all Cinba data after confirmation
   doctor    Verify the installed release, runtime, and services
   version   Show the installed product version and revision
@@ -145,6 +154,7 @@ export function createProductServiceProcess(
     homeDirectory?: string;
     environment?: NodeJS.ProcessEnv;
     platform?: "win32" | "darwin" | "linux";
+    managedService?: boolean;
   } = {},
 ): ProductServiceProcess {
   const environment = { ...(options.environment ?? process.env) };
@@ -178,6 +188,7 @@ export function createProductServiceProcess(
       },
     };
   }
+  delete environment.CINBA_LOCAL_SYNC_CONTROL_TOKEN;
   return {
     component,
     entry: payload.syncEntry,
@@ -191,6 +202,7 @@ export function createProductServiceProcess(
       CINBA_SYNC_STATE_DIR: paths.syncDataDirectory,
       CINBA_SYNC_WEB_ROOT: payload.syncWebRoot,
     },
+    ...(options.managedService ? { controlStateDirectory: paths.stateDirectory } : {}),
   };
 }
 
@@ -276,13 +288,49 @@ function waitForServiceExit(child: ChildProcess): Promise<number> {
 }
 
 async function runProductService(service: ProductServiceProcess): Promise<void> {
+  const syncControl =
+    service.component === "sync" && service.controlStateDirectory
+      ? {
+          config: createManagedSyncControlConfig(service.controlStateDirectory),
+          token: randomUUID(),
+        }
+      : undefined;
   const child = spawn(process.execPath, [service.entry], {
     cwd: service.workingDirectory,
     stdio: "inherit",
     windowsHide: true,
-    env: service.environment,
+    env: {
+      ...service.environment,
+      ...(syncControl ? { CINBA_LOCAL_SYNC_CONTROL_TOKEN: syncControl.token } : {}),
+    },
   });
-  const code = await waitForServiceExit(child);
+  const exit = waitForServiceExit(child);
+  if (syncControl) {
+    if (!child.pid) {
+      child.kill();
+      await exit.catch(() => undefined);
+      throw new Error("Cinba Sync did not report a PID");
+    }
+    try {
+      await createManagedSyncControl({
+        config: syncControl.config,
+        pid: child.pid,
+        token: syncControl.token,
+      });
+    } catch (error) {
+      child.kill();
+      await exit.catch(() => undefined);
+      throw error;
+    }
+  }
+  let code: number;
+  try {
+    code = await exit;
+  } finally {
+    if (syncControl && child.pid) {
+      await removeManagedSyncControl(syncControl.config, child.pid);
+    }
+  }
   if (code !== 0) {
     throw new Error(`Cinba ${service.component} exited with code ${code}`);
   }
@@ -333,7 +381,9 @@ export async function runProductCli(
   }
   if (command.type === "service") {
     await runProductService(
-      createProductServiceProcess(payload.root, release.revision, command.component),
+      createProductServiceProcess(payload.root, release.revision, command.component, {
+        managedService: true,
+      }),
     );
     return;
   }
