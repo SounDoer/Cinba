@@ -73,6 +73,14 @@ export {
 export type { UpdateDiscovery } from "./update-discovery.ts";
 export { downloadUpdateCandidate } from "./update-download.ts";
 export type { DownloadedUpdate } from "./update-download.ts";
+export {
+  parseUpdateState,
+  readUpdateState,
+  updateStatePath,
+  writeUpdateState,
+} from "./update-state.ts";
+export { prepareProductUpdate } from "./update-operation.ts";
+export type { UpdateCandidate, UpdateFailure, UpdatePhase, UpdateState } from "./update-state.ts";
 export { createManagedServiceDefinitions } from "./services/definitions.ts";
 export type { ManagedServiceDefinition, ServicePlatform } from "./services/definitions.ts";
 export {
