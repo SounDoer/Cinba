@@ -40,6 +40,12 @@ export type {
 } from "./paths.ts";
 export { parsePayloadRelease } from "./payload-release.ts";
 export type { PayloadRelease } from "./payload-release.ts";
+export { parseReleaseBundleMetadata, verifyReleaseBundle } from "./release-bundle.ts";
+export type {
+  ReleaseBundleKind,
+  ReleaseBundleMetadata,
+  VerifiedReleaseBundle,
+} from "./release-bundle.ts";
 export {
   createDataSnapshot,
   dataSnapshotExists,
