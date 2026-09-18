@@ -103,6 +103,7 @@ export async function prepareProductUpdate(options: {
   fetch?: typeof fetch;
   now?: () => Date;
   processId?: number;
+  signal?: AbortSignal;
   discover?: typeof discoverCinbaUpdate;
   download?: typeof downloadUpdateCandidate;
 }): Promise<UpdateState> {
@@ -136,6 +137,7 @@ export async function prepareProductUpdate(options: {
       update,
       cacheDirectory: options.cacheDirectory,
       ...(options.fetch ? { fetch: options.fetch } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
     });
     candidate = { ...candidate, artifactPath: downloaded.artifactPath };
     const ready = state("ready", options.currentVersion, checkedAt, candidate);

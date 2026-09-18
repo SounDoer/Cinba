@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -88,19 +88,97 @@ test("downloads and atomically verifies one target artifact", async () => {
   }
 });
 
-test("a damaged download never becomes a ready cache artifact", async () => {
+test("a complete artifact with the wrong digest is discarded", async () => {
   const root = await mkdtemp(join(tmpdir(), "cinba-update-damaged-"));
+  const damaged = new Uint8Array(body.byteLength).fill(120);
   try {
     await assert.rejects(
       downloadUpdateCandidate({
         update: update(),
         cacheDirectory: root,
-        fetch: async () => new Response(new TextEncoder().encode("wrong artifact content!!")),
+        fetch: async () => new Response(damaged),
       }),
       /does not match|exceeds/,
     );
     const directory = join(root, "updates", revision);
     assert.deepEqual(await readdir(directory), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("continues a retained partial artifact with a validated byte range", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-update-resume-"));
+  const candidate = update();
+  const directory = join(root, "updates", revision);
+  const artifactPath = join(directory, candidate.artifact.fileName);
+  const split = 9;
+  await mkdir(directory, { recursive: true });
+  await writeFile(`${artifactPath}.partial`, body.subarray(0, split));
+  try {
+    const result = await downloadUpdateCandidate({
+      update: candidate,
+      cacheDirectory: root,
+      fetch: async (_input, init) => {
+        assert.equal(new Headers(init?.headers).get("range"), `bytes=${split}-`);
+        return new Response(body.subarray(split), {
+          status: 206,
+          headers: {
+            "content-length": String(body.byteLength - split),
+            "content-range": `bytes ${split}-${body.byteLength - 1}/${body.byteLength}`,
+          },
+        });
+      },
+    });
+    assert.deepEqual(new Uint8Array(await readFile(result.artifactPath)), body);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a server without range support safely replaces the partial artifact", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-update-restart-"));
+  const candidate = update();
+  const directory = join(root, "updates", revision);
+  const artifactPath = join(directory, candidate.artifact.fileName);
+  await mkdir(directory, { recursive: true });
+  await writeFile(`${artifactPath}.partial`, new TextEncoder().encode("partial"));
+  try {
+    const result = await downloadUpdateCandidate({
+      update: candidate,
+      cacheDirectory: root,
+      fetch: async () =>
+        new Response(body, { headers: { "content-length": String(body.byteLength) } }),
+    });
+    assert.deepEqual(new Uint8Array(await readFile(result.artifactPath)), body);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("cancellation is forwarded without deleting resumable progress", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-update-cancel-"));
+  const candidate = update();
+  const directory = join(root, "updates", revision);
+  const artifactPath = join(directory, candidate.artifact.fileName);
+  const partial = body.subarray(0, 7);
+  const controller = new AbortController();
+  await mkdir(directory, { recursive: true });
+  await writeFile(`${artifactPath}.partial`, partial);
+  try {
+    await assert.rejects(
+      downloadUpdateCandidate({
+        update: candidate,
+        cacheDirectory: root,
+        signal: controller.signal,
+        fetch: async (_input, init) => {
+          assert.equal(init?.signal, controller.signal);
+          throw new DOMException("cancelled", "AbortError");
+        },
+      }),
+      { name: "AbortError" },
+    );
+    assert.deepEqual(new Uint8Array(await readFile(`${artifactPath}.partial`)), partial);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

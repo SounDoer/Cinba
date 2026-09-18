@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, open, rename, rm, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -56,20 +56,35 @@ async function writeResponse(
   response: Response,
   path: string,
   expectedSize: number,
-): Promise<{ size: number; sha256: string }> {
+  existingSize: number,
+): Promise<number> {
   if (!response.ok) {
     throw new Error(`update download failed with HTTP ${response.status}`);
   }
   if (!response.body) {
     throw new Error("update download response has no body");
   }
+  const resumed = existingSize > 0 && response.status === 206;
+  const offset = resumed ? existingSize : 0;
+  if (response.status === 206) {
+    const contentRange = response.headers.get("content-range");
+    const match = contentRange?.match(/^bytes (\d+)-(\d+)\/(\d+)$/);
+    if (
+      !match ||
+      Number(match[1]) !== existingSize ||
+      Number(match[3]) !== expectedSize ||
+      Number(match[2]) < Number(match[1])
+    ) {
+      throw new Error("update download Content-Range does not match the partial artifact");
+    }
+  }
+  const expectedResponseSize = expectedSize - offset;
   const declaredLength = response.headers.get("content-length");
-  if (declaredLength !== null && Number(declaredLength) !== expectedSize) {
+  if (declaredLength !== null && Number(declaredLength) !== expectedResponseSize) {
     throw new Error("update download Content-Length does not match the manifest");
   }
-  const file = await open(path, "wx", 0o600);
-  const hash = createHash("sha256");
-  let size = 0;
+  const file = await open(path, resumed ? "a" : "w", 0o600);
+  let size = offset;
   try {
     const reader = response.body.getReader();
     while (true) {
@@ -82,19 +97,35 @@ async function writeResponse(
         await reader.cancel("artifact exceeds manifest size");
         throw new Error("update download exceeds the manifest size");
       }
-      hash.update(result.value);
       await file.write(result.value);
     }
   } finally {
     await file.close();
   }
-  return { size, sha256: hash.digest("hex") };
+  return size;
+}
+
+async function partialSize(path: string, expectedSize: number): Promise<number> {
+  try {
+    const status = await stat(path);
+    if (!status.isFile() || status.size >= expectedSize) {
+      await rm(path, { force: true });
+      return 0;
+    }
+    return status.size;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return 0;
+    }
+    throw error;
+  }
 }
 
 export async function downloadUpdateCandidate(options: {
   update: Extract<UpdateDiscovery, { state: "available" }>;
   cacheDirectory: string;
   fetch?: typeof fetch;
+  signal?: AbortSignal;
 }): Promise<DownloadedUpdate> {
   const cache = requireCacheDirectory(options.cacheDirectory);
   const { update } = options;
@@ -113,21 +144,25 @@ export async function downloadUpdateCandidate(options: {
     };
   }
   await rm(artifactPath, { force: true });
-  const temporary = `${artifactPath}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    const response = await (options.fetch ?? fetch)(update.downloadUrl, {
-      headers: { "User-Agent": `Cinba/${update.currentVersion}` },
-      redirect: "follow",
-    });
-    const actual = await writeResponse(response, temporary, expected.size);
-    if (actual.size !== expected.size || actual.sha256 !== expected.sha256) {
-      throw new Error("update download does not match the release manifest");
+  const partialPath = `${artifactPath}.partial`;
+  const existingSize = await partialSize(partialPath, expected.size);
+  const response = await (options.fetch ?? fetch)(update.downloadUrl, {
+    headers: {
+      "User-Agent": `Cinba/${update.currentVersion}`,
+      ...(existingSize > 0 ? { Range: `bytes=${existingSize}-` } : {}),
+    },
+    redirect: "follow",
+    signal: options.signal,
+  });
+  const size = await writeResponse(response, partialPath, expected.size, existingSize);
+  const sha256 = size === expected.size ? await fileSha256(partialPath) : "";
+  if (size !== expected.size || sha256 !== expected.sha256) {
+    if (size >= expected.size) {
+      await rm(partialPath, { force: true });
     }
-    await rename(temporary, artifactPath);
-  } catch (error) {
-    await rm(temporary, { force: true });
-    throw error;
+    throw new Error("update download does not match the release manifest");
   }
+  await rename(partialPath, artifactPath);
   return {
     version: update.manifest.version,
     revision: update.manifest.revision,
