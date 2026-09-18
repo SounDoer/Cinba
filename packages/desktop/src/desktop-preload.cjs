@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("cinbaDesktop", {
   getState: () => ipcRenderer.invoke("desktop:get-state"),
+  installReadyUpdate: () => ipcRenderer.invoke("desktop:install-ready-update"),
   selectProfile: (profileId) => ipcRenderer.invoke("desktop:select-profile", profileId),
   retry: () => ipcRenderer.invoke("desktop:retry"),
   openManager: () => ipcRenderer.invoke("desktop:open-manager"),

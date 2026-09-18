@@ -25,22 +25,39 @@ export function createDesktopUpdateState(broadcast: () => void): {
 export function createDesktopUpdatePresentation(
   productName: "Cinba" | "Cinba Dev",
   update: ProductUpdateViewModel | undefined,
-): { hidden: boolean; label: string } {
+): { hidden: boolean; label: string; actionable: boolean; ariaLabel: string } {
   if (
     productName === "Cinba Dev" ||
     !update ||
     update.phase === "idle" ||
     update.phase === "current"
   ) {
-    return { hidden: true, label: "" };
+    return { hidden: true, label: "", actionable: false, ariaLabel: "" };
   }
   if (update.phase === "ready") {
-    return { hidden: false, label: `Update ${update.candidateVersion} Ready` };
+    return {
+      hidden: false,
+      label: `Update ${update.candidateVersion} Ready`,
+      actionable: true,
+      ariaLabel: `Install Cinba ${update.candidateVersion} and restart`,
+    };
   }
   return {
     hidden: false,
     label: update.phase === "checking" ? "Checking for Updates" : "Downloading Update",
+    actionable: false,
+    ariaLabel:
+      update.phase === "checking" ? "Checking for Cinba updates" : "Downloading a Cinba update",
   };
+}
+
+export async function activateDesktopUpdate(
+  presentation: ReturnType<typeof createDesktopUpdatePresentation>,
+  install: () => Promise<void>,
+): Promise<void> {
+  if (presentation.actionable) {
+    await install();
+  }
 }
 
 export type ProfileInput = {
@@ -54,6 +71,7 @@ export type ConnectionTestResult =
 
 export type CinbaDesktopApi = {
   getState(): Promise<DesktopShellState>;
+  installReadyUpdate(): Promise<void>;
   selectProfile(profileId: string): Promise<void>;
   retry(): Promise<void>;
   openManager(): Promise<void>;

@@ -103,6 +103,10 @@ button.active {
   border-radius: 8px;
 }
 
+.update-pill:disabled {
+  opacity: 1;
+}
+
 .status-badge[data-status="online"]::before {
   content: "";
   display: inline-block;

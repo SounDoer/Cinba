@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createCoreMenuItems, createTrayBitmap, createTrayViewModel } from "./tray.ts";
+import {
+  createCoreMenuItems,
+  createTrayBitmap,
+  createTrayUpdateMenuItem,
+  createTrayViewModel,
+} from "./tray.ts";
 
 test("tray icons are non-empty BGRA bitmaps with transparent corners", () => {
   for (const tone of ["stopped", "running", "busy", "error"] as const) {
@@ -104,24 +109,24 @@ test("an error is shown without discarding the last known status", () => {
   assert.deepEqual(view.detailLabels, ["Error: request timed out"]);
 });
 
-test("release tray exposes update progress as informational labels", () => {
+test("release tray keeps progress informational and makes a ready update actionable", () => {
   const stopped = { state: "stopped" as const, running: false, managed: false };
 
-  assert.equal(
-    createTrayViewModel(stopped, undefined, undefined, "Cinba", { phase: "checking" }).updateLabel,
-    "Checking for Updates",
+  assert.deepEqual(
+    createTrayViewModel(stopped, undefined, undefined, "Cinba", { phase: "checking" }).updateAction,
+    { label: "Checking for Updates", enabled: false },
   );
-  assert.equal(
+  assert.deepEqual(
     createTrayViewModel(stopped, undefined, undefined, "Cinba", { phase: "downloading" })
-      .updateLabel,
-    "Downloading Update",
+      .updateAction,
+    { label: "Downloading Update", enabled: false },
   );
-  assert.equal(
+  assert.deepEqual(
     createTrayViewModel(stopped, undefined, undefined, "Cinba", {
       phase: "ready",
       candidateVersion: "0.2.0",
-    }).updateLabel,
-    "Update 0.2.0 Ready",
+    }).updateAction,
+    { label: "Install Cinba 0.2.0 and Restart…", enabled: true },
   );
 });
 
@@ -129,20 +134,39 @@ test("tray hides inactive and development update states", () => {
   const stopped = { state: "stopped" as const, running: false, managed: false };
 
   assert.equal(
-    createTrayViewModel(stopped, undefined, undefined, "Cinba", { phase: "idle" }).updateLabel,
+    createTrayViewModel(stopped, undefined, undefined, "Cinba", { phase: "idle" }).updateAction,
     undefined,
   );
   assert.equal(
-    createTrayViewModel(stopped, undefined, undefined, "Cinba", { phase: "current" }).updateLabel,
+    createTrayViewModel(stopped, undefined, undefined, "Cinba", { phase: "current" }).updateAction,
     undefined,
   );
   assert.equal(
     createTrayViewModel(stopped, undefined, undefined, "Cinba Dev", {
       phase: "ready",
       candidateVersion: "0.2.0",
-    }).updateLabel,
+    }).updateAction,
     undefined,
   );
+});
+
+test("tray invokes install only from the enabled ready item", () => {
+  let installs = 0;
+  const install = () => {
+    installs += 1;
+  };
+  const informational = createTrayUpdateMenuItem(
+    { label: "Downloading Update", enabled: false },
+    install,
+  );
+  const ready = createTrayUpdateMenuItem(
+    { label: "Install Cinba 0.2.0 and Restart…", enabled: true },
+    install,
+  );
+
+  informational?.click();
+  ready?.click();
+  assert.equal(installs, 1);
 });
 
 test("the Open Core menu lists local and remote profiles", () => {

@@ -4,7 +4,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type IpcMainInvokeEvent, app, ipcMain } from "electron";
+import { type IpcMainInvokeEvent, app, dialog, ipcMain } from "electron";
 import {
   createDevelopmentCoreConfig,
   createProductCoreConfig,
@@ -12,7 +12,13 @@ import {
   resolveProductPaths,
 } from "@cinba/product-runtime";
 import type { ProfileInput } from "./desktop-api.ts";
+import { authorizeDesktopIpcEvent } from "./desktop-ipc.ts";
 import { resolveDesktopRuntime, startDesktopAutomaticUpdate } from "./desktop-runtime.ts";
+import {
+  createDesktopInstallReadyUpdate,
+  createDesktopUpdateConfirmation,
+  launchDesktopUpdateHandoff,
+} from "./desktop-update.ts";
 import { createCoreProfileStore } from "./profile-store.ts";
 import { type SystemTrayController, createSystemTrayController } from "./tray.ts";
 import { type DesktopWindowController, createDesktopWindowController } from "./window.ts";
@@ -30,6 +36,7 @@ const runtime = resolveDesktopRuntime({
 
 const IPC_CHANNELS = [
   "desktop:get-state",
+  "desktop:install-ready-update",
   "desktop:select-profile",
   "desktop:retry",
   "desktop:open-manager",
@@ -58,16 +65,21 @@ function readProfileInput(value: unknown): ProfileInput {
   return { label: candidate.label, baseUrl: candidate.baseUrl };
 }
 
-function registerDesktopIpc(window: DesktopWindowController): () => void {
+function registerDesktopIpc(
+  window: DesktopWindowController,
+  installReadyUpdate: () => Promise<void>,
+): () => void {
   function authorize(event: IpcMainInvokeEvent): void {
-    if (!window.ownsRenderer(event.sender.id)) {
-      throw new Error("Untrusted Desktop IPC sender");
-    }
+    authorizeDesktopIpcEvent(event, window.ownsRendererFrame);
   }
 
   ipcMain.handle("desktop:get-state", (event) => {
     authorize(event);
     return window.getState();
+  });
+  ipcMain.handle("desktop:install-ready-update", async (event) => {
+    authorize(event);
+    await installReadyUpdate();
   });
   ipcMain.handle("desktop:select-profile", async (event, profileId: unknown) => {
     authorize(event);
@@ -136,7 +148,55 @@ if (!hasSingleInstanceLock) {
         productName: runtime.displayName,
         ...(release ? { expectedRevision: release.revision } : {}),
       });
-      removeIpcHandlers = registerDesktopIpc(window);
+      const platform = process.platform;
+      if (platform !== "win32" && platform !== "darwin" && platform !== "linux") {
+        throw new Error(`Cinba is not available on ${platform}`);
+      }
+      const paths = resolveProductPaths({
+        platform,
+        homeDirectory: homedir(),
+        environment: process.env,
+      });
+      const startAutomaticUpdate = () => {
+        if (runtime.identity !== "release" || !release) {
+          return;
+        }
+        automaticUpdate = startDesktopAutomaticUpdate({
+          runtime,
+          release,
+          paths,
+          onUpdate: (update) => {
+            window.setUpdate(update);
+            tray?.setUpdate(update);
+          },
+        });
+      };
+      const installReadyUpdate = createDesktopInstallReadyUpdate({
+        identity: runtime.identity,
+        launcherPath: paths.launcherPath,
+        processId: process.pid,
+        getUpdate: () => window.getState().update,
+        confirm: async (version) => {
+          const result = await dialog.showMessageBox(createDesktopUpdateConfirmation(version));
+          return result.response === 0;
+        },
+        abortAutomaticUpdate: () => {
+          automaticUpdate?.abort();
+          automaticUpdate = undefined;
+        },
+        resumeAutomaticUpdate: startAutomaticUpdate,
+        launch: launchDesktopUpdateHandoff,
+        quit: () => app.quit(),
+        showError: async (message) => {
+          await dialog.showMessageBox({
+            type: "error",
+            title: "Cinba Update Failed",
+            message: "Cinba could not start the update.",
+            detail: message,
+          });
+        },
+      });
+      removeIpcHandlers = registerDesktopIpc(window, installReadyUpdate);
       tray = await createSystemTrayController({
         openWindow: window.open,
         openManager: window.openManager,
@@ -144,26 +204,11 @@ if (!hasSingleInstanceLock) {
         currentProfileId: () => window.getState().selectedProfileId,
         localConfig,
         productName: runtime.displayName,
+        installReadyUpdate,
         ...(release ? { expectedRevision: release.revision } : {}),
       });
       if (runtime.identity === "release" && release) {
-        const platform = process.platform;
-        if (platform !== "win32" && platform !== "darwin" && platform !== "linux") {
-          throw new Error(`Cinba is not available on ${platform}`);
-        }
-        automaticUpdate = startDesktopAutomaticUpdate({
-          runtime,
-          release,
-          paths: resolveProductPaths({
-            platform,
-            homeDirectory: homedir(),
-            environment: process.env,
-          }),
-          onUpdate: (update) => {
-            window.setUpdate(update);
-            tray?.setUpdate(update);
-          },
-        });
+        startAutomaticUpdate();
       }
       if (openWhenReady) {
         await tray.openWindow();

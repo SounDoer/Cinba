@@ -1,4 +1,4 @@
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { BrowserWindow, WebContentsView, shell } from "electron";
 import { type LocalCoreConfig, ensureLocalCore } from "@cinba/core-manager";
 import type { ProductUpdateViewModel } from "@cinba/product-runtime";
@@ -9,7 +9,11 @@ import {
   type ProfileInput,
   createDesktopUpdateState,
 } from "./desktop-api.ts";
-import { decideCoreNavigation } from "./navigation-policy.ts";
+import {
+  decideCoreNavigation,
+  decideDesktopNavigation,
+  protectDesktopNavigation,
+} from "./navigation-policy.ts";
 import type { CoreProfileStore } from "./profile-store.ts";
 import { createRemoteCoreProfile } from "./profiles.ts";
 import { createShellViewModel } from "./shell-view.ts";
@@ -20,6 +24,8 @@ const TOOLBAR_HEIGHT = 52;
 const PRELOAD_PATH = fileURLToPath(new URL("./desktop-preload.cjs", import.meta.url));
 const SHELL_PATH = fileURLToPath(new URL("../dist/shell/index.html", import.meta.url));
 const MANAGER_PATH = fileURLToPath(new URL("../dist/shell/manage.html", import.meta.url));
+const SHELL_URL = pathToFileURL(SHELL_PATH).href;
+const MANAGER_URL = pathToFileURL(MANAGER_PATH).href;
 const downloadProtectedSessions = new WeakSet<object>();
 
 type CoreHealth = { status: "ok"; revision: string; safeToRestart: boolean };
@@ -63,7 +69,7 @@ export type DesktopWindowController = {
   removeProfile(profileId: string): Promise<void>;
   recoverProfiles(): Promise<string>;
   testProfile(input: ProfileInput): Promise<ConnectionTestResult>;
-  ownsRenderer(id: number): boolean;
+  ownsRendererFrame(id: number, url: string): boolean;
 };
 
 /** Own the native shell and its isolated Core content view. */
@@ -228,6 +234,7 @@ export function createDesktopWindowController(
       window = undefined;
     });
     await window.loadFile(SHELL_PATH);
+    protectDesktopNavigation(window.webContents, SHELL_URL, (url) => void shell.openExternal(url));
     layout();
   }
 
@@ -288,6 +295,11 @@ export function createDesktopWindowController(
       manager = undefined;
     });
     await manager.loadFile(MANAGER_PATH);
+    protectDesktopNavigation(
+      manager.webContents,
+      MANAGER_URL,
+      (url) => void shell.openExternal(url),
+    );
   }
 
   async function addProfile(input: ProfileInput): Promise<void> {
@@ -336,9 +348,16 @@ export function createDesktopWindowController(
     removeProfile,
     recoverProfiles,
     testProfile,
-    ownsRenderer: (id) =>
-      [window, manager].some(
-        (target) => target && !target.isDestroyed() && target.webContents.id === id,
+    ownsRendererFrame: (id, url) =>
+      [
+        { target: window, expectedUrl: SHELL_URL },
+        { target: manager, expectedUrl: MANAGER_URL },
+      ].some(
+        ({ target, expectedUrl }) =>
+          target &&
+          !target.isDestroyed() &&
+          target.webContents.id === id &&
+          decideDesktopNavigation(expectedUrl, url) === "allow",
       ),
   };
 }

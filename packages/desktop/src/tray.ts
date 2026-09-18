@@ -23,7 +23,7 @@ export type TrayViewModel = {
   detailLabels: string[];
   canStart: boolean;
   canStop: boolean;
-  updateLabel?: string;
+  updateAction?: { label: string; enabled: boolean };
 };
 
 export type SystemTrayController = {
@@ -33,6 +33,23 @@ export type SystemTrayController = {
 };
 
 export type CoreMenuItem = { profileId: string; label: string; selected: boolean };
+
+export function createTrayUpdateMenuItem(
+  action: TrayViewModel["updateAction"],
+  installReadyUpdate: () => void,
+): { label: string; enabled: boolean; click: () => void } | undefined {
+  if (!action) {
+    return undefined;
+  }
+  return {
+    ...action,
+    click: () => {
+      if (action.enabled) {
+        installReadyUpdate();
+      }
+    },
+  };
+}
 
 export function createCoreMenuItems(
   profiles: CoreProfile[],
@@ -92,7 +109,17 @@ export function createTrayViewModel(
 ): TrayViewModel {
   const detailLabels: string[] = [];
   const updatePresentation = createDesktopUpdatePresentation(productName, update);
-  const updateView = updatePresentation.hidden ? {} : { updateLabel: updatePresentation.label };
+  const updateView = updatePresentation.hidden
+    ? {}
+    : {
+        updateAction: {
+          label:
+            update?.phase === "ready"
+              ? `Install Cinba ${update.candidateVersion} and Restart…`
+              : updatePresentation.label,
+          enabled: updatePresentation.actionable,
+        },
+      };
   if (status.pid !== undefined) {
     detailLabels.push(`PID: ${status.pid}`);
   }
@@ -178,6 +205,7 @@ export async function createSystemTrayController(options: {
   localConfig?: LocalCoreConfig;
   expectedRevision?: string;
   productName?: "Cinba" | "Cinba Dev";
+  installReadyUpdate: () => Promise<void>;
 }): Promise<SystemTrayController> {
   const { Menu, Tray, app, nativeImage, shell } = await import("electron");
   let status = STOPPED;
@@ -224,7 +252,9 @@ export async function createSystemTrayController(options: {
         },
         { label: "Manage Cores…", click: () => void options.openManager() },
         { type: "separator" },
-        ...(view.updateLabel ? [{ label: view.updateLabel, enabled: false }] : []),
+        ...[
+          createTrayUpdateMenuItem(view.updateAction, () => void options.installReadyUpdate()),
+        ].filter((item) => item !== undefined),
         { label: view.statusLabel, enabled: false },
         ...view.detailLabels.map((label) => ({ label, enabled: false }) as const),
         { type: "separator" },
