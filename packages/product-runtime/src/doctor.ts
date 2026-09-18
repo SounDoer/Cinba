@@ -159,6 +159,7 @@ export async function runInstalledDoctor(
     programDirectory: paths.programDirectory,
     releasesDirectory: paths.releasesDirectory,
     transactionDirectory: paths.transactionDirectory,
+    currentPointerDirectory: paths.currentPointerDirectory,
   };
   const inspect = async (component: "core" | "sync"): Promise<ManagedServiceStatus | Error> => {
     try {
