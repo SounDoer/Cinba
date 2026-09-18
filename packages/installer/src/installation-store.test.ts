@@ -77,3 +77,29 @@ test("product path metadata is not mistaken for an installation path", async () 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("a separate stable manager directory can own the current pointer", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-install-pointer-directory-"));
+  const paths = {
+    ...layout(root),
+    currentPointerDirectory: join(root, "manager"),
+  };
+  const release = {
+    version: "1.2.3",
+    revision: REVISION,
+    protocolVersion: 1,
+    dataFormatVersion: 1,
+    target: "macos-arm64" as const,
+    directory: REVISION,
+  };
+  try {
+    await writeCurrentRelease(paths, release);
+    assert.deepEqual(await readCurrentRelease(paths), release);
+    assert.match(
+      await readFile(join(paths.currentPointerDirectory, "current.json"), "utf8"),
+      /"schemaVersion": 1/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

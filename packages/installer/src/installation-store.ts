@@ -53,6 +53,7 @@ export type InstallationLayout = {
   programDirectory: string;
   releasesDirectory: string;
   transactionDirectory: string;
+  currentPointerDirectory?: string;
 };
 
 const SEMVER =
@@ -202,6 +203,9 @@ function requireAbsoluteLayout(layout: InstallationLayout): void {
     ["programDirectory", layout.programDirectory],
     ["releasesDirectory", layout.releasesDirectory],
     ["transactionDirectory", layout.transactionDirectory],
+    ...(layout.currentPointerDirectory
+      ? ([["currentPointerDirectory", layout.currentPointerDirectory]] as const)
+      : []),
   ] as const) {
     if (!isAbsolute(value)) {
       throw new Error(`${name} must be an absolute path`);
@@ -217,7 +221,7 @@ function requireAbsoluteLayout(layout: InstallationLayout): void {
 
 export function currentPointerPath(layout: InstallationLayout): string {
   requireAbsoluteLayout(layout);
-  return join(resolve(layout.programDirectory), "current.json");
+  return join(resolve(layout.currentPointerDirectory ?? layout.programDirectory), "current.json");
 }
 
 export function transactionStatePath(layout: InstallationLayout): string {

@@ -33,6 +33,7 @@ export type ProductPaths = {
   programDirectory: string;
   releasesDirectory: string;
   managerDirectory: string;
+  currentPointerDirectory: string;
   dataDirectory: string;
   syncDataDirectory: string;
   configurationDirectory: string;
@@ -95,6 +96,7 @@ function windowsPaths(
     programDirectory,
     releasesDirectory: win32.join(programDirectory, "releases"),
     managerDirectory: win32.join(programDirectory, "installer"),
+    currentPointerDirectory: programDirectory,
     dataDirectory,
     syncDataDirectory: win32.join(dataDirectory, "Sync"),
     configurationDirectory: win32.join(dataDirectory, "Config"),
@@ -127,6 +129,7 @@ function macosPaths(homeDirectory: string, identity: ProductIdentity): ProductPa
     programDirectory: posix.join(homeDirectory, "Applications", `${definition.displayName}.app`),
     releasesDirectory: posix.join(supportRoot, "Releases"),
     managerDirectory: posix.join(supportRoot, "Installer"),
+    currentPointerDirectory: posix.join(supportRoot, "Installer"),
     dataDirectory,
     syncDataDirectory: posix.join(dataDirectory, "Sync"),
     configurationDirectory: posix.join(dataDirectory, "Config"),
@@ -183,6 +186,7 @@ function linuxPaths(
     programDirectory,
     releasesDirectory: posix.join(programDirectory, "releases"),
     managerDirectory: posix.join(programDirectory, "installer"),
+    currentPointerDirectory: programDirectory,
     dataDirectory,
     syncDataDirectory: posix.join(dataDirectory, "Sync"),
     configurationDirectory: posix.join(configHome, definition.slug),
