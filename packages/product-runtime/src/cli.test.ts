@@ -19,6 +19,24 @@ test("the installed command defaults to the TUI and keeps management explicit", 
     type: "service",
     component: "core",
   });
+  assert.deepEqual(parseProductCommand(["core", "mode"], project), {
+    type: "component-mode",
+    component: "core",
+    mode: null,
+  });
+  assert.deepEqual(parseProductCommand(["core", "mode", "background"], project), {
+    type: "component-mode",
+    component: "core",
+    mode: "background",
+  });
+  assert.deepEqual(parseProductCommand(["sync", "mode", "disabled"], project), {
+    type: "component-mode",
+    component: "sync",
+    mode: "disabled",
+  });
+  assert.throws(() => parseProductCommand(["core", "mode", "disabled"], project), {
+    message: "core does not support mode disabled",
+  });
 });
 
 test("the installed Core separates durable data, runtime state, logs, and payload", () => {

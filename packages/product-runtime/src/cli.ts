@@ -8,14 +8,20 @@ import {
   inspectLocalCore,
   stopLocalCore,
 } from "@cinba/core-manager";
-import { requireProductTarget, resolveProductPaths } from "@cinba/installer";
+import { type ServiceMode, requireProductTarget, resolveProductPaths } from "@cinba/installer";
 import { resolveProductPayloadLayout } from "./layout.ts";
+import {
+  formatProductComponentMode,
+  inspectProductComponentMode,
+  setProductComponentMode,
+} from "./managed-services.ts";
 import { readProductRelease } from "./release.ts";
 
 export type ProductCommand =
   | { type: "tui"; workingDirectory: string }
   | { type: "core"; action: "status" | "start" | "stop" }
   | { type: "sync"; action: "serve" }
+  | { type: "component-mode"; component: ProductServiceComponent; mode: ServiceMode | null }
   | { type: "service"; component: ProductServiceComponent }
   | { type: "version" }
   | { type: "help" };
@@ -35,7 +41,9 @@ Usage:
   cinba [project]
   cinba tui [project]
   cinba core <status|start|stop>
+  cinba core mode [on-demand|background]
   cinba sync serve
+  cinba sync mode [disabled|on-demand|background]
   cinba version
   cinba help
 
@@ -43,6 +51,7 @@ Commands:
   tui       Open the terminal client; defaults to the current project
   core      Inspect, start, or gracefully stop the local Core
   sync      Run Cinba Sync in the foreground
+  mode      Inspect or change a component's lifecycle mode
   version   Show the installed product version and revision
   help      Show this help
 
@@ -88,6 +97,23 @@ export function parseProductCommand(
   }
   if (arguments_.length === 2 && arguments_[0] === "sync" && arguments_[1] === "serve") {
     return { type: "sync", action: "serve" };
+  }
+  if (
+    (arguments_[0] === "core" || arguments_[0] === "sync") &&
+    arguments_[1] === "mode" &&
+    arguments_.length >= 2 &&
+    arguments_.length <= 3
+  ) {
+    const component = arguments_[0];
+    const mode = arguments_[2] ?? null;
+    const allowed =
+      component === "core"
+        ? new Set(["on-demand", "background"])
+        : new Set(["disabled", "on-demand", "background"]);
+    if (mode !== null && !allowed.has(mode)) {
+      throw new Error(`${component} does not support mode ${mode}`);
+    }
+    return { type: "component-mode", component, mode: mode as ServiceMode | null };
   }
   if (
     arguments_.length === 2 &&
@@ -281,6 +307,13 @@ export async function runProductCli(
   }
 
   const config = createProductCoreConfig(payload.root);
+  if (command.type === "component-mode") {
+    const status = command.mode
+      ? await setProductComponentMode(command.component, command.mode)
+      : await inspectProductComponentMode(command.component);
+    console.log(formatProductComponentMode(status));
+    return;
+  }
   if (command.type === "service") {
     await runProductService(
       createProductServiceProcess(payload.root, release.revision, command.component),
