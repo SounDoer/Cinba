@@ -39,6 +39,10 @@ export async function buildProductLauncher(): Promise<string> {
     format: "cjs",
     platform: "node",
     target: "node24",
+    define: {
+      "import.meta.url": '"file:///cinba/launcher.cjs"',
+      "import.meta.main": "false",
+    },
     sourcemap: false,
     legalComments: "none",
   });

@@ -16,7 +16,9 @@ export type LocalCoreConfig = {
   defaultCoreName?: string;
 };
 
-const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+function defaultPackageRoot(): string {
+  return resolve(dirname(fileURLToPath(import.meta.url)), "..");
+}
 
 export function createLocalCoreConfig(
   options: {
@@ -25,7 +27,7 @@ export function createLocalCoreConfig(
     baseUrl?: string;
   } = {},
 ): LocalCoreConfig {
-  const packageRoot = options.packageRoot ?? PACKAGE_ROOT;
+  const packageRoot = options.packageRoot ?? defaultPackageRoot();
   const repositoryRoot = resolve(packageRoot, "..", "..");
   const homeDirectory = options.homeDirectory ?? homedir();
   const stateDirectory = join(homeDirectory, ".cinba");

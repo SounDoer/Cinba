@@ -46,6 +46,7 @@ Usage:
   cinba core mode [on-demand|background]
   cinba sync serve
   cinba sync mode [disabled|on-demand|background]
+  cinba uninstall [--purge]
   cinba doctor
   cinba version
   cinba help
@@ -55,6 +56,7 @@ Commands:
   core      Inspect, start, or gracefully stop the local Core
   sync      Run Cinba Sync in the foreground
   mode      Inspect or change a component's lifecycle mode
+  uninstall Remove Cinba; --purge also deletes all Cinba data after confirmation
   doctor    Verify the installed release, runtime, and services
   version   Show the installed product version and revision
   help      Show this help

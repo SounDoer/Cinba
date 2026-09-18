@@ -16,6 +16,12 @@ import {
   parseMacosInstallHandoff,
   waitForMacosInstallerExit,
 } from "./macos-install-handoff.ts";
+import {
+  confirmPurge,
+  launchUninstallHelper,
+  runUninstallHelper,
+  stopProductForUninstall,
+} from "./product-uninstall.ts";
 
 function openMacosApplication(applicationPath: string): void {
   const child = spawn("/usr/bin/open", [applicationPath], {
@@ -51,6 +57,19 @@ async function run(): Promise<void> {
     environment: process.env,
   });
   const launcherCommand = parseStableLauncherCommand(process.argv.slice(2), process.execPath);
+  if (launcherCommand.type === "uninstall-helper") {
+    await runUninstallHelper(launcherCommand);
+    return;
+  }
+  if (launcherCommand.type === "uninstall") {
+    if (launcherCommand.purge && !launcherCommand.deleteAllCinbaData) {
+      await confirmPurge();
+    }
+    await stopProductForUninstall();
+    await launchUninstallHelper({ purge: launcherCommand.purge });
+    console.log("Cinba uninstall started.");
+    return;
+  }
   if (launcherCommand.type === "install") {
     const macosHandoff = parseMacosInstallHandoff(process.env);
     if (macosHandoff) {
