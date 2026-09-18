@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { installReleaseBundle } from "./bundle-installation.ts";
-import { type InstallationLayout, readCurrentRelease } from "./installation-store.ts";
+import {
+  type InstallationLayout,
+  readCurrentRelease,
+  readInstallationTransaction,
+} from "./installation-store.ts";
 import { createArtifactInventory } from "./inventory.ts";
 
 const revision = "b".repeat(40);
@@ -112,6 +116,30 @@ test("an activation failure rolls stable files back with the payload", async () 
     );
     assert.deepEqual(events, ["prepare", "rollback"]);
     assert.equal(await readCurrentRelease(layout(root)), undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a stable-file collision discards the staged candidate so retry is possible", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-bundle-install-stable-failure-"));
+  const paths = layout(root);
+  try {
+    const bundle = await createBundle(root);
+    await assert.rejects(
+      installReleaseBundle({
+        bundleDirectory: bundle,
+        layout: paths,
+        expectedTarget: "windows-x64",
+        transactionId,
+        prepareStableFiles: async () => {
+          throw new Error("launcher collision");
+        },
+      }),
+      /launcher collision/,
+    );
+    assert.equal((await readInstallationTransaction(paths))?.failure, "stable-files-failed");
+    assert.equal(await readCurrentRelease(paths), undefined);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

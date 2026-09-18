@@ -14,6 +14,32 @@ type Replacement = {
   hadPrevious: boolean;
 };
 
+const WINDOWS_TRANSIENT_FILE_ERRORS = new Set(["EACCES", "EBUSY", "EPERM"]);
+
+async function renameStable(source: string, destination: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(source, destination);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (
+        process.platform !== "win32" ||
+        !code ||
+        !WINDOWS_TRANSIENT_FILE_ERRORS.has(code) ||
+        attempt >= 49
+      ) {
+        throw error;
+      }
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+    }
+  }
+}
+
+async function removeStable(path: string): Promise<void> {
+  await rm(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+}
+
 async function status(path: string): Promise<Awaited<ReturnType<typeof lstat>> | undefined> {
   try {
     return await lstat(path);
@@ -72,32 +98,32 @@ async function prepareReplacement(
       preserveTimestamps: true,
     });
     if (previousStatus) {
-      await rename(destination, backup);
+      await renameStable(destination, backup);
     }
     try {
-      await rename(staged, destination);
+      await renameStable(staged, destination);
     } catch (error) {
       if (previousStatus) {
-        await rename(backup, destination);
+        await renameStable(backup, destination);
       }
       throw error;
     }
     return { destination, backup, staged, hadPrevious: previousStatus !== undefined };
   } catch (error) {
-    await rm(staged, { recursive: true, force: true });
+    await removeStable(staged);
     throw error;
   }
 }
 
 async function rollbackReplacement(replacement: Replacement): Promise<void> {
-  await rm(replacement.staged, { recursive: true, force: true });
+  await removeStable(replacement.staged);
   if (replacement.hadPrevious) {
     if (await status(replacement.backup)) {
-      await rm(replacement.destination, { recursive: true, force: true });
-      await rename(replacement.backup, replacement.destination);
+      await removeStable(replacement.destination);
+      await renameStable(replacement.backup, replacement.destination);
     }
   } else {
-    await rm(replacement.destination, { recursive: true, force: true });
+    await removeStable(replacement.destination);
   }
 }
 
@@ -105,8 +131,8 @@ async function commitReplacement(replacement: Replacement): Promise<void> {
   if (!(await status(replacement.destination))) {
     throw new Error(`cannot commit a missing stable file destination: ${replacement.destination}`);
   }
-  await rm(replacement.staged, { recursive: true, force: true });
-  await rm(replacement.backup, { recursive: true, force: true });
+  await removeStable(replacement.staged);
+  await removeStable(replacement.backup);
 }
 
 function desktopReplacement(

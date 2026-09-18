@@ -32,6 +32,7 @@ export type InstallationPhase =
 export type InstallationFailure =
   | "candidate-invalid"
   | "stage-failed"
+  | "stable-files-failed"
   | "switch-failed"
   | "data-migration-failed"
   | "verification-failed"
@@ -77,6 +78,7 @@ const PHASES = new Set<InstallationPhase>([
 const FAILURES = new Set<InstallationFailure>([
   "candidate-invalid",
   "stage-failed",
+  "stable-files-failed",
   "switch-failed",
   "data-migration-failed",
   "verification-failed",

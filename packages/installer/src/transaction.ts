@@ -53,6 +53,25 @@ export type ActivateCandidateOptions = {
 
 export type RecoverInstallationOptions = ActivateCandidateOptions;
 
+export async function discardReadyCandidate(
+  layout: InstallationLayout,
+  now: () => Date = () => new Date(),
+): Promise<InstallationTransaction> {
+  const unlock = await acquireInstallationLock(layout);
+  try {
+    const transaction = await readInstallationTransaction(layout);
+    if (!transaction || transaction.phase !== "ready") {
+      throw new Error("no verified candidate release is ready to discard");
+    }
+    await rm(releasePath(layout, transaction.candidate), { recursive: true, force: true });
+    const failed = updateTransaction(transaction, "failed", now, "stable-files-failed");
+    await writeInstallationTransaction(layout, failed);
+    return failed;
+  } finally {
+    await unlock();
+  }
+}
+
 async function exists(path: string): Promise<boolean> {
   try {
     await lstat(path);

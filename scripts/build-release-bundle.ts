@@ -10,6 +10,7 @@ import {
 import { buildDesktopApplication } from "./build-desktop-app.ts";
 import { buildProductLauncher } from "./build-product-launcher.ts";
 import { buildProductPayload } from "./build-product-payload.ts";
+import { verifyBundleInstallation } from "./verify-bundle-installation.ts";
 
 const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -58,6 +59,7 @@ export async function buildReleaseBundle(): Promise<string> {
   });
   await writeFile(join(root, "bundle-inventory.json"), `${JSON.stringify(inventory, null, 2)}\n`);
   await verifyReleaseBundle(root, target);
+  await verifyBundleInstallation(root);
   return root;
 }
 

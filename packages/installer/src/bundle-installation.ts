@@ -5,6 +5,7 @@ import {
   type ActivateCandidateOptions,
   type StageCandidateOptions,
   activateCandidate,
+  discardReadyCandidate,
   stageCandidate,
 } from "./transaction.ts";
 
@@ -37,9 +38,14 @@ export async function installReleaseBundle(
   });
 
   let stableFiles: PreparedStableFiles | undefined;
-  let transaction: InstallationTransaction;
   try {
     stableFiles = await options.prepareStableFiles?.(bundle);
+  } catch (error) {
+    await discardReadyCandidate(options.layout, options.now);
+    throw error;
+  }
+  let transaction: InstallationTransaction;
+  try {
     transaction = await activateCandidate({
       layout: options.layout,
       verify: options.verify,
