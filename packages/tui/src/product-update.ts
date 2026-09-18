@@ -81,7 +81,7 @@ export function startProductUpdateObserver(
 }
 
 function readyNotice(version: string): string {
-  return `Cinba ${version} is ready. Exit and run cinba update to install.`;
+  return `Cinba ${version} is ready. Type /update to install.`;
 }
 
 export function createDeferredReadyNotice(): {

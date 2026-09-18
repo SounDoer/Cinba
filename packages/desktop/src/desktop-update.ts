@@ -95,13 +95,16 @@ export function createDesktopInstallReadyUpdate(
       if (!(await options.confirm(version))) {
         return;
       }
-      readyVersion(options.getUpdate());
+      if (readyVersion(options.getUpdate()) !== version) {
+        throw new Error("Desktop ready update changed during confirmation");
+      }
       options.abortAutomaticUpdate();
       try {
         await options.launch(options.launcherPath, [
           "__begin-update-handoff",
           "desktop",
           String(options.processId),
+          version,
         ]);
       } catch (error) {
         options.resumeAutomaticUpdate();

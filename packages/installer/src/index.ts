@@ -203,13 +203,15 @@ export {
 } from "./windows-integration.ts";
 export type { RunWindowsIntegrationPowerShell } from "./windows-integration.ts";
 export {
+  CINBA_PRODUCT_LAUNCHER_PATH,
   CINBA_PRODUCT_LAUNCHER_PID,
   createInstalledProductEnvironment,
+  parseInstalledProductLauncher,
   parseProductLauncherProcessId,
   resolveInstalledProductCommand,
   runInstalledProductCommand,
 } from "./stable-launcher.ts";
-export type { InstalledProductCommand } from "./stable-launcher.ts";
+export type { InstalledProductCommand, InstalledProductLauncher } from "./stable-launcher.ts";
 export {
   activateCandidate,
   discardReadyCandidate,

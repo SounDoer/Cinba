@@ -87,6 +87,7 @@ async function run(): Promise<void> {
       target,
       surface: launcherCommand.surface,
       blockingProcessId: launcherCommand.blockingProcessId,
+      expectedVersion: launcherCommand.expectedVersion,
       ...(launcherCommand.surface === "tui"
         ? { workingDirectory: launcherCommand.workingDirectory }
         : {}),

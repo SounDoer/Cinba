@@ -45,14 +45,21 @@ import {
   sessionTitle,
 } from "@cinba/contract";
 import { CoreClient, CoreSyncControlClient } from "@cinba/core-client";
+import { parseInstalledProductLauncher } from "@cinba/installer";
 import { BLUE, BOLD, DIM, GREEN, MAGENTA, RED, RESET, SELECT_THEME, YELLOW } from "./theme.ts";
+import { InteractionOwner } from "./interaction-owner.ts";
 import { Transcript } from "./transcript.ts";
-import { PromptInput } from "./prompt-input.ts";
+import { PromptInput, createTuiLocalCommands } from "./prompt-input.ts";
 import { ProviderFlow } from "./provider-flow.ts";
 import { WebToolsFlow } from "./web-tools-flow.ts";
 import { SyncFlow } from "./sync-flow.ts";
 import { createTuiUpdateConsumer, startProductUpdateObserver } from "./product-update.ts";
 import { StatusBar } from "./status-bar.ts";
+import {
+  type TuiUpdateConfirmation,
+  createTuiInstallReadyUpdate,
+  launchTuiUpdateHandoff,
+} from "./tui-update.ts";
 
 /**
  * Which core to talk to. Nothing here starts one: the service has to be running.
@@ -72,7 +79,14 @@ class ConfirmDialog implements Component {
   #negativeLabel: string;
   onAnswer?: (confirmed: boolean) => void;
 
-  constructor(title: string, message?: string, labels = { positive: "Allow", negative: "Deny" }) {
+  constructor(
+    title: string,
+    message?: string,
+    labels: { positive: string; negative: string; defaultConfirmed?: boolean } = {
+      positive: "Allow",
+      negative: "Deny",
+    },
+  ) {
     this.#title = title;
     this.#message = message;
     this.#negativeLabel = labels.negative;
@@ -84,6 +98,9 @@ class ConfirmDialog implements Component {
       2,
       SELECT_THEME,
     );
+    if (labels.defaultConfirmed === false) {
+      this.#list.setSelectedIndex(1);
+    }
     this.#list.onSelect = (item) => this.onAnswer?.(item.value === "yes");
     // Cancelling with Esc counts as a refusal: the strict default.
     this.#list.onCancel = () => this.onAnswer?.(false);
@@ -172,10 +189,14 @@ function choose(
   onAnswer: (value: string | undefined) => void,
 ): void {
   const dialog = new ChoiceDialog(title, items);
-  dialog.onAnswer = (value) => {
+  let releaseOwnership = (): boolean => false;
+  const finish = (value: string | undefined): void => {
+    releaseOwnership();
     showPrompt();
     onAnswer(value);
   };
+  dialog.onAnswer = finish;
+  releaseOwnership = interactionOwner.replace(() => finish(undefined));
   setBottom(dialog);
   tui.setFocus(dialog);
 }
@@ -188,6 +209,10 @@ const tui: TUI = new TuiMainScreen(terminal);
 const transcript = new Transcript();
 const promptInput = new PromptInput();
 const statusBar = new StatusBar();
+const interactionOwner = new InteractionOwner();
+const installedProductLauncher = parseInstalledProductLauncher(process.env);
+const tuiLocalCommands = createTuiLocalCommands(installedProductLauncher !== undefined);
+promptInput.setTuiCommands(tuiLocalCommands);
 const consumeProductUpdate = createTuiUpdateConsumer({
   setStatus: (update) => {
     statusBar.update = update;
@@ -218,6 +243,22 @@ function showPrompt(): void {
   tui.setFocus(promptInput);
 }
 
+let releaseFlowInteraction = (): boolean => false;
+
+function showFlowInteraction(component: Component): void {
+  releaseFlowInteraction = interactionOwner.replace(() => component.handleInput?.("\x1b"));
+  setBottom(component);
+  tui.setFocus(component);
+}
+
+function showFlowPrompt(): void {
+  const owned = releaseFlowInteraction();
+  releaseFlowInteraction = (): boolean => false;
+  if (owned) {
+    showPrompt();
+  }
+}
+
 // ---- Starting the core ----
 
 // ---- Talking to the core ----
@@ -233,6 +274,18 @@ let recoveredDrafts: RecoveredDraft[] = [];
 let skillCommands: SkillCommand[] = [];
 let retryRenderTimer: NodeJS.Timeout | undefined;
 let productUpdateObserver: { dispose(): void } | undefined;
+
+function startProductUpdateObservation(): void {
+  productUpdateObserver ??= startProductUpdateObserver({
+    environment: process.env,
+    onUpdate: consumeProductUpdate,
+  });
+}
+
+function stopProductUpdateObservation(): void {
+  productUpdateObserver?.dispose();
+  productUpdateObserver = undefined;
+}
 
 function refreshActivity(snapshot: Snapshot): void {
   statusBar.activity = agentActivity(snapshot);
@@ -436,16 +489,42 @@ function raiseConfirm(requestId: string, title?: string, message?: string): void
     .at(-1);
   const toolName = waiting && waiting.kind === "tool" ? waiting.toolName : "this tool";
 
-  confirming = true;
   const dialog = new ConfirmDialog(title ?? `Allow ${toolName}?`, message);
-  dialog.onAnswer = (confirmed) => {
+  let releaseOwnership = (): boolean => false;
+  const finish = (confirmed: boolean): void => {
+    releaseOwnership();
     confirming = false;
     transcript.append(confirmed ? `${DIM}   -> allowed${RESET}` : `${DIM}   -> denied${RESET}`);
     showPrompt();
     coreClient.respondConfirm(requestId, confirmed);
   };
+  dialog.onAnswer = finish;
+  releaseOwnership = interactionOwner.replace(() => finish(false));
+  confirming = true;
   setBottom(dialog);
   tui.setFocus(dialog);
+}
+
+function confirmTuiUpdate(confirmation: TuiUpdateConfirmation): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const dialog = new ConfirmDialog(confirmation.title, confirmation.message, {
+      positive: confirmation.positive,
+      negative: confirmation.negative,
+      defaultConfirmed: confirmation.defaultConfirmed,
+    });
+    let releaseOwnership = (): boolean => false;
+    const finish = (confirmed: boolean): void => {
+      releaseOwnership();
+      confirming = false;
+      showPrompt();
+      resolve(confirmed);
+    };
+    dialog.onAnswer = finish;
+    releaseOwnership = interactionOwner.replace(() => finish(false));
+    confirming = true;
+    setBottom(dialog);
+    tui.setFocus(dialog);
+  });
 }
 
 const coreClient = new CoreClient(SERVER_URL, {
@@ -477,10 +556,7 @@ const coreClient = new CoreClient(SERVER_URL, {
     sessionId = state.sessionId;
     statusModel = state.model?.id ?? "";
     drawSnapshot(state.snapshot);
-    productUpdateObserver ??= startProductUpdateObserver({
-      environment: process.env,
-      onUpdate: consumeProductUpdate,
-    });
+    startProductUpdateObservation();
   },
   onActions: (actions) => {
     for (const action of actions) {
@@ -509,7 +585,6 @@ const coreClient = new CoreClient(SERVER_URL, {
     tui.requestRender();
   },
   onProjectTrustRequested: (request) => {
-    confirming = true;
     const details = [
       request.cwd,
       "",
@@ -522,11 +597,16 @@ const coreClient = new CoreClient(SERVER_URL, {
       positive: "Trust",
       negative: "Do not trust",
     });
-    dialog.onAnswer = (trusted) => {
+    let releaseOwnership = (): boolean => false;
+    const finish = (trusted: boolean): void => {
+      releaseOwnership();
       confirming = false;
       showPrompt();
       coreClient.respondProjectTrust(request.requestId, trusted);
     };
+    dialog.onAnswer = finish;
+    releaseOwnership = interactionOwner.replace(() => finish(false));
+    confirming = true;
     setBottom(dialog);
     tui.setFocus(dialog);
   },
@@ -578,35 +658,40 @@ const coreClient = new CoreClient(SERVER_URL, {
   },
 });
 
+const installReadyUpdate = createTuiInstallReadyUpdate({
+  launcher: installedProductLauncher,
+  workingDirectory: process.cwd(),
+  getUpdate: () => statusBar.update,
+  isBusy: () => busy,
+  isCompacting: () => compacting,
+  confirm: confirmTuiUpdate,
+  stopObserver: stopProductUpdateObservation,
+  restartObserver: startProductUpdateObservation,
+  launch: launchTuiUpdateHandoff,
+  exit,
+  showNotice: (text) => applyAction({ type: "notice", text }),
+});
+
 const syncFlow = new SyncFlow(new CoreSyncControlClient(SERVER_URL), {
   append: (line) => transcript.append(line),
-  showInteraction: (component) => {
-    setBottom(component);
-    tui.setFocus(component);
-  },
-  showPrompt,
+  showInteraction: showFlowInteraction,
+  showPrompt: showFlowPrompt,
   requestRender: () => tui.requestRender(),
   showNotice: (text) => applyAction({ type: "notice", text }),
 });
 
 const providerFlow = new ProviderFlow(coreClient, {
   append: (line) => transcript.append(line),
-  showInteraction: (component) => {
-    setBottom(component);
-    tui.setFocus(component);
-  },
-  showPrompt,
+  showInteraction: showFlowInteraction,
+  showPrompt: showFlowPrompt,
   requestRender: () => tui.requestRender(),
   showNotice: (text) => applyAction({ type: "notice", text }),
 });
 
 const webToolsFlow = new WebToolsFlow(coreClient, {
   append: (line) => transcript.append(line),
-  showInteraction: (component) => {
-    setBottom(component);
-    tui.setFocus(component);
-  },
-  showPrompt,
+  showInteraction: showFlowInteraction,
+  showPrompt: showFlowPrompt,
   requestRender: () => tui.requestRender(),
   showNotice: (text) => applyAction({ type: "notice", text }),
 });
@@ -713,7 +798,13 @@ function runCommand(command: Command, line: string): void {
       for (const entry of COMMANDS) {
         transcript.append(`${MAGENTA}/${entry.name}${RESET}  ${DIM}${entry.summary}${RESET}`);
       }
+      for (const entry of tuiLocalCommands) {
+        transcript.append(`${MAGENTA}/${entry.name}${RESET}  ${DIM}${entry.summary}${RESET}`);
+      }
       for (const entry of skillCommands) {
+        if (tuiLocalCommands.some((localCommand) => localCommand.name === entry.name)) {
+          continue;
+        }
         transcript.append(
           `${MAGENTA}/${entry.name}${RESET}  ${DIM}${entry.summary} (${entry.scope})${RESET}`,
         );
@@ -738,17 +829,25 @@ function submitInput(value: string, delivery: "default" | "followUp" = "default"
   }
 
   if (isCommand(text)) {
+    const command = promptInput.pending();
     if (busy || compacting) {
+      if (command?.source === "tui") {
+        promptInput.input.setValue("");
+        promptInput.clearHints();
+        void installReadyUpdate();
+        return;
+      }
       applyAction({ type: "notice", text: "Commands cannot be queued while answering." });
       return;
     }
     // What the menu is pointing at, which is not the first match once the
     // arrows have been used.
-    const command = promptInput.pending();
     promptInput.input.setValue("");
     promptInput.clearHints();
     if (command?.source === "cinba") {
       runCommand(command, text);
+    } else if (command?.source === "tui") {
+      void installReadyUpdate();
     } else if (command?.source === "skill") {
       coreClient.prompt(text);
     } else {
@@ -797,9 +896,10 @@ promptInput.input.onEscape = () => {
 
 function exit(): void {
   exiting = true;
-  productUpdateObserver?.dispose();
+  stopProductUpdateObservation();
   if (retryRenderTimer) {
     clearInterval(retryRenderTimer);
+    retryRenderTimer = undefined;
   }
   tui.stop();
   coreClient.close();

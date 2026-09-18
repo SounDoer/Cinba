@@ -13,11 +13,13 @@ export type StableLauncherCommand =
       type: "begin-update-handoff";
       surface: "desktop";
       blockingProcessId: number;
+      expectedVersion: string;
     }
   | {
       type: "begin-update-handoff";
       surface: "tui";
       blockingProcessId: number;
+      expectedVersion: string;
       workingDirectory: string;
     }
   | {
@@ -66,7 +68,7 @@ export function parseStableLauncherCommand(
     return { type: "uninstall-helper", parentProcessId, purge: arguments_[2] === "purge" };
   }
   if (
-    arguments_.length === 3 &&
+    arguments_.length === 4 &&
     arguments_[0] === "__begin-update-handoff" &&
     arguments_[1] === "desktop"
   ) {
@@ -75,19 +77,21 @@ export function parseStableLauncherCommand(
       type: "begin-update-handoff",
       surface: "desktop",
       blockingProcessId,
+      expectedVersion: parseExpectedVersion(arguments_[3]!),
     };
   }
   if (
-    arguments_.length === 4 &&
+    arguments_.length === 5 &&
     arguments_[0] === "__begin-update-handoff" &&
     arguments_[1] === "tui" &&
-    isAbsolute(arguments_[3]!)
+    isAbsolute(arguments_[4]!)
   ) {
     return {
       type: "begin-update-handoff",
       surface: "tui",
       blockingProcessId: parsePositiveProcessId(arguments_[2]!),
-      workingDirectory: arguments_[3]!,
+      expectedVersion: parseExpectedVersion(arguments_[3]!),
+      workingDirectory: arguments_[4]!,
     };
   }
   if (arguments_[0] === "__begin-update-handoff") {
@@ -103,6 +107,13 @@ export function parseStableLauncherCommand(
     throw new Error("invalid update handoff helper command");
   }
   return { type: "product", arguments: arguments_ };
+}
+
+function parseExpectedVersion(value: string): string {
+  if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value)) {
+    throw new Error("foreground update handoff expected version is invalid");
+  }
+  return value;
 }
 
 export function parsePositiveProcessId(value: string): number {

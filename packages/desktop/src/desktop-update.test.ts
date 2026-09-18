@@ -58,9 +58,26 @@ test("confirmed ready update launches the stable handoff command and quits", asy
   await install();
   assert.deepEqual(calls, [
     "abort",
-    ["spawn", "C:\\Users\\A\\bin\\cinba.exe", ["__begin-update-handoff", "desktop", "123"]],
+    [
+      "spawn",
+      "C:\\Users\\A\\bin\\cinba.exe",
+      ["__begin-update-handoff", "desktop", "123", "0.2.0"],
+    ],
     "quit",
   ]);
+});
+
+test("Desktop does not hand off when the ready candidate changes during confirmation", async () => {
+  let update = ready("0.2.0");
+  const { calls, install } = fixture({
+    getUpdate: () => update,
+    confirm: async () => {
+      update = ready("0.3.0");
+      return true;
+    },
+  });
+  await assert.rejects(install(), /ready update changed during confirmation/);
+  assert.deepEqual(calls, []);
 });
 
 test("Desktop waits for the begin process before quitting", async () => {
@@ -122,7 +139,11 @@ test("a second request after handoff success cannot launch again while Desktop q
   await install();
   assert.deepEqual(calls, [
     "abort",
-    ["spawn", "C:\\Users\\A\\bin\\cinba.exe", ["__begin-update-handoff", "desktop", "123"]],
+    [
+      "spawn",
+      "C:\\Users\\A\\bin\\cinba.exe",
+      ["__begin-update-handoff", "desktop", "123", "0.2.0"],
+    ],
     "quit",
   ]);
 });
@@ -142,7 +163,7 @@ test("handoff launcher uses argv without a shell and resolves only on exit zero"
   let received: unknown;
   const launched = launchDesktopUpdateHandoff(
     "C:\\Users\\A\\bin\\cinba.exe",
-    ["__begin-update-handoff", "desktop", "123"],
+    ["__begin-update-handoff", "desktop", "123", "0.2.0"],
     ((executable: string, arguments_: readonly string[], options: unknown) => {
       received = [executable, arguments_, options];
       return child;
@@ -150,7 +171,7 @@ test("handoff launcher uses argv without a shell and resolves only on exit zero"
   );
   assert.deepEqual(received, [
     "C:\\Users\\A\\bin\\cinba.exe",
-    ["__begin-update-handoff", "desktop", "123"],
+    ["__begin-update-handoff", "desktop", "123", "0.2.0"],
     { shell: false, stdio: "ignore", windowsHide: true },
   ]);
   child.emit("exit", 0, null);
@@ -161,7 +182,7 @@ test("handoff launcher rejects process errors and non-zero exits", async () => {
   const failed = new EventEmitter();
   const spawnFailed = launchDesktopUpdateHandoff(
     "cinba",
-    ["__begin-update-handoff", "desktop", "123"],
+    ["__begin-update-handoff", "desktop", "123", "0.2.0"],
     (() => failed) as never,
   );
   failed.emit("exit", 9, null);
@@ -170,7 +191,7 @@ test("handoff launcher rejects process errors and non-zero exits", async () => {
   const errored = new EventEmitter();
   const spawnErrored = launchDesktopUpdateHandoff(
     "cinba",
-    ["__begin-update-handoff", "desktop", "123"],
+    ["__begin-update-handoff", "desktop", "123", "0.2.0"],
     (() => errored) as never,
   );
   const original = new Error("spawn denied");

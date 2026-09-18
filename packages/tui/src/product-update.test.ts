@@ -167,7 +167,7 @@ test("ready notice appears once per version while every state change renders", (
   consume({ phase: "ready", candidateVersion: "0.2.0" });
 
   assert.deepEqual(statuses, ["checking", "downloading", "ready", "idle", "ready"]);
-  assert.deepEqual(notices, ["Cinba 0.2.0 is ready. Exit and run cinba update to install."]);
+  assert.deepEqual(notices, ["Cinba 0.2.0 is ready. Type /update to install."]);
   assert.equal(renders, 5);
 });
 
@@ -177,7 +177,7 @@ test("ready notice defers while busy, flushes once when idle, and keeps only the
   assert.equal(notices.receive("0.2.0", false), undefined);
   assert.equal(notices.receive("0.2.0", false), undefined);
   assert.equal(notices.receive("0.3.0", false), undefined);
-  assert.equal(notices.flush(true), "Cinba 0.3.0 is ready. Exit and run cinba update to install.");
+  assert.equal(notices.flush(true), "Cinba 0.3.0 is ready. Type /update to install.");
   assert.equal(notices.flush(true), undefined);
   assert.equal(notices.receive("0.3.0", true), undefined);
 });

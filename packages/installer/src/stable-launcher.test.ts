@@ -10,8 +10,10 @@ import {
 } from "./installation-store.ts";
 import { type ProductTarget, requireProductTarget } from "./platform.ts";
 import {
+  CINBA_PRODUCT_LAUNCHER_PATH,
   CINBA_PRODUCT_LAUNCHER_PID,
   createInstalledProductEnvironment,
+  parseInstalledProductLauncher,
   parseProductLauncherProcessId,
   resolveInstalledProductCommand,
 } from "./stable-launcher.ts";
@@ -113,25 +115,51 @@ test("the stable launcher fails closed when current is missing or inconsistent",
   }
 });
 
-test("the stable launcher injects its PID without exposing update credentials", () => {
+test("the stable launcher injects its absolute path and PID without exposing update credentials", () => {
+  const launcherPath = join(process.cwd(), "cinba.exe");
   const environment = createInstalledProductEnvironment(
     {
+      [CINBA_PRODUCT_LAUNCHER_PATH]: "C:\\forged\\cinba.exe",
+      [CINBA_PRODUCT_LAUNCHER_PID]: "999",
       CINBA_UPDATE_LEASE_TOKEN: "must-not-survive",
       KEEP_ME: "yes",
     },
     123,
+    launcherPath,
   );
+  assert.equal(environment[CINBA_PRODUCT_LAUNCHER_PATH], launcherPath);
   assert.equal(environment[CINBA_PRODUCT_LAUNCHER_PID], "123");
   assert.equal(environment.CINBA_UPDATE_LEASE_TOKEN, undefined);
   assert.equal(environment.KEEP_ME, "yes");
+  assert.deepEqual(parseInstalledProductLauncher(environment), {
+    path: launcherPath,
+    processId: 123,
+  });
   assert.equal(parseProductLauncherProcessId(environment), 123);
+  assert.equal(parseInstalledProductLauncher({}), undefined);
   assert.equal(parseProductLauncherProcessId({}), undefined);
   assert.throws(
     () => parseProductLauncherProcessId({ [CINBA_PRODUCT_LAUNCHER_PID]: "0" }),
     /must be a positive integer/,
   );
   assert.throws(
-    () => createInstalledProductEnvironment({}, Number.MAX_SAFE_INTEGER + 1),
+    () =>
+      parseInstalledProductLauncher({
+        [CINBA_PRODUCT_LAUNCHER_PATH]: launcherPath,
+      }),
+    /must be provided together/,
+  );
+  assert.throws(
+    () =>
+      parseInstalledProductLauncher({
+        [CINBA_PRODUCT_LAUNCHER_PATH]: "relative",
+        [CINBA_PRODUCT_LAUNCHER_PID]: "123",
+      }),
+    /must be absolute/,
+  );
+  assert.throws(
+    () => createInstalledProductEnvironment({}, Number.MAX_SAFE_INTEGER + 1, launcherPath),
     /must be a positive integer/,
   );
+  assert.throws(() => createInstalledProductEnvironment({}, 123, "relative"), /must be absolute/);
 });

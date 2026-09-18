@@ -100,6 +100,7 @@ test("begin handoff rejects a blocking PID that is not alive before taking the l
       target: "windows-x64",
       surface: "desktop",
       blockingProcessId: 456,
+      expectedVersion: "0.2.0",
       processIsAlive: () => false,
       acquireLease: async () => {
         acquired = true;
@@ -126,6 +127,7 @@ test("begin handoff reads the ready candidate while holding the full lease", asy
     target: "windows-x64",
     surface: "tui",
     blockingProcessId: 456,
+    expectedVersion: updateHandoff.candidate.version,
     workingDirectory: (updateHandoff.restart as { workingDirectory: string }).workingDirectory,
     processIsAlive: () => true,
     now: () => new Date(updateHandoff.createdAt),
@@ -176,6 +178,45 @@ test("begin handoff reads the ready candidate while holding the full lease", asy
     "launch",
     "release-parent",
   ]);
+});
+
+test("begin handoff rejects a changed ready version while holding the lease", async () => {
+  const calls: string[] = [];
+  const updateHandoff = handoff("desktop");
+  await assert.rejects(
+    beginForegroundUpdateHandoff({
+      platform: "win32",
+      paths: {
+        stateDirectory: resolve("state"),
+        launcherPath: resolve("bin", "cinba.exe"),
+      } as ProductPaths,
+      target: "windows-x64",
+      surface: "desktop",
+      blockingProcessId: 456,
+      expectedVersion: "0.1.9",
+      processIsAlive: () => true,
+      acquireLease: async () => ({
+        ...lease(calls),
+        release: async () => {
+          calls.push("release-parent");
+        },
+      }),
+      reapClaimed: async () => ({ removed: [], retained: [], warnings: [] }),
+      readState: async () => ({
+        schemaVersion: 1,
+        phase: "ready",
+        currentVersion: "0.1.0",
+        checkedAt: updateHandoff.createdAt,
+        candidate: updateHandoff.candidate,
+        failure: null,
+      }),
+      launch: async () => {
+        calls.push("launch");
+      },
+    }),
+    /expected version 0\.1\.9/,
+  );
+  assert.deepEqual(calls, ["release-parent"]);
 });
 
 test("failed transfer terminates helper and removes handoff, temp, and lease", async () => {

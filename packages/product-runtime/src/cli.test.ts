@@ -133,11 +133,25 @@ test("foreground Sync never receives managed ownership records or a control toke
   assert.equal(service.environment.CINBA_LOCAL_SYNC_CONTROL_TOKEN, undefined);
 });
 
-test("the installed TUI receives only the shared update state directory and preserves its env", () => {
+test("the TUI receives shared update state without inventing installed launcher metadata", () => {
   assert.deepEqual(createProductTuiEnvironment("/state", { EXISTING: "kept" }), {
     EXISTING: "kept",
     CINBA_UPDATE_STATE_DIR: "/state",
   });
+});
+
+test("the installed TUI inherits controlled launcher path and PID", () => {
+  assert.deepEqual(
+    createProductTuiEnvironment("/state", {
+      CINBA_PRODUCT_LAUNCHER_PATH: "C:\\Program Files\\Cinba\\cinba.exe",
+      CINBA_PRODUCT_LAUNCHER_PID: "123",
+    }),
+    {
+      CINBA_PRODUCT_LAUNCHER_PATH: "C:\\Program Files\\Cinba\\cinba.exe",
+      CINBA_PRODUCT_LAUNCHER_PID: "123",
+      CINBA_UPDATE_STATE_DIR: "/state",
+    },
+  );
 });
 
 test("the installed TUI aborts and joins its non-blocking automatic update check", async () => {

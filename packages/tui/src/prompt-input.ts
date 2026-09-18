@@ -10,6 +10,54 @@ import {
 import { type SkillCommand, type SlashCommand, matchCommands } from "@cinba/contract";
 import { BOLD, DIM, GREEN, MAGENTA, RESET } from "./theme.ts";
 
+export type TuiLocalCommand = {
+  source: "tui";
+  name: string;
+  summary: string;
+};
+
+type TuiSlashCommand = SlashCommand | TuiLocalCommand;
+
+const UPDATE_COMMAND: TuiLocalCommand = {
+  source: "tui",
+  name: "update",
+  summary: "install the ready update and restart",
+};
+
+export function createTuiLocalCommands(installed: boolean): readonly TuiLocalCommand[] {
+  return installed ? [UPDATE_COMMAND] : [];
+}
+
+function matchTuiCommands(
+  input: string,
+  localCommands: readonly TuiLocalCommand[],
+  skills: readonly SkillCommand[],
+): TuiSlashCommand[] {
+  const trimmed = input.trim();
+  const typed = trimmed.startsWith("/")
+    ? (trimmed.slice(1).split(/\s+/)[0] ?? "").toLowerCase()
+    : "";
+  const localNames = new Set(localCommands.map((command) => command.name));
+  const shared = matchCommands(
+    input,
+    skills.filter((command) => !localNames.has(command.name)),
+  );
+  const local =
+    trimmed === `/${typed}`
+      ? localCommands.filter((command) => command.name.startsWith(typed))
+      : [];
+  const rank = (command: TuiSlashCommand): number => {
+    if (command.source === "cinba") {
+      return 0;
+    }
+    return command.source === "tui" ? 1 : 2;
+  };
+  return [...shared, ...local].toSorted((left, right) => {
+    const exact = Number(right.name === typed) - Number(left.name === typed);
+    return exact || rank(left) - rank(right) || left.name.localeCompare(right.name);
+  });
+}
+
 /**
  * The input line, plus the command menu above it.
  *
@@ -19,8 +67,9 @@ import { BOLD, DIM, GREEN, MAGENTA, RESET } from "./theme.ts";
  */
 export class PromptInput implements Component, Focusable {
   readonly input = new Input();
-  #hints: SlashCommand[] = [];
+  #hints: TuiSlashCommand[] = [];
   #skills: SkillCommand[] = [];
+  #tuiCommands: readonly TuiLocalCommand[] = [];
   #selected = 0;
   #focused = false;
 
@@ -49,7 +98,7 @@ export class PromptInput implements Component, Focusable {
     this.input.handleInput(data);
 
     const before = this.#hints[this.#selected];
-    this.#hints = matchCommands(this.input.getValue(), this.#skills);
+    this.#hints = matchTuiCommands(this.input.getValue(), this.#tuiCommands, this.#skills);
 
     const stillThere = this.#hints.findIndex(
       (command) => command.source === before?.source && command.name === before.name,
@@ -58,7 +107,7 @@ export class PromptInput implements Component, Focusable {
   }
 
   /** The command Enter would run, if any. */
-  pending(): SlashCommand | undefined {
+  pending(): TuiSlashCommand | undefined {
     return this.#hints[this.#selected];
   }
 
@@ -69,7 +118,13 @@ export class PromptInput implements Component, Focusable {
 
   setSkills(skills: SkillCommand[]): void {
     this.#skills = [...skills];
-    this.#hints = matchCommands(this.input.getValue(), this.#skills);
+    this.#hints = matchTuiCommands(this.input.getValue(), this.#tuiCommands, this.#skills);
+    this.#selected = 0;
+  }
+
+  setTuiCommands(commands: readonly TuiLocalCommand[]): void {
+    this.#tuiCommands = [...commands];
+    this.#hints = matchTuiCommands(this.input.getValue(), this.#tuiCommands, this.#skills);
     this.#selected = 0;
   }
 

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { lstat, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { type InstallationLayout, readCurrentRelease, releasePath } from "./installation-store.ts";
 import { parsePayloadRelease } from "./payload-release.ts";
 import type { ProductTarget } from "./platform.ts";
@@ -13,6 +13,12 @@ export type InstalledProductCommand = {
 };
 
 export const CINBA_PRODUCT_LAUNCHER_PID = "CINBA_PRODUCT_LAUNCHER_PID";
+export const CINBA_PRODUCT_LAUNCHER_PATH = "CINBA_PRODUCT_LAUNCHER_PATH";
+
+export type InstalledProductLauncher = {
+  path: string;
+  processId: number;
+};
 
 export function parseProductLauncherProcessId(
   environment: NodeJS.ProcessEnv = process.env,
@@ -27,15 +33,41 @@ export function parseProductLauncherProcessId(
   return Number(value);
 }
 
+export function parseInstalledProductLauncher(
+  environment: NodeJS.ProcessEnv = process.env,
+): InstalledProductLauncher | undefined {
+  const path = environment[CINBA_PRODUCT_LAUNCHER_PATH];
+  const processId = parseProductLauncherProcessId(environment);
+  if (path === undefined && processId === undefined) {
+    return undefined;
+  }
+  if (path === undefined || processId === undefined) {
+    throw new Error(
+      `${CINBA_PRODUCT_LAUNCHER_PATH} and ${CINBA_PRODUCT_LAUNCHER_PID} must be provided together`,
+    );
+  }
+  if (!isAbsolute(path)) {
+    throw new Error(`${CINBA_PRODUCT_LAUNCHER_PATH} must be absolute`);
+  }
+  return { path, processId };
+}
+
 export function createInstalledProductEnvironment(
   environment: NodeJS.ProcessEnv,
   launcherProcessId: number,
+  launcherPath: string,
 ): NodeJS.ProcessEnv {
   if (!Number.isSafeInteger(launcherProcessId) || launcherProcessId < 1) {
     throw new Error("product launcher process id must be a positive integer");
   }
+  if (!isAbsolute(launcherPath)) {
+    throw new Error("product launcher path must be absolute");
+  }
   const childEnvironment = { ...environment };
+  delete childEnvironment[CINBA_PRODUCT_LAUNCHER_PATH];
+  delete childEnvironment[CINBA_PRODUCT_LAUNCHER_PID];
   delete childEnvironment.CINBA_UPDATE_LEASE_TOKEN;
+  childEnvironment[CINBA_PRODUCT_LAUNCHER_PATH] = launcherPath;
   childEnvironment[CINBA_PRODUCT_LAUNCHER_PID] = String(launcherProcessId);
   return childEnvironment;
 }
@@ -116,6 +148,7 @@ export async function runInstalledProductCommand(
   const environment = createInstalledProductEnvironment(
     options.environment ?? process.env,
     process.pid,
+    process.execPath,
   );
   return await childExit(
     spawn(command.executable, command.arguments, {

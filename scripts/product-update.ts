@@ -260,6 +260,7 @@ export async function beginForegroundUpdateHandoff(options: {
   target: ProductTarget;
   surface: "desktop" | "tui";
   blockingProcessId: number;
+  expectedVersion: string;
   workingDirectory?: string;
   processIsAlive?: (processId: number) => boolean;
   now?: () => Date;
@@ -296,9 +297,12 @@ export async function beginForegroundUpdateHandoff(options: {
     if (
       state?.phase !== "ready" ||
       !state.candidate?.artifactPath ||
-      state.candidate.target !== options.target
+      state.candidate.target !== options.target ||
+      state.candidate.version !== options.expectedVersion
     ) {
-      throw new Error("foreground update handoff requires a matching ready update");
+      throw new Error(
+        `foreground update handoff requires ready expected version ${options.expectedVersion}`,
+      );
     }
     const handoff = createUpdateHandoff({
       createdAt: (options.now ?? (() => new Date()))(),
