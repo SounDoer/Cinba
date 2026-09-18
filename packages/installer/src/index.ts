@@ -71,6 +71,8 @@ export {
   discoverCinbaUpdate,
 } from "./update-discovery.ts";
 export type { UpdateDiscovery } from "./update-discovery.ts";
+export { downloadUpdateCandidate } from "./update-download.ts";
+export type { DownloadedUpdate } from "./update-download.ts";
 export { createManagedServiceDefinitions } from "./services/definitions.ts";
 export type { ManagedServiceDefinition, ServicePlatform } from "./services/definitions.ts";
 export {
