@@ -28,6 +28,21 @@
 - 本轮最终 `npm run check` 通过：952 个单元测试（2 个平台限定跳过）、11 个端到端测试和 Web、
   Desktop、Sync Web 构建全部成功。
 
+## 当前 Windows 构建探针
+
+在 Windows 11 x64 上从提交 `d0265e870b6d6da5487995736585948f3704fa2b` 执行
+`npm run build:windows-artifact` 成功：
+
+- payload 构建并通过 inventory 校验；
+- release bundle 在隔离临时 home 中完成安装并实际启动 `Cinba 0.1.0`；
+- NSIS 生成 `Cinba-0.1.0-windows-x64.exe`，大小 178,152,432 bytes；
+- 本机构建文件 SHA-256 为
+  `bf66593bde0061d37a16afe3d9b6045c41eba1287f6e02275bd79ed5a216c756`；
+- Authenticode 状态为 `NotSigned`，与第一阶段明确不签名的产品边界一致。
+
+这只证明当前 Windows 主机构建链和隔离 bundle 安装可用，不等同于在干净 Windows 用户账号中实际
+点击 `.exe` 完成安装、PATH/Start Menu 注册、更新和卸载，因此下方 Windows 实机项目仍保持未勾选。
+
 ## 正式发版前置检查
 
 - [ ] 当前提交已推送到公开仓库的 `master`；
