@@ -1,0 +1,205 @@
+name: Prepare product release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable product version without the v prefix
+        required: true
+        type: string
+      revision:
+        description: Full 40-character commit SHA from master
+        required: true
+        type: string
+      changes_zh:
+        description: Chinese Markdown for the version changes section
+        required: true
+        type: string
+      changes_en:
+        description: English Markdown for the version changes section
+        required: true
+        type: string
+
+concurrency:
+  group: product-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Lock release identity
+    runs-on: ubuntu-24.04
+    outputs:
+      revision: ${{ steps.identity.outputs.revision }}
+    steps:
+      - name: Check out the requested revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.revision }}
+          fetch-depth: 0
+
+      - name: Validate version, revision, and master ancestry
+        id: identity
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REQUESTED_REVISION: ${{ inputs.revision }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "version must be a stable SemVer without a v prefix" >&2
+            exit 1
+          fi
+          if [[ ! "$REQUESTED_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "revision must be a full lowercase Git commit SHA" >&2
+            exit 1
+          fi
+          actual_revision=$(git rev-parse --verify HEAD^{commit})
+          package_version=$(node -p "require('./package.json').version")
+          if [[ "$actual_revision" != "$REQUESTED_REVISION" ]]; then
+            echo "checked-out revision does not match the requested revision" >&2
+            exit 1
+          fi
+          if [[ "$package_version" != "$REQUESTED_VERSION" ]]; then
+            echo "package.json version $package_version does not match $REQUESTED_VERSION" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin master
+          if ! git merge-base --is-ancestor "$actual_revision" origin/master; then
+            echo "release revision must belong to origin/master" >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v$REQUESTED_VERSION" >/dev/null; then
+            echo "tag v$REQUESTED_VERSION already exists" >&2
+            exit 1
+          fi
+          echo "revision=$actual_revision" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows-x64
+            runner: windows-2025
+            command: npm run build:windows-artifact
+            paths: dist/artifacts/Cinba-${{ inputs.version }}-windows-x64.exe
+          - target: macos-arm64
+            runner: macos-15
+            command: npm run build:macos-artifact
+            paths: dist/artifacts/Cinba-${{ inputs.version }}-macos-arm64.dmg
+          - target: linux-x64-gnu
+            runner: ubuntu-24.04
+            command: npm run build:linux-artifact
+            paths: |
+              dist/artifacts/Cinba-${{ inputs.version }}-linux-x64-gnu.tar.gz
+              dist/artifacts/install.sh
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out the locked revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.validate.outputs.revision }}
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run the repository merge gate
+        run: npm run check
+
+      - name: Build the native product artifact
+        run: ${{ matrix.command }}
+
+      - name: Attest the native product artifact
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ matrix.paths }}
+
+      - name: Upload the verified product artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-${{ matrix.target }}
+          path: ${{ matrix.paths }}
+          if-no-files-found: error
+          retention-days: 7
+
+  draft:
+    name: Assemble draft release
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out the locked revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.validate.outputs.revision }}
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Download all native product artifacts
+        uses: actions/download-artifact@v6
+        with:
+          pattern: release-*
+          path: dist/release
+          merge-multiple: true
+
+      - name: Assemble and verify release metadata
+        env:
+          CINBA_RELEASE_CHANGES_ZH: ${{ inputs.changes_zh }}
+          CINBA_RELEASE_CHANGES_EN: ${{ inputs.changes_en }}
+        run: |
+          node scripts/assemble-release.ts dist/release
+          node scripts/release-notes.ts dist/release/RELEASE_NOTES.md
+          sha256sum --check dist/release/SHA256SUMS
+
+      - name: Attest release metadata
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            dist/release/cinba-release.json
+            dist/release/SHA256SUMS
+
+      - name: Create the tag and complete draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v${{ inputs.version }}
+          RELEASE_REVISION: ${{ needs.validate.outputs.revision }}
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$RELEASE_REVISION" \
+            --draft \
+            --title "Cinba ${{ inputs.version }}" \
+            --notes-file dist/release/RELEASE_NOTES.md \
+            dist/release/Cinba-${{ inputs.version }}-windows-x64.exe \
+            dist/release/Cinba-${{ inputs.version }}-macos-arm64.dmg \
+            dist/release/Cinba-${{ inputs.version }}-linux-x64-gnu.tar.gz \
+            dist/release/install.sh \
+            dist/release/cinba-release.json \
+            dist/release/SHA256SUMS

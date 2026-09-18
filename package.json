@@ -2,7 +2,7 @@
   "name": "cinba",
   "private": true,
   "type": "module",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "A personal multi-interface AI coding agent built on pi.dev.",
   "license": "MIT",
   "repository": {
@@ -45,6 +45,7 @@
     "build:macos-artifact": "npm run build && node scripts/build-macos-artifact.ts",
     "build:windows-artifact": "npm run build && node scripts/build-windows-artifact.ts",
     "assemble:release": "node scripts/assemble-release.ts",
+    "release:notes": "node scripts/release-notes.ts",
     "verify:payload": "node scripts/verify-product-payload.ts",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e && npm run build"
   },
