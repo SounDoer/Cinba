@@ -163,6 +163,11 @@ export { configurePosixLauncherPath, removePosixLauncherPathBlock } from "./shel
 export type { PosixPathConfiguration } from "./shell-path.ts";
 export { configureWindowsUserPath, removeWindowsUserPath } from "./windows-path.ts";
 export type { PowerShellPathResult, RunPathPowerShell } from "./windows-path.ts";
+export {
+  configureWindowsProductIntegration,
+  removeWindowsProductIntegration,
+} from "./windows-integration.ts";
+export type { RunWindowsIntegrationPowerShell } from "./windows-integration.ts";
 export { resolveInstalledProductCommand, runInstalledProductCommand } from "./stable-launcher.ts";
 export type { InstalledProductCommand } from "./stable-launcher.ts";
 export {

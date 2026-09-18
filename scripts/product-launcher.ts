@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import {
   configurePosixLauncherPath,
+  configureWindowsProductIntegration,
   configureWindowsUserPath,
   installProductBundle,
   requireProductTarget,
@@ -33,6 +34,21 @@ async function run(): Promise<void> {
     });
     console.log(`Cinba ${transaction.candidate.version} installed successfully.`);
     if (platform === "win32") {
+      if (!paths.desktopApplicationPath) {
+        throw new Error("Windows installation paths do not include Cinba Desktop");
+      }
+      try {
+        await configureWindowsProductIntegration({
+          programDirectory: paths.programDirectory,
+          launcherPath: paths.launcherPath,
+          desktopApplicationPath: paths.desktopApplicationPath,
+          version: transaction.candidate.version,
+        });
+      } catch (error) {
+        console.warn(
+          `[cinba] Cinba was installed, but Windows app registration failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       try {
         const pathResult = await configureWindowsUserPath({
           launcherDirectory: paths.launcherDirectory,
