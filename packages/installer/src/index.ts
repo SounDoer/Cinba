@@ -65,6 +65,12 @@ export {
   serviceStatePath,
   writeServiceState,
 } from "./services/service-state.ts";
+export {
+  CINBA_RELEASE_API,
+  CINBA_RELEASE_MANIFEST_ASSET,
+  discoverCinbaUpdate,
+} from "./update-discovery.ts";
+export type { UpdateDiscovery } from "./update-discovery.ts";
 export { createManagedServiceDefinitions } from "./services/definitions.ts";
 export type { ManagedServiceDefinition, ServicePlatform } from "./services/definitions.ts";
 export {
