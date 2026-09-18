@@ -1,5 +1,5 @@
 import { homedir, hostname } from "node:os";
-import { join, resolve } from "node:path";
+import { posix, win32 } from "node:path";
 import type { LocalCoreConfig } from "@cinba/core-manager";
 import { resolveProductPaths } from "@cinba/installer";
 
@@ -23,17 +23,18 @@ export function createDevelopmentCoreConfig(
     identity: "development",
     environment,
   });
-  const root = resolve(repositoryRoot);
+  const pathImplementation = platform === "win32" ? win32 : posix;
+  const root = pathImplementation.resolve(repositoryRoot);
   return {
     baseUrl: "http://127.0.0.1:4518/",
     repositoryRoot: root,
-    serverEntry: join(root, "packages", "server", "src", "index.ts"),
-    stateDirectory: join(paths.dataDirectory, "Core"),
-    piAgentDirectory: join(paths.dataDirectory, "Pi"),
-    startLockPath: join(paths.stateDirectory, "core-start.lock"),
-    runtimePath: join(paths.stateDirectory, "core-runtime.json"),
-    controlPath: join(paths.stateDirectory, "core-control.json"),
-    logPath: join(paths.logDirectory, "core.log"),
+    serverEntry: pathImplementation.join(root, "packages", "server", "src", "index.ts"),
+    stateDirectory: pathImplementation.join(paths.dataDirectory, "Core"),
+    piAgentDirectory: pathImplementation.join(paths.dataDirectory, "Pi"),
+    startLockPath: pathImplementation.join(paths.stateDirectory, "core-start.lock"),
+    runtimePath: pathImplementation.join(paths.stateDirectory, "core-runtime.json"),
+    controlPath: pathImplementation.join(paths.stateDirectory, "core-control.json"),
+    logPath: pathImplementation.join(paths.logDirectory, "core.log"),
     defaultCoreName: `${options.machineName ?? hostname()} Dev`,
     environment: {
       CINBA_SYNC_SETTINGS_SOURCE: "sync",

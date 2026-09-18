@@ -1,24 +1,41 @@
 import assert from "node:assert/strict";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { resolveProductPaths } from "@cinba/installer";
 import {
   browserOpenCommand,
   createDevelopmentEnvironment,
   createSyncDevelopmentEnvironment,
 } from "./launch.ts";
 
+function developmentPaths(homeDirectory: string) {
+  if (
+    process.platform !== "win32" &&
+    process.platform !== "darwin" &&
+    process.platform !== "linux"
+  ) {
+    throw new Error(`unsupported test platform: ${process.platform}`);
+  }
+  return resolveProductPaths({
+    platform: process.platform,
+    homeDirectory,
+    identity: "development",
+    environment: { PATH: "/usr/bin" },
+  });
+}
+
 test("the Dev Core receives an isolated port, state directory, and Pi agent directory", () => {
   const home = resolve("example-home");
-  const productRoot = join(home, "AppData", "Local", "Cinba Dev");
+  const paths = developmentPaths(home);
   const environment = createDevelopmentEnvironment(home, "workstation", { PATH: "/usr/bin" });
 
   assert.equal(environment.CINBA_PORT, "4518");
   assert.equal(environment.CINBA_CORE_LIFETIME, "persistent");
   assert.equal(environment.CINBA_DEFAULT_CORE_NAME, "workstation Dev");
-  assert.equal(environment.CINBA_STATE_DIR, join(productRoot, "Data", "Core"));
+  assert.equal(environment.CINBA_STATE_DIR, join(paths.dataDirectory, "Core"));
   assert.equal(environment.CINBA_SYNC_SETTINGS_SOURCE, "sync");
   assert.equal(environment.CINBA_SYNC_CREDENTIAL_SOURCE, "local");
-  assert.equal(environment.PI_CODING_AGENT_DIR, join(productRoot, "Data", "Pi"));
+  assert.equal(environment.PI_CODING_AGENT_DIR, join(paths.dataDirectory, "Pi"));
   assert.equal(environment.PATH, "/usr/bin");
 });
 
@@ -36,11 +53,9 @@ test("the Dev Core does not inherit stable web search credentials", () => {
 
 test("Dev Sync uses a state directory and port isolated from stable Sync and Dev Core", () => {
   const home = resolve("example-home");
+  const paths = developmentPaths(home);
   const environment = createSyncDevelopmentEnvironment(home, { PATH: "/usr/bin" });
-  assert.equal(
-    environment.CINBA_SYNC_STATE_DIR,
-    join(home, "AppData", "Local", "Cinba Dev", "Data", "Sync"),
-  );
+  assert.equal(environment.CINBA_SYNC_STATE_DIR, paths.syncDataDirectory);
   assert.equal(environment.CINBA_SYNC_PORT, "4519");
   assert.equal(environment.CINBA_SYNC_PUBLIC_ORIGIN, "http://127.0.0.1:4519");
   assert.equal(environment.PATH, "/usr/bin");

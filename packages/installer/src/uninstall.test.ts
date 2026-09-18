@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { resolveProductPaths } from "./paths.ts";
+import { type ResolveProductPathsOptions, resolveProductPaths } from "./paths.ts";
 import { createUninstallPlan, executeUninstallPlan } from "./uninstall.ts";
 
 const pathOptions = {
@@ -12,6 +12,21 @@ const pathOptions = {
   environment: { LOCALAPPDATA: "C:\\Users\\cinba-test\\AppData\\Local" },
 } as const;
 const paths = resolveProductPaths(pathOptions);
+
+function nativePathOptions(root: string): ResolveProductPathsOptions {
+  if (
+    process.platform !== "win32" &&
+    process.platform !== "darwin" &&
+    process.platform !== "linux"
+  ) {
+    throw new Error(`unsupported test platform: ${process.platform}`);
+  }
+  return {
+    platform: process.platform,
+    homeDirectory: root,
+    environment: process.platform === "win32" ? { LOCALAPPDATA: join(root, "LocalAppData") } : {},
+  };
+}
 
 test("normal uninstall preserves every durable data boundary", () => {
   const plan = createUninstallPlan(pathOptions, { mode: "normal" });
@@ -92,13 +107,7 @@ test("macOS normal uninstall includes release storage outside the application", 
 
 test("normal uninstall executes every owned target while preserving durable data", async () => {
   const root = await mkdtemp(join(tmpdir(), "cinba-uninstall-execute-"));
-  const options = {
-    platform: "win32" as const,
-    homeDirectory: root,
-    environment: {
-      LOCALAPPDATA: join(root, "LocalAppData"),
-    },
-  };
+  const options = nativePathOptions(root);
   const plan = createUninstallPlan(options, { mode: "normal" });
   const productPaths = resolveProductPaths(options);
   try {

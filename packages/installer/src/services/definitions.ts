@@ -1,4 +1,4 @@
-import { isAbsolute, posix, win32 } from "node:path";
+import { posix, win32 } from "node:path";
 import type { ProductPaths } from "../paths.ts";
 import type { ServiceComponent, ServiceMode } from "./service-state.ts";
 
@@ -30,13 +30,14 @@ export function createManagedServiceDefinitions(
   paths: ProductPaths,
   platform: ServicePlatform,
 ): Readonly<Record<ServiceComponent, ManagedServiceDefinition>> {
-  if (!isAbsolute(paths.launcherPath) || !isAbsolute(paths.logDirectory)) {
+  const pathImplementation = platform === "win32" ? win32 : posix;
+  if (
+    !pathImplementation.isAbsolute(paths.launcherPath) ||
+    !pathImplementation.isAbsolute(paths.logDirectory)
+  ) {
     throw new Error("managed services require absolute launcher and log paths");
   }
-  const logPath = (name: string) =>
-    platform === "win32"
-      ? win32.join(paths.logDirectory, name)
-      : posix.join(paths.logDirectory, name);
+  const logPath = (name: string) => pathImplementation.join(paths.logDirectory, name);
   return {
     core: {
       component: "core",

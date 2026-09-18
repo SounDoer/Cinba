@@ -5,22 +5,26 @@ import { join } from "node:path";
 import test from "node:test";
 import { configurePosixLauncherPath, removePosixLauncherPathBlock } from "./shell-path.ts";
 
-test("an existing launcher PATH needs no profile edit", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-shell-path-existing-"));
-  try {
-    assert.deepEqual(
-      await configurePosixLauncherPath({
-        homeDirectory: root,
-        launcherDirectory: join(root, ".local", "bin"),
-        currentPath: `/usr/bin:${join(root, ".local", "bin")}`,
-        shell: "/bin/bash",
-      }),
-      { state: "already-available" },
-    );
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
+test(
+  "an existing launcher PATH needs no profile edit",
+  { skip: process.platform === "win32" },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "cinba-shell-path-existing-"));
+    try {
+      assert.deepEqual(
+        await configurePosixLauncherPath({
+          homeDirectory: root,
+          launcherDirectory: join(root, ".local", "bin"),
+          currentPath: `/usr/bin:${join(root, ".local", "bin")}`,
+          shell: "/bin/bash",
+        }),
+        { state: "already-available" },
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
 
 test("Bash and Zsh receive one reversible managed block", async () => {
   for (const [shell, file] of [

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import type { PlatformServiceAdapter } from "@cinba/installer";
 import {
+  type ProductManagedServiceOptions,
   formatProductComponentMode,
   inspectProductComponentMode,
   setProductComponentMode,
@@ -32,13 +33,26 @@ function fakeAdapter(): PlatformServiceAdapter & { registered: boolean; running:
   };
 }
 
+function nativeOptions(root: string): ProductManagedServiceOptions {
+  if (
+    process.platform !== "win32" &&
+    process.platform !== "darwin" &&
+    process.platform !== "linux"
+  ) {
+    throw new Error(`unsupported test platform: ${process.platform}`);
+  }
+  return {
+    platform: process.platform,
+    homeDirectory: root,
+    environment: process.platform === "win32" ? { LOCALAPPDATA: join(root, "Local") } : {},
+  };
+}
+
 test("the product management facade controls Core through the shared service manager", async () => {
   const root = await mkdtemp(join(tmpdir(), "cinba-product-service-"));
   const adapter = fakeAdapter();
   const options = {
-    platform: "win32" as const,
-    homeDirectory: root,
-    environment: { LOCALAPPDATA: join(root, "Local") },
+    ...nativeOptions(root),
     adapter,
     verifyHealth: async () => undefined,
   };
@@ -60,9 +74,7 @@ test("Sync remains not created until its authority directory exists", async () =
   const root = await mkdtemp(join(tmpdir(), "cinba-product-sync-"));
   try {
     const status = await inspectProductComponentMode("sync", {
-      platform: "win32",
-      homeDirectory: root,
-      environment: { LOCALAPPDATA: join(root, "Local") },
+      ...nativeOptions(root),
       adapter: fakeAdapter(),
     });
     assert.equal(status.state, "not-created");
