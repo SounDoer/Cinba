@@ -56,11 +56,12 @@ export {
 export type { DataSnapshot, ProtectedDataRoot } from "./data-snapshot.ts";
 export { cleanupInstallation } from "./cleanup.ts";
 export type { InstallationCleanupResult } from "./cleanup.ts";
-export { createUninstallPlan } from "./uninstall.ts";
+export { createUninstallPlan, executeUninstallPlan } from "./uninstall.ts";
 export type {
   PurgeAuthorization,
   UninstallPlan,
   UninstallRequest,
+  UninstallResult,
   UninstallTarget,
   UninstallTargetKind,
 } from "./uninstall.ts";

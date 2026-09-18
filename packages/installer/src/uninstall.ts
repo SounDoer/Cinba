@@ -1,4 +1,5 @@
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { rm } from "node:fs/promises";
+import { dirname, isAbsolute, posix, resolve, win32 } from "node:path";
 import {
   type ProductPaths,
   type ResolveProductPathsOptions,
@@ -13,6 +14,7 @@ export type UninstallRequest =
 
 export type UninstallTargetKind =
   | "program"
+  | "release-storage"
   | "manager"
   | "runtime-state"
   | "cache"
@@ -34,12 +36,32 @@ export type UninstallPlan = {
   preserved: { kind: "persistent-data" | "configuration"; path: string }[];
 };
 
-function inside(parent: string, child: string): boolean {
-  const path = relative(resolve(parent), resolve(child));
-  return path !== "" && path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path);
+export type UninstallResult = {
+  removed: UninstallTarget[];
+  failed: { target: UninstallTarget; error: unknown }[];
+};
+
+type PathImplementation = typeof posix;
+
+function inside(paths: PathImplementation, parent: string, child: string): boolean {
+  const path = paths.relative(paths.resolve(parent), paths.resolve(child));
+  return (
+    path !== "" && path !== ".." && !path.startsWith(`..${paths.sep}`) && !paths.isAbsolute(path)
+  );
 }
 
-function validatePath(path: string, field: string): string {
+function validateProductPath(paths: PathImplementation, path: string, field: string): string {
+  if (!paths.isAbsolute(path)) {
+    throw new Error(`${field} must be an absolute path`);
+  }
+  const normalized = paths.resolve(path);
+  if (paths.dirname(normalized) === normalized) {
+    throw new Error(`${field} cannot be a filesystem root`);
+  }
+  return normalized;
+}
+
+function validateNativePath(path: string, field: string): string {
   if (!isAbsolute(path)) {
     throw new Error(`${field} must be an absolute path`);
   }
@@ -50,15 +72,18 @@ function validatePath(path: string, field: string): string {
   return normalized;
 }
 
-function compactTargets(targets: readonly UninstallTarget[]): UninstallTarget[] {
+function compactTargets(
+  paths: PathImplementation,
+  targets: readonly UninstallTarget[],
+): UninstallTarget[] {
   const unique = new Map<string, UninstallTarget>();
   for (const target of targets) {
-    unique.set(resolve(target.path), { ...target, path: resolve(target.path) });
+    unique.set(paths.resolve(target.path), { ...target, path: paths.resolve(target.path) });
   }
   return [...unique.values()].filter(
     (target, _index, all) =>
       !all.some(
-        (candidate) => candidate.path !== target.path && inside(candidate.path, target.path),
+        (candidate) => candidate.path !== target.path && inside(paths, candidate.path, target.path),
       ),
   );
 }
@@ -80,22 +105,29 @@ export function createUninstallPlan(
     }
   }
   const paths = resolveProductPaths(pathOptions);
+  const pathImplementation = pathOptions.platform === "win32" ? win32 : posix;
   const checked = {
-    program: validatePath(paths.programDirectory, "programDirectory"),
-    manager: validatePath(paths.managerDirectory, "managerDirectory"),
-    state: validatePath(paths.stateDirectory, "stateDirectory"),
-    cache: validatePath(paths.cacheDirectory, "cacheDirectory"),
-    logs: validatePath(paths.logDirectory, "logDirectory"),
-    launcher: validatePath(paths.launcherPath, "launcherPath"),
-    data: validatePath(paths.dataDirectory, "dataDirectory"),
-    configuration: validatePath(paths.configurationDirectory, "configurationDirectory"),
+    program: validateProductPath(pathImplementation, paths.programDirectory, "programDirectory"),
+    releases: validateProductPath(pathImplementation, paths.releasesDirectory, "releasesDirectory"),
+    manager: validateProductPath(pathImplementation, paths.managerDirectory, "managerDirectory"),
+    state: validateProductPath(pathImplementation, paths.stateDirectory, "stateDirectory"),
+    cache: validateProductPath(pathImplementation, paths.cacheDirectory, "cacheDirectory"),
+    logs: validateProductPath(pathImplementation, paths.logDirectory, "logDirectory"),
+    launcher: validateProductPath(pathImplementation, paths.launcherPath, "launcherPath"),
+    data: validateProductPath(pathImplementation, paths.dataDirectory, "dataDirectory"),
+    configuration: validateProductPath(
+      pathImplementation,
+      paths.configurationDirectory,
+      "configurationDirectory",
+    ),
   };
-  if (!inside(paths.launcherDirectory, checked.launcher)) {
+  if (!inside(pathImplementation, paths.launcherDirectory, checked.launcher)) {
     throw new Error("launcherPath must be inside launcherDirectory");
   }
 
   const targets: UninstallTarget[] = [
     { kind: "program", path: checked.program },
+    { kind: "release-storage", path: checked.releases },
     { kind: "manager", path: checked.manager },
     { kind: "runtime-state", path: checked.state },
     { kind: "cache", path: checked.cache },
@@ -112,7 +144,7 @@ export function createUninstallPlan(
     schemaVersion: 1,
     identity: paths.identity,
     mode: request.mode,
-    targets: compactTargets(targets),
+    targets: compactTargets(pathImplementation, targets),
     preserved:
       request.mode === "normal"
         ? [
@@ -121,4 +153,35 @@ export function createUninstallPlan(
           ]
         : [],
   };
+}
+
+export async function executeUninstallPlan(
+  plan: UninstallPlan,
+  remove: typeof rm = rm,
+): Promise<UninstallResult> {
+  const result: UninstallResult = { removed: [], failed: [] };
+  // The launcher is last so a platform-specific helper can keep managing the rest of the plan.
+  const targets = plan.targets.toSorted((left, right) => {
+    if (left.kind === "launcher") {
+      return 1;
+    }
+    if (right.kind === "launcher") {
+      return -1;
+    }
+    return 0;
+  });
+  for (const target of targets) {
+    try {
+      await remove(validateNativePath(target.path, `uninstall target ${target.kind}`), {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 100,
+      });
+      result.removed.push(target);
+    } catch (error) {
+      result.failed.push({ target, error });
+    }
+  }
+  return result;
 }
