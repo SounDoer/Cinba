@@ -24,6 +24,14 @@ export {
   sessionTitle,
 } from "./labels.ts";
 export { parseClientMessage, parseServerMessage } from "./protocol.ts";
+export {
+  CORE_CAPABILITIES,
+  CORE_PROTOCOL_VERSION,
+  assessCoreCompatibility,
+  isCoreCapability,
+  parseCoreHello,
+} from "./compatibility.ts";
+export type { CoreCapability, CoreCompatibility, CoreHello } from "./compatibility.ts";
 export type {
   ClientMessage,
   PromptStreamingBehavior,

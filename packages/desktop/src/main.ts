@@ -142,7 +142,7 @@ if (!hasSingleInstanceLock) {
         runtime.identity === "release" ? await readProductRelease(runtime.payloadRoot) : undefined;
       const localConfig =
         runtime.identity === "release"
-          ? createProductCoreConfig(runtime.payloadRoot)
+          ? createProductCoreConfig(runtime.payloadRoot, { release })
           : createDevelopmentCoreConfig(runtime.repositoryRoot);
       const profiles = createCoreProfileStore(join(localConfig.stateDirectory, "desktop.json"), {
         localLabel: process.platform === "darwin" ? "This Mac" : "This PC",

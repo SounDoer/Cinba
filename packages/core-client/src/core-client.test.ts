@@ -1,11 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { CORE_CAPABILITIES, CORE_PROTOCOL_VERSION } from "@cinba/contract";
 import {
   CoreClient,
   type CoreClientHandlers,
   type ReconnectScheduler,
   type Socket,
 } from "./core-client.ts";
+
+const TEST_HELLO = {
+  type: "core_hello",
+  productVersion: "0.1.0",
+  revision: "a".repeat(40),
+  protocolVersion: CORE_PROTOCOL_VERSION,
+  capabilities: [...CORE_CAPABILITIES],
+};
 
 /** A fake connection, for testing protocol logic without starting a server. */
 function createFakeSocket(): {
@@ -33,7 +42,10 @@ function createFakeSocket(): {
     socket,
     sent,
     closeCount: () => closes,
-    open: () => socket.onopen?.({}),
+    open: () => {
+      socket.onopen?.({});
+      socket.onmessage?.({ data: JSON.stringify(TEST_HELLO) });
+    },
     receive: (obj) => socket.onmessage?.({ data: JSON.stringify(obj) }),
     fail: (error) => socket.onerror?.(error),
     disconnect: () => socket.onclose?.({}),
@@ -115,6 +127,26 @@ test("owns the socket lifecycle and rejects sends outside an open connection", (
   assert.equal(client.connectionState, "disconnected");
   assert.equal(client.prompt("too late"), false);
   assert.deepEqual(states, ["connecting", "connected", "disconnected"]);
+});
+
+test("an incompatible Core never becomes connected or enters a reconnect loop", () => {
+  const fake = createFakeSocket();
+  const errors: unknown[] = [];
+  const scheduler = createFakeScheduler();
+  const client = new CoreClient(
+    TEST_URL,
+    { onError: (error) => errors.push(error) },
+    { socketFactory: () => fake.socket, autoReconnect: true, reconnectScheduler: scheduler },
+  );
+
+  fake.socket.onopen?.({});
+  fake.receive({ ...TEST_HELLO, protocolVersion: CORE_PROTOCOL_VERSION + 1 });
+
+  assert.equal(client.connectionState, "disconnected");
+  assert.equal(fake.closeCount(), 1);
+  assert.equal(scheduler.pendingCount(), 0);
+  assert.match(String(errors[0]), /incompatible/);
+  assert.equal(client.prompt("must not cross an incompatible connection"), false);
 });
 
 test("close is idempotent and detaches the socket", () => {

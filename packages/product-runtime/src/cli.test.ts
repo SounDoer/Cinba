@@ -71,6 +71,7 @@ test("the installed Core separates durable data, runtime state, logs, and payloa
     platform: "win32",
     homeDirectory: "C:\\Users\\Ada",
     environment: { LOCALAPPDATA: "C:\\Users\\Ada\\AppData\\Local" },
+    release,
   });
   assert.equal(config.repositoryRoot, payload);
   assert.equal(config.serverEntry, join(payload, "lib", "core.mjs"));
@@ -87,7 +88,7 @@ test("the installed Core separates durable data, runtime state, logs, and payloa
 
 test("the internal Core service is persistent and uses only stable product data", () => {
   const payload = resolve("payload");
-  const service = createProductServiceProcess(payload, "a".repeat(40), "core", {
+  const service = createProductServiceProcess(payload, release, "core", {
     platform: "linux",
     homeDirectory: "/home/ada",
     environment: { CINBA_LOCAL_CONTROL_TOKEN: "development-token" },
@@ -95,6 +96,8 @@ test("the internal Core service is persistent and uses only stable product data"
   assert.equal(service.entry, join(payload, "lib", "core.mjs"));
   assert.equal(service.environment.CINBA_CORE_LIFETIME, "persistent");
   assert.equal(service.environment.CINBA_REVISION, "a".repeat(40));
+  assert.equal(service.environment.CINBA_PRODUCT_VERSION, "0.1.0");
+  assert.equal(service.environment.CINBA_PROTOCOL_VERSION, "1");
   assert.equal(service.environment.CINBA_PORT, "4517");
   assert.equal(service.environment.CINBA_STATE_DIR, "/home/ada/.local/share/cinba/data/Core");
   assert.equal(service.environment.PI_CODING_AGENT_DIR, "/home/ada/.local/share/cinba/data/Pi");
@@ -103,12 +106,17 @@ test("the internal Core service is persistent and uses only stable product data"
 
 test("the internal Sync service is loopback-only and isolated from Core data", () => {
   const payload = resolve("payload");
-  const service = createProductServiceProcess(payload, "b".repeat(40), "sync", {
-    platform: "darwin",
-    homeDirectory: "/Users/ada",
-    environment: {},
-    managedService: true,
-  });
+  const service = createProductServiceProcess(
+    payload,
+    { ...release, revision: "b".repeat(40) },
+    "sync",
+    {
+      platform: "darwin",
+      homeDirectory: "/Users/ada",
+      environment: {},
+      managedService: true,
+    },
+  );
   assert.equal(service.entry, join(payload, "lib", "sync.mjs"));
   assert.equal(service.environment.CINBA_SYNC_HOST, "127.0.0.1");
   assert.equal(service.environment.CINBA_SYNC_PORT, "4518");
@@ -124,11 +132,16 @@ test("the internal Sync service is loopback-only and isolated from Core data", (
 });
 
 test("foreground Sync never receives managed ownership records or a control token", () => {
-  const service = createProductServiceProcess(resolve("payload"), "b".repeat(40), "sync", {
-    platform: "linux",
-    homeDirectory: "/home/ada",
-    environment: { CINBA_LOCAL_SYNC_CONTROL_TOKEN: "inherited" },
-  });
+  const service = createProductServiceProcess(
+    resolve("payload"),
+    { ...release, revision: "b".repeat(40) },
+    "sync",
+    {
+      platform: "linux",
+      homeDirectory: "/home/ada",
+      environment: { CINBA_LOCAL_SYNC_CONTROL_TOKEN: "inherited" },
+    },
+  );
   assert.equal(service.controlStateDirectory, undefined);
   assert.equal(service.environment.CINBA_LOCAL_SYNC_CONTROL_TOKEN, undefined);
 });

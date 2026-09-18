@@ -6,6 +6,7 @@
 // the two ends cannot drift apart.
 
 import type { ViewAction } from "./actions.ts";
+import { type CoreHello, parseCoreHello } from "./compatibility.ts";
 import type { SkillCommand } from "./commands.ts";
 import type { Snapshot } from "./session.ts";
 import { type ThinkingLevel, isThinkingLevel } from "./thinking.ts";
@@ -98,6 +99,7 @@ export type ClientMessage =
 
 /** Server to client. */
 export type ServerMessage =
+  | ({ type: "core_hello" } & CoreHello)
   /**
    * The state of one session. sessionId says which, because a client may be
    * looking at a different one from its neighbour.
@@ -715,6 +717,20 @@ export function parseServerMessage(raw: unknown): ServerMessage | undefined {
   }
 
   switch (raw.type) {
+    case "core_hello": {
+      if (
+        !hasOnlyKeys(raw, ["type", "productVersion", "revision", "protocolVersion", "capabilities"])
+      ) {
+        return undefined;
+      }
+      const hello = parseCoreHello({
+        productVersion: raw.productVersion,
+        revision: raw.revision,
+        protocolVersion: raw.protocolVersion,
+        capabilities: raw.capabilities,
+      });
+      return hello ? { type: "core_hello", ...hello } : undefined;
+    }
     case "snapshot":
       if (typeof raw.cwd !== "string" || typeof raw.sessionId !== "string") {
         return undefined;

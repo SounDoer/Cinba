@@ -39,6 +39,11 @@ export type ProductCommand =
   | { type: "help" };
 
 export type ProductServiceComponent = "core" | "sync";
+type ProductProtocolIdentity = {
+  version: string;
+  revision: string;
+  protocolVersion: number;
+};
 
 export type ProductCliDependencies = {
   readRelease: typeof readProductRelease;
@@ -168,7 +173,7 @@ export function createProductTuiEnvironment(
 
 export function createProductServiceProcess(
   payloadRoot: string,
-  revision: string,
+  release: ProductProtocolIdentity,
   component: ProductServiceComponent,
   options: {
     homeDirectory?: string;
@@ -199,7 +204,9 @@ export function createProductServiceProcess(
         ...environment,
         ELECTRON_RUN_AS_NODE: "1",
         CINBA_CORE_LIFETIME: "persistent",
-        CINBA_REVISION: revision,
+        CINBA_PRODUCT_VERSION: release.version,
+        CINBA_PROTOCOL_VERSION: String(release.protocolVersion),
+        CINBA_REVISION: release.revision,
         CINBA_PORT: "4517",
         CINBA_STATE_DIR: productJoin(paths.dataDirectory, "Core"),
         PI_CODING_AGENT_DIR: productJoin(paths.dataDirectory, "Pi"),
@@ -232,6 +239,7 @@ export function createProductCoreConfig(
     homeDirectory?: string;
     environment?: NodeJS.ProcessEnv;
     platform?: "win32" | "darwin" | "linux";
+    release?: ProductProtocolIdentity;
   } = {},
 ): LocalCoreConfig {
   const platform = options.platform ?? process.platform;
@@ -259,6 +267,12 @@ export function createProductCoreConfig(
     environment: {
       CINBA_EXTENSION_ROOT: payload.extensionRoot,
       CINBA_WEB_ROOT: payload.webRoot,
+      ...(options.release
+        ? {
+            CINBA_PRODUCT_VERSION: options.release.version,
+            CINBA_PROTOCOL_VERSION: String(options.release.protocolVersion),
+          }
+        : {}),
     },
   };
 }
@@ -399,7 +413,7 @@ export async function runProductCli(
         await dependencies.executeCommand(command);
         return;
       }
-      const config = createProductCoreConfig(payload.root);
+      const config = createProductCoreConfig(payload.root, { release });
       await ensureLocalCore({ config, expectedRevision: release.revision });
       const code = await waitForExit(
         spawn(process.execPath, [payload.tuiEntry], {
@@ -439,7 +453,7 @@ export async function runProductCli(
     return;
   }
 
-  const config = createProductCoreConfig(payload.root);
+  const config = createProductCoreConfig(payload.root, { release });
   if (command.type === "component-mode") {
     const status = command.mode
       ? await setProductComponentMode(command.component, command.mode)
@@ -449,7 +463,7 @@ export async function runProductCli(
   }
   if (command.type === "service") {
     await runProductService(
-      createProductServiceProcess(payload.root, release.revision, command.component, {
+      createProductServiceProcess(payload.root, release, command.component, {
         managedService: true,
       }),
     );
@@ -468,7 +482,7 @@ export async function runProductCli(
     return;
   }
   if (command.type === "sync") {
-    await runProductService(createProductServiceProcess(payload.root, release.revision, "sync"));
+    await runProductService(createProductServiceProcess(payload.root, release, "sync"));
     return;
   }
 }

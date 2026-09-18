@@ -64,6 +64,8 @@ import { isAllowedWebSocketOrigin } from "./websocket-origin.ts";
 import { handleWebToolsMessage } from "./web-tools-messages.ts";
 import { createWebToolsService } from "./web-tools-service.ts";
 import {
+  CORE_CAPABILITIES,
+  CORE_PROTOCOL_VERSION,
   type ClientMessage,
   type ModelRef,
   type ProviderStatus,
@@ -82,6 +84,21 @@ const HOST = "127.0.0.1";
  */
 const PORT = Number(process.env.CINBA_PORT) || 4517;
 const REVISION = normalizeRevision(process.env.CINBA_REVISION);
+const requestedProductVersion =
+  process.env.CINBA_PRODUCT_VERSION?.trim() || process.env.npm_package_version?.trim();
+const PRODUCT_VERSION =
+  requestedProductVersion &&
+  /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(
+    requestedProductVersion,
+  )
+    ? requestedProductVersion
+    : "0.0.0-dev";
+if (
+  process.env.CINBA_PROTOCOL_VERSION &&
+  process.env.CINBA_PROTOCOL_VERSION !== String(CORE_PROTOCOL_VERSION)
+) {
+  throw new Error("Core protocol metadata does not match the bundled protocol");
+}
 let coreLifetime = readCoreLifetime(process.env.CINBA_CORE_LIFETIME);
 const STATE_DIRECTORY = resolveCinbaStateDirectory();
 
@@ -1081,6 +1098,13 @@ function onConnection(socket: WebSocket): void {
   clients.add(socket);
   serviceIdleSince = undefined;
 
+  sendTo(socket, {
+    type: "core_hello",
+    productVersion: PRODUCT_VERSION,
+    revision: REVISION,
+    protocolVersion: CORE_PROTOCOL_VERSION,
+    capabilities: [...CORE_CAPABILITIES],
+  });
   // Before anything else: which machine the client has reached.
   sendTo(socket, { type: "core_identity", name: localState.get().coreName });
   console.log(`[cinba] client connected, ${clients.size} now`);

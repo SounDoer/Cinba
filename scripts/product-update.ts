@@ -33,6 +33,7 @@ import {
   writeUpdateHandoffRecoveringStale,
 } from "@cinba/installer";
 import {
+  type ProductRelease,
   type ProductUpdateReadiness,
   createManagedSyncControlConfig,
   createProductCoreConfig,
@@ -572,7 +573,11 @@ export async function checkPreparedProductUpdateReadiness(options: {
   expectedVersion: string;
   target: ProductTarget;
   paths: ProductPaths;
-  readInstalled?: () => Promise<{ version: string; payloadRoot?: string }>;
+  readInstalled?: () => Promise<{
+    version: string;
+    payloadRoot?: string;
+    release?: ProductRelease;
+  }>;
   readState?: () => Promise<UpdateState | undefined>;
   inspectReadiness?: () => Promise<ProductUpdateReadiness>;
 }): Promise<ProductUpdateReadiness> {
@@ -580,7 +585,11 @@ export async function checkPreparedProductUpdateReadiness(options: {
     options.readInstalled ??
     (async () => {
       const installed = await installedRelease(options.paths, options.target);
-      return { version: installed.release.version, payloadRoot: installed.payloadRoot };
+      return {
+        version: installed.release.version,
+        payloadRoot: installed.payloadRoot,
+        release: installed.release,
+      };
     })
   )();
   const state = await (
@@ -598,10 +607,10 @@ export async function checkPreparedProductUpdateReadiness(options: {
   if (options.inspectReadiness) {
     return options.inspectReadiness();
   }
-  if (!current.payloadRoot) {
-    throw new Error("installed payload root is unavailable");
+  if (!current.payloadRoot || !current.release) {
+    throw new Error("installed payload identity is unavailable");
   }
-  const coreConfig = createProductCoreConfig(current.payloadRoot);
+  const coreConfig = createProductCoreConfig(current.payloadRoot, { release: current.release });
   const syncControl = createManagedSyncControlConfig(options.paths.stateDirectory);
   return inspectProductUpdateReadiness({
     inspectCore: () => inspectLocalCore(coreConfig),
@@ -812,7 +821,7 @@ async function installWithLifecycle(options: {
   revision: string;
 }): Promise<void> {
   const before = await installedRelease(options.paths, options.target);
-  const oldCoreConfig = createProductCoreConfig(before.payloadRoot);
+  const oldCoreConfig = createProductCoreConfig(before.payloadRoot, { release: before.release });
   const syncControl = createManagedSyncControlConfig(options.paths.stateDirectory);
   await coordinateProductUpdate({
     inspectCore: () => inspectLocalCore(oldCoreConfig),
@@ -832,7 +841,7 @@ async function installWithLifecycle(options: {
     startCore: async () => {
       const current = await installedRelease(options.paths, options.target);
       await ensureLocalCore({
-        config: createProductCoreConfig(current.payloadRoot),
+        config: createProductCoreConfig(current.payloadRoot, { release: current.release }),
         expectedRevision: current.release.revision,
       });
     },

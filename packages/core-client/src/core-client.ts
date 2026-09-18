@@ -6,6 +6,7 @@
 
 import {
   type ClientMessage,
+  type CoreHello,
   type ModelRef,
   type PromptStreamingBehavior,
   type ProviderStatus,
@@ -18,6 +19,7 @@ import {
   type WebSearchCredentialProviderId,
   type WebSearchPrimary,
   type WebToolsStatus,
+  assessCoreCompatibility,
   parseServerMessage,
 } from "@cinba/contract";
 
@@ -90,6 +92,7 @@ export type CoreClientHandlers = {
   onProviderListing?: (providers: ProviderStatus[]) => void;
   onWebToolsStatus?: (status: WebToolsStatus, error?: string) => void;
   onCoreIdentity?: (name: string) => void;
+  onCoreHello?: (hello: CoreHello) => void;
   onDraftsRecovered?: (drafts: RecoveredDraft[]) => void;
   onSkillListing?: (sessionId: string, skills: SkillCommand[]) => void;
   onProjectTrustRequested?: (request: {
@@ -120,6 +123,7 @@ export class CoreClient {
   #reconnectTimer: unknown;
   #nextReconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
   #closed = false;
+  #compatibilityFailed = false;
   #connectionState: CoreConnectionState = "connecting";
 
   constructor(url: string, handlers: CoreClientHandlers, options: CoreClientOptions = {}) {
@@ -285,7 +289,7 @@ export class CoreClient {
   }
 
   #receive(data: unknown): void {
-    if (this.#connectionState !== "connected") {
+    if (this.#connectionState === "disconnected") {
       return;
     }
     if (typeof data !== "string") {
@@ -300,6 +304,32 @@ export class CoreClient {
     }
     const message = parseServerMessage(parsed);
     if (!message) {
+      return;
+    }
+
+    if (message.type === "core_hello") {
+      if (this.#connectionState !== "connecting") {
+        return;
+      }
+      const compatibility = assessCoreCompatibility(message);
+      if (!compatibility.compatible) {
+        this.#compatibilityFailed = true;
+        this.#handlers.onError?.(new Error(compatibility.detail));
+        const socket = this.#socket;
+        this.#socket = undefined;
+        if (socket) {
+          this.#detach(socket);
+          socket.close();
+        }
+        this.#transition("disconnected");
+        return;
+      }
+      this.#handlers.onCoreHello?.(message);
+      this.#nextReconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
+      this.#transition("connected");
+      return;
+    }
+    if (this.#connectionState !== "connected") {
       return;
     }
 
@@ -390,8 +420,6 @@ export class CoreClient {
       if (this.#closed || this.#socket !== socket) {
         return;
       }
-      this.#nextReconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
-      this.#transition("connected");
     };
     socket.onmessage = (event) => {
       if (this.#socket === socket) {
@@ -410,7 +438,9 @@ export class CoreClient {
       this.#detach(socket);
       this.#socket = undefined;
       this.#transition("disconnected");
-      this.#scheduleReconnect();
+      if (!this.#compatibilityFailed) {
+        this.#scheduleReconnect();
+      }
     };
   }
 
