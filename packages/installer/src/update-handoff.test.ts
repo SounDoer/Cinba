@@ -132,20 +132,18 @@ test("handoff uses a fixed absolute state path and an atomic private file", asyn
 
 test("handoff storage refuses a symbolic-link directory", async () => {
   const root = await mkdtemp(join(tmpdir(), "cinba-update-handoff-link-"));
+  const linkPath = join(root, "update-handoff");
   try {
     const target = join(root, "outside");
     await mkdir(target);
-    await symlink(
-      target,
-      join(root, "update-handoff"),
-      process.platform === "win32" ? "junction" : "dir",
-    );
+    await symlink(target, linkPath, process.platform === "win32" ? "junction" : "dir");
     await assert.rejects(
       () => writeUpdateHandoff(root, desktopHandoff(root), { now }),
       /symbolic link/,
     );
     await assert.rejects(() => claimUpdateHandoff(root, { now }), /symbolic link/);
   } finally {
+    await rm(linkPath, { force: true });
     await rm(root, { recursive: true, force: true });
   }
 });
