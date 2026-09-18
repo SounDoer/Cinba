@@ -128,6 +128,14 @@ test("release tray keeps progress informational and makes a ready update actiona
     }).updateAction,
     { label: "Install Cinba 0.2.0 and Restart…", enabled: true },
   );
+  assert.deepEqual(
+    createTrayViewModel(stopped, undefined, undefined, "Cinba", {
+      phase: "failed",
+      candidateVersion: "0.2.0",
+      message: "Cinba 0.2.0 could not be installed. Run cinba update to retry.",
+    }).updateAction,
+    { label: "Update 0.2.0 Failed", enabled: false },
+  );
 });
 
 test("tray hides inactive and development update states", () => {

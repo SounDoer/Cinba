@@ -87,16 +87,17 @@ function readyNotice(version: string): string {
 export function createDeferredReadyNotice(): {
   receive(version: string, canShow: boolean): string | undefined;
   flush(canShow: boolean): string | undefined;
+  reset(): void;
 } {
   const seenVersions = new Set<string>();
   let pendingVersion: string | undefined;
   return {
     receive: (version, canShow) => {
-      if (seenVersions.has(version)) {
+      if (seenVersions.has(version) || pendingVersion === version) {
         return undefined;
       }
-      seenVersions.add(version);
       if (canShow) {
+        seenVersions.add(version);
         return readyNotice(version);
       }
       pendingVersion = version;
@@ -108,7 +109,45 @@ export function createDeferredReadyNotice(): {
       }
       const version = pendingVersion;
       pendingVersion = undefined;
+      seenVersions.add(version);
       return readyNotice(version);
+    },
+    reset: () => {
+      pendingVersion = undefined;
+    },
+  };
+}
+
+function createDeferredFailureNotice(): {
+  receive(version: string, message: string, canShow: boolean): string | undefined;
+  flush(canShow: boolean): string | undefined;
+  reset(): void;
+} {
+  let activeVersion: string | undefined;
+  let pending: { version: string; message: string } | undefined;
+  return {
+    receive: (version, message, canShow) => {
+      if (activeVersion === version) {
+        return undefined;
+      }
+      activeVersion = version;
+      if (canShow) {
+        return message;
+      }
+      pending = { version, message };
+      return undefined;
+    },
+    flush: (canShow) => {
+      if (!canShow || !pending) {
+        return undefined;
+      }
+      const message = pending.message;
+      pending = undefined;
+      return message;
+    },
+    reset: () => {
+      activeVersion = undefined;
+      pending = undefined;
     },
   };
 }
@@ -124,6 +163,7 @@ export function createTuiUpdateConsumer(options: {
   canAppendNotice?: () => boolean;
 }): TuiUpdateConsumer {
   const notices = createDeferredReadyNotice();
+  const failures = createDeferredFailureNotice();
   const canAppendNotice = options.canAppendNotice ?? (() => true);
   const append = (notice: string | undefined): void => {
     if (notice) {
@@ -133,14 +173,26 @@ export function createTuiUpdateConsumer(options: {
   const consume = ((update: ProductUpdateViewModel) => {
     options.setStatus(update);
     if (update.phase === "ready") {
+      failures.reset();
       append(notices.receive(update.candidateVersion, canAppendNotice()));
+    } else if (update.phase === "failed") {
+      notices.reset();
+      append(failures.receive(update.candidateVersion, update.message, canAppendNotice()));
+    } else {
+      notices.reset();
+      failures.reset();
     }
     options.requestRender();
   }) as TuiUpdateConsumer;
   consume.flushNotice = () => {
-    const notice = notices.flush(canAppendNotice());
-    if (notice) {
-      options.appendNotice(notice);
+    const canShow = canAppendNotice();
+    const pending = [notices.flush(canShow), failures.flush(canShow)].filter(
+      (notice): notice is string => notice !== undefined,
+    );
+    if (pending.length > 0) {
+      for (const notice of pending) {
+        options.appendNotice(notice);
+      }
       options.requestRender();
     }
   };

@@ -16,9 +16,14 @@ export type {
 export {
   CINBA_UPDATE_STATE_DIRECTORY_ENV,
   checkForProductUpdatesAutomatically,
+  parseProductUpdateReadinessJson,
   toAutomaticUpdateViewModel,
 } from "./automatic-update.ts";
-export type { ProductUpdateViewModel } from "./automatic-update.ts";
+export type {
+  ProductUpdateReadiness,
+  ProductUpdateReadinessReason,
+  ProductUpdateViewModel,
+} from "./automatic-update.ts";
 export { resolveProductPaths } from "@cinba/installer";
 export {
   formatProductComponentMode,

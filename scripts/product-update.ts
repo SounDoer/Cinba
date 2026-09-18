@@ -33,6 +33,7 @@ import {
   writeUpdateHandoffRecoveringStale,
 } from "@cinba/installer";
 import {
+  type ProductUpdateReadiness,
   createManagedSyncControlConfig,
   createProductCoreConfig,
   inspectManagedSyncControl,
@@ -507,6 +508,127 @@ export async function runExplicitProductUpdate(options: {
   );
 }
 
+type ProductUpdateReadinessDependencies = {
+  inspectCore: () => Promise<CoreSnapshot>;
+  inspectComponent: (component: "core" | "sync") => Promise<ComponentSnapshot>;
+  inspectSync: () => Promise<SyncSnapshot>;
+};
+
+export async function inspectProductUpdateReadiness(
+  options: ProductUpdateReadinessDependencies,
+): Promise<ProductUpdateReadiness> {
+  const core = await options.inspectCore();
+  const component = {
+    core: await options.inspectComponent("core"),
+    sync: await options.inspectComponent("sync"),
+  };
+  if (core.running && core.safeToStop === false) {
+    return {
+      status: "waiting",
+      reasonCode: "core-active-work",
+      message: "Cinba cannot install an update while the local Core has active work",
+    };
+  }
+  if (core.running && !core.managed) {
+    return {
+      status: "waiting",
+      reasonCode: "external-core",
+      message: "Cinba cannot install an update while an external Core is running",
+    };
+  }
+  if (!core.running && component.core.running) {
+    return {
+      status: "waiting",
+      reasonCode: "unverified-background-core",
+      message: "Cinba cannot safely stop an unhealthy Background Core",
+    };
+  }
+  const sync = await options.inspectSync();
+  if (sync.running && (!sync.managed || !component.sync.running)) {
+    return {
+      status: "waiting",
+      reasonCode: "external-sync",
+      message: "Cinba cannot install an update while an unmanaged Sync is running",
+    };
+  }
+  if (component.sync.running && (!sync.running || !sync.managed)) {
+    return {
+      status: "waiting",
+      reasonCode: "unverified-background-sync",
+      message: "Cinba cannot verify the running Background Sync",
+    };
+  }
+  if (sync.running && sync.managed && sync.safeToStop !== true) {
+    return {
+      status: "waiting",
+      reasonCode: "sync-active-requests",
+      message: "Cinba cannot install an update while Sync has active requests",
+    };
+  }
+  return { status: "ready" };
+}
+
+export async function checkPreparedProductUpdateReadiness(options: {
+  expectedVersion: string;
+  target: ProductTarget;
+  paths: ProductPaths;
+  readInstalled?: () => Promise<{ version: string; payloadRoot?: string }>;
+  readState?: () => Promise<UpdateState | undefined>;
+  inspectReadiness?: () => Promise<ProductUpdateReadiness>;
+}): Promise<ProductUpdateReadiness> {
+  const current = await (
+    options.readInstalled ??
+    (async () => {
+      const installed = await installedRelease(options.paths, options.target);
+      return { version: installed.release.version, payloadRoot: installed.payloadRoot };
+    })
+  )();
+  const state = await (
+    options.readState ?? (() => readUpdateState(options.paths.stateDirectory))
+  )();
+  if (
+    state?.phase !== "ready" ||
+    state.currentVersion !== current.version ||
+    !state.candidate?.artifactPath ||
+    state.candidate.target !== options.target ||
+    state.candidate.version !== options.expectedVersion
+  ) {
+    throw new Error(`update readiness requires ready expected version ${options.expectedVersion}`);
+  }
+  if (options.inspectReadiness) {
+    return options.inspectReadiness();
+  }
+  if (!current.payloadRoot) {
+    throw new Error("installed payload root is unavailable");
+  }
+  const coreConfig = createProductCoreConfig(current.payloadRoot);
+  const syncControl = createManagedSyncControlConfig(options.paths.stateDirectory);
+  return inspectProductUpdateReadiness({
+    inspectCore: () => inspectLocalCore(coreConfig),
+    inspectComponent: componentSnapshot,
+    inspectSync: () => inspectManagedSyncControl({ config: syncControl }),
+  });
+}
+
+export async function runProductUpdateReadinessCommand(options: {
+  expectedVersion: string;
+  target: ProductTarget;
+  paths: ProductPaths;
+  check?: () => Promise<ProductUpdateReadiness>;
+  writeLine?: (line: string) => void;
+}): Promise<void> {
+  const readiness = await (
+    options.check ??
+    (() =>
+      checkPreparedProductUpdateReadiness({
+        expectedVersion: options.expectedVersion,
+        target: options.target,
+        paths: options.paths,
+      }))
+  )();
+  (options.writeLine ?? console.log)(JSON.stringify(readiness));
+}
+
 export async function coordinateProductUpdate(options: {
   inspectCore: () => Promise<CoreSnapshot>;
   inspectComponent: (component: "core" | "sync") => Promise<ComponentSnapshot>;
@@ -519,29 +641,19 @@ export async function coordinateProductUpdate(options: {
   install: () => Promise<void>;
   reportRecoveryFailure?: (error: unknown) => void;
 }): Promise<void> {
-  const core = await options.inspectCore();
-  const component = {
-    core: await options.inspectComponent("core"),
-    sync: await options.inspectComponent("sync"),
-  };
-  if (core.running && core.safeToStop === false) {
-    throw new Error("Cinba cannot install an update while the local Core has active work");
-  }
-  if (core.running && !core.managed) {
-    throw new Error("Cinba cannot install an update while an external Core is running");
-  }
-  if (!core.running && component.core.running) {
-    throw new Error("Cinba cannot safely stop an unhealthy Background Core");
-  }
-  const sync = await options.inspectSync();
-  if (sync.running && (!sync.managed || !component.sync.running)) {
-    throw new Error("Cinba cannot install an update while an unmanaged Sync is running");
-  }
-  if (component.sync.running && (!sync.running || !sync.managed)) {
-    throw new Error("Cinba cannot verify the running Background Sync");
-  }
-  if (sync.running && sync.managed && sync.safeToStop !== true) {
-    throw new Error("Cinba cannot install an update while Sync has active requests");
+  let core!: CoreSnapshot;
+  const component = {} as { core: ComponentSnapshot; sync: ComponentSnapshot };
+  const readiness = await inspectProductUpdateReadiness({
+    inspectCore: async () => (core = await options.inspectCore()),
+    inspectComponent: async (name) => {
+      const snapshot = await options.inspectComponent(name);
+      component[name] = snapshot;
+      return snapshot;
+    },
+    inspectSync: options.inspectSync,
+  });
+  if (readiness.status === "waiting") {
+    throw new Error(readiness.message);
   }
 
   let coreModeChanged = false;

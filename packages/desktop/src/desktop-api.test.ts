@@ -70,6 +70,19 @@ test("Desktop update presentation is shared and hides inactive states", () => {
       ariaLabel: "Install Cinba 0.2.0 and restart",
     },
   );
+  assert.deepEqual(
+    createDesktopUpdatePresentation("Cinba", {
+      phase: "failed",
+      candidateVersion: "0.2.0",
+      message: "Cinba 0.2.0 could not be installed. Run cinba update to retry.",
+    }),
+    {
+      hidden: false,
+      label: "Update 0.2.0 Failed",
+      actionable: false,
+      ariaLabel: "Cinba 0.2.0 update installation failed",
+    },
+  );
 });
 
 test("Desktop update activation calls install only for an actionable ready update", async () => {

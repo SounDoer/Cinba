@@ -10,6 +10,9 @@ export function formatProductUpdate(update: ProductUpdateViewModel): string {
   if (update.phase === "ready") {
     return `${YELLOW}${BOLD} · Update ${update.candidateVersion} Ready${RESET}`;
   }
+  if (update.phase === "failed") {
+    return `${YELLOW}${BOLD} · Update ${update.candidateVersion} Failed${RESET}`;
+  }
   return `${DIM} · ${update.phase} update${RESET}`;
 }
 

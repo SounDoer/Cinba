@@ -42,6 +42,14 @@ export function createDesktopUpdatePresentation(
       ariaLabel: `Install Cinba ${update.candidateVersion} and restart`,
     };
   }
+  if (update.phase === "failed") {
+    return {
+      hidden: false,
+      label: `Update ${update.candidateVersion} Failed`,
+      actionable: false,
+      ariaLabel: `Cinba ${update.candidateVersion} update installation failed`,
+    };
+  }
   return {
     hidden: false,
     label: update.phase === "checking" ? "Checking for Updates" : "Downloading Update",

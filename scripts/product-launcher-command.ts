@@ -26,6 +26,7 @@ export type StableLauncherCommand =
       type: "update-handoff-helper";
       parentProcessId: number;
     }
+  | { type: "check-update-readiness"; expectedVersion: string }
   | { type: "uninstall"; purge: boolean; deleteAllCinbaData: boolean }
   | { type: "uninstall-helper"; parentProcessId: number; purge: boolean }
   | { type: "product"; arguments: string[] };
@@ -105,6 +106,19 @@ export function parseStableLauncherCommand(
   }
   if (arguments_[0] === "__update-handoff-helper") {
     throw new Error("invalid update handoff helper command");
+  }
+  if (
+    arguments_.length === 2 &&
+    arguments_[0] === "__check-update-readiness" &&
+    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(arguments_[1]!)
+  ) {
+    return {
+      type: "check-update-readiness",
+      expectedVersion: arguments_[1]!,
+    };
+  }
+  if (arguments_[0] === "__check-update-readiness") {
+    throw new Error("invalid update readiness command");
   }
   return { type: "product", arguments: arguments_ };
 }

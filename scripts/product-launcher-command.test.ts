@@ -135,6 +135,26 @@ test("copied update helper accepts only its parent PID", () => {
   );
 });
 
+test("update readiness accepts exactly one stable expected version", () => {
+  const executable = resolve("cinba");
+  assert.deepEqual(parseStableLauncherCommand(["__check-update-readiness", "0.2.0"], executable), {
+    type: "check-update-readiness",
+    expectedVersion: "0.2.0",
+  });
+  for (const commandArguments of [
+    ["__check-update-readiness"],
+    ["__check-update-readiness", "0.2.0", "extra"],
+    ["__check-update-readiness", "latest"],
+    ["__check-update-readiness", "1.2.3-beta.1"],
+    ["__check-update-readiness", "01.2.3"],
+  ]) {
+    assert.throws(
+      () => parseStableLauncherCommand(commandArguments, executable),
+      /invalid update readiness command/,
+    );
+  }
+});
+
 test("expected update identity is optional for first install and strict when present", () => {
   assert.equal(parseExpectedProductInstallRelease({}), undefined);
   assert.deepEqual(

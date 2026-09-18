@@ -11,7 +11,70 @@ export type ProductUpdateViewModel =
   | { phase: "current" }
   | { phase: "checking" }
   | { phase: "downloading" }
-  | { phase: "ready"; candidateVersion: string };
+  | { phase: "ready"; candidateVersion: string }
+  | { phase: "failed"; candidateVersion: string; message: string };
+
+export type ProductUpdateReadinessReason =
+  | "core-active-work"
+  | "external-core"
+  | "unverified-background-core"
+  | "external-sync"
+  | "unverified-background-sync"
+  | "sync-active-requests";
+
+export type ProductUpdateReadiness =
+  | { status: "ready" }
+  | {
+      status: "waiting";
+      reasonCode: ProductUpdateReadinessReason;
+      message: string;
+    };
+
+const READINESS_REASONS = new Set<ProductUpdateReadinessReason>([
+  "core-active-work",
+  "external-core",
+  "unverified-background-core",
+  "external-sync",
+  "unverified-background-sync",
+  "sync-active-requests",
+]);
+const MAX_READINESS_MESSAGE_LENGTH = 2_048;
+
+export function parseProductUpdateReadinessJson(value: string): ProductUpdateReadiness {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("update readiness JSON is invalid");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("update readiness JSON is invalid");
+  }
+  const record = parsed as Record<string, unknown>;
+  const keys = Object.keys(record);
+  if (record.status === "ready" && keys.length === 1 && keys[0] === "status") {
+    return { status: "ready" };
+  }
+  if (
+    record.status !== "waiting" ||
+    keys.length !== 3 ||
+    !keys.includes("status") ||
+    !keys.includes("reasonCode") ||
+    !keys.includes("message") ||
+    typeof record.reasonCode !== "string" ||
+    !READINESS_REASONS.has(record.reasonCode as ProductUpdateReadinessReason) ||
+    typeof record.message !== "string" ||
+    record.message.length < 1 ||
+    record.message.length > MAX_READINESS_MESSAGE_LENGTH
+  ) {
+    throw new Error("update readiness JSON is invalid");
+  }
+  return {
+    status: "waiting",
+    reasonCode: record.reasonCode as ProductUpdateReadinessReason,
+    message: record.message,
+  };
+}
 
 export const CINBA_UPDATE_STATE_DIRECTORY_ENV = "CINBA_UPDATE_STATE_DIR";
 
@@ -129,6 +192,13 @@ export async function checkForProductUpdatesAutomatically(
 }
 
 export function toAutomaticUpdateViewModel(state: UpdateState | undefined): ProductUpdateViewModel {
+  if (state?.phase === "failed" && state.failure === "installation-failed" && state.candidate) {
+    return {
+      phase: "failed",
+      candidateVersion: state.candidate.version,
+      message: `Cinba ${state.candidate.version} could not be installed. Run cinba update to retry.`,
+    };
+  }
   if (!state || state.phase === "failed") {
     return { phase: "idle" };
   }

@@ -17,6 +17,14 @@ test("update status hides idle and current and styles active phases", () => {
     formatProductUpdate({ phase: "ready", candidateVersion: "0.2.0" }),
     `${YELLOW}${BOLD} · Update 0.2.0 Ready${RESET}`,
   );
+  assert.equal(
+    formatProductUpdate({
+      phase: "failed",
+      candidateVersion: "0.2.0",
+      message: "Cinba 0.2.0 could not be installed. Run cinba update to retry.",
+    }),
+    `${YELLOW}${BOLD} · Update 0.2.0 Failed${RESET}`,
+  );
 });
 
 test("status bar keeps existing fields and truncates update ANSI at narrow widths", () => {

@@ -3,6 +3,7 @@ import test from "node:test";
 import type { UpdateState } from "@cinba/installer";
 import {
   checkForProductUpdatesAutomatically,
+  parseProductUpdateReadinessJson,
   toAutomaticUpdateViewModel,
 } from "./automatic-update.ts";
 import type { ProductRelease } from "./release.ts";
@@ -374,4 +375,54 @@ test("strict update states map to a minimal foreground view", () => {
     }),
     { phase: "idle" },
   );
+  assert.deepEqual(
+    toAutomaticUpdateViewModel({
+      ...current,
+      phase: "failed",
+      candidate,
+      failure: "download-failed",
+    }),
+    { phase: "idle" },
+  );
+  assert.deepEqual(
+    toAutomaticUpdateViewModel({
+      ...current,
+      phase: "failed",
+      candidate,
+      failure: "installation-failed",
+    }),
+    {
+      phase: "failed",
+      candidateVersion: "0.2.0",
+      message: "Cinba 0.2.0 could not be installed. Run cinba update to retry.",
+    },
+  );
+});
+
+test("readiness JSON parser accepts only the exact bounded protocol", () => {
+  assert.deepEqual(parseProductUpdateReadinessJson('{"status":"ready"}'), { status: "ready" });
+  assert.deepEqual(
+    parseProductUpdateReadinessJson(
+      '{"status":"waiting","reasonCode":"core-active-work","message":"Core has active work"}',
+    ),
+    {
+      status: "waiting",
+      reasonCode: "core-active-work",
+      message: "Core has active work",
+    },
+  );
+  for (const value of [
+    '{"status":"ready","message":"extra"}',
+    '{"status":"waiting","reasonCode":"unknown","message":"wait"}',
+    '{"status":"waiting","reasonCode":"core-active-work","message":"wait","extra":true}',
+    '{"status":"waiting","reasonCode":"core-active-work","message":""}',
+    JSON.stringify({
+      status: "waiting",
+      reasonCode: "core-active-work",
+      message: "x".repeat(2_049),
+    }),
+    '{"status":"ready"}\n{"status":"ready"}',
+  ]) {
+    assert.throws(() => parseProductUpdateReadinessJson(value), /update readiness JSON is invalid/);
+  }
 });

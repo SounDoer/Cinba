@@ -171,6 +171,134 @@ test("ready notice appears once per version while every state change renders", (
   assert.equal(renders, 5);
 });
 
+test("continuous polls of one installation failure append one notice", () => {
+  const notices: string[] = [];
+  const consume = createTuiUpdateConsumer({
+    setStatus: () => {},
+    appendNotice: (notice) => notices.push(notice),
+    requestRender: () => {},
+  });
+  const failed = {
+    phase: "failed" as const,
+    candidateVersion: "0.2.0",
+    message: "Cinba 0.2.0 could not be installed. Run cinba update to retry.",
+  };
+
+  consume(failed);
+  consume(failed);
+
+  assert.deepEqual(notices, [failed.message]);
+});
+
+test("every non-failed state starts a new failure attempt for the same version", () => {
+  const failed = {
+    phase: "failed" as const,
+    candidateVersion: "0.2.0",
+    message: "Cinba 0.2.0 could not be installed. Run cinba update to retry.",
+  };
+  for (const transition of [
+    { phase: "ready" as const, candidateVersion: "0.2.0" },
+    { phase: "checking" as const },
+    { phase: "current" as const },
+    { phase: "idle" as const },
+  ]) {
+    const notices: string[] = [];
+    const consume = createTuiUpdateConsumer({
+      setStatus: () => {},
+      appendNotice: (notice) => notices.push(notice),
+      requestRender: () => {},
+    });
+    consume(failed);
+    consume(transition);
+    consume(failed);
+    assert.equal(notices.filter((notice) => notice === failed.message).length, 2, transition.phase);
+  }
+});
+
+test("installation failure notice defers while the transcript is busy", () => {
+  const notices: string[] = [];
+  let busy = true;
+  const consume = createTuiUpdateConsumer({
+    setStatus: () => {},
+    appendNotice: (notice) => notices.push(notice),
+    requestRender: () => {},
+    canAppendNotice: () => !busy,
+  });
+  const failed = {
+    phase: "failed" as const,
+    candidateVersion: "0.2.0",
+    message: "Cinba 0.2.0 could not be installed. Run cinba update to retry.",
+  };
+
+  consume(failed);
+  consume(failed);
+  assert.deepEqual(notices, []);
+  busy = false;
+  consume.flushNotice();
+  consume.flushNotice();
+  consume(failed);
+  assert.deepEqual(notices, ["Cinba 0.2.0 could not be installed. Run cinba update to retry."]);
+});
+
+test("busy ready replaced by failed flushes only the current failure", () => {
+  const notices: string[] = [];
+  let busy = true;
+  const consume = createTuiUpdateConsumer({
+    setStatus: () => {},
+    appendNotice: (notice) => notices.push(notice),
+    requestRender: () => {},
+    canAppendNotice: () => !busy,
+  });
+  const failure = "Cinba 0.2.0 could not be installed. Run cinba update to retry.";
+
+  consume({ phase: "ready", candidateVersion: "0.2.0" });
+  consume({ phase: "failed", candidateVersion: "0.2.0", message: failure });
+  busy = false;
+  consume.flushNotice();
+
+  assert.deepEqual(notices, [failure]);
+});
+
+test("cancelled ready queue can show the same version when it becomes ready again", () => {
+  const notices: string[] = [];
+  let busy = true;
+  const consume = createTuiUpdateConsumer({
+    setStatus: () => {},
+    appendNotice: (notice) => notices.push(notice),
+    requestRender: () => {},
+    canAppendNotice: () => !busy,
+  });
+
+  consume({ phase: "ready", candidateVersion: "0.2.0" });
+  consume({ phase: "current" });
+  busy = false;
+  consume({ phase: "ready", candidateVersion: "0.2.0" });
+
+  assert.deepEqual(notices, ["Cinba 0.2.0 is ready. Type /update to install."]);
+});
+
+test("busy failed replaced by ready flushes only the current ready notice", () => {
+  const notices: string[] = [];
+  let busy = true;
+  const consume = createTuiUpdateConsumer({
+    setStatus: () => {},
+    appendNotice: (notice) => notices.push(notice),
+    requestRender: () => {},
+    canAppendNotice: () => !busy,
+  });
+
+  consume({
+    phase: "failed",
+    candidateVersion: "0.2.0",
+    message: "Cinba 0.2.0 could not be installed. Run cinba update to retry.",
+  });
+  consume({ phase: "ready", candidateVersion: "0.2.0" });
+  busy = false;
+  consume.flushNotice();
+
+  assert.deepEqual(notices, ["Cinba 0.2.0 is ready. Type /update to install."]);
+});
+
 test("ready notice defers while busy, flushes once when idle, and keeps only the latest version", () => {
   const notices = createDeferredReadyNotice();
 

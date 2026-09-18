@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import test from "node:test";
-import type { UpdateState } from "@cinba/installer";
+import { type UpdateState, resolveProductPaths } from "@cinba/installer";
 import {
+  checkPreparedProductUpdateReadiness,
   coordinateProductUpdate,
+  inspectProductUpdateReadiness,
   installPreparedCandidate,
   runExplicitProductUpdate,
+  runProductUpdateReadinessCommand,
 } from "./product-update.ts";
 
 function readyState(): UpdateState {
@@ -26,6 +29,12 @@ function readyState(): UpdateState {
     failure: null,
   };
 }
+
+const productPaths = resolveProductPaths({
+  platform: "win32",
+  homeDirectory: resolve("home"),
+  environment: {},
+});
 
 test("an explicit current check bypasses automatic throttling and reports clearly", async () => {
   const output: string[] = [];
@@ -222,6 +231,169 @@ test("a busy Core is rejected before service state changes or installation", asy
     /active work/,
   );
   assert.deepEqual(calls, ["inspect:core", "inspect:sync"]);
+});
+
+test("readiness reports every coordinate precondition through the shared decision", async () => {
+  const cases = [
+    {
+      reasonCode: "core-active-work",
+      core: { running: true, managed: true, safeToStop: false },
+      components: {
+        core: { mode: "background" as const, running: true },
+        sync: { mode: "disabled" as const, running: false },
+      },
+      sync: { running: false, managed: false },
+    },
+    {
+      reasonCode: "external-core",
+      core: { running: true, managed: false, safeToStop: true },
+      components: {
+        core: { mode: "on-demand" as const, running: false },
+        sync: { mode: "disabled" as const, running: false },
+      },
+      sync: { running: false, managed: false },
+    },
+    {
+      reasonCode: "unverified-background-core",
+      core: { running: false, managed: false },
+      components: {
+        core: { mode: "background" as const, running: true },
+        sync: { mode: "disabled" as const, running: false },
+      },
+      sync: { running: false, managed: false },
+    },
+    {
+      reasonCode: "external-sync",
+      core: { running: false, managed: false },
+      components: {
+        core: { mode: "on-demand" as const, running: false },
+        sync: { mode: "disabled" as const, running: false },
+      },
+      sync: { running: true, managed: false },
+    },
+    {
+      reasonCode: "unverified-background-sync",
+      core: { running: false, managed: false },
+      components: {
+        core: { mode: "on-demand" as const, running: false },
+        sync: { mode: "background" as const, running: true },
+      },
+      sync: { running: false, managed: false },
+    },
+    {
+      reasonCode: "sync-active-requests",
+      core: { running: false, managed: false },
+      components: {
+        core: { mode: "on-demand" as const, running: false },
+        sync: { mode: "background" as const, running: true },
+      },
+      sync: { running: true, managed: true, safeToStop: false },
+    },
+  ];
+
+  for (const scenario of cases) {
+    const dependencies = {
+      inspectCore: async () => scenario.core,
+      inspectComponent: async (component: "core" | "sync") => scenario.components[component],
+      inspectSync: async () => scenario.sync,
+    };
+    const readiness = await inspectProductUpdateReadiness(dependencies);
+    assert.equal(readiness.status, "waiting");
+    if (readiness.status !== "waiting") {
+      assert.fail("expected waiting readiness");
+    }
+    assert.equal(readiness.reasonCode, scenario.reasonCode);
+    assert.ok(readiness.message.length > 0 && readiness.message.length <= 2_048);
+
+    const mutations: string[] = [];
+    await assert.rejects(
+      coordinateProductUpdate({
+        ...dependencies,
+        stopSync: async () => {
+          mutations.push("stop:sync");
+        },
+        setComponentMode: async (component, mode) => {
+          mutations.push(`mode:${component}:${mode}`);
+        },
+        stopCore: async () => {
+          mutations.push("stop:core");
+        },
+        startCore: async () => {
+          mutations.push("start:core");
+        },
+        install: async () => {
+          mutations.push("install");
+        },
+      }),
+      (error) => error instanceof Error && error.message === readiness.message,
+    );
+    assert.deepEqual(mutations, []);
+  }
+
+  assert.deepEqual(
+    await inspectProductUpdateReadiness({
+      inspectCore: async () => ({ running: false, managed: false }),
+      inspectComponent: async () => ({ mode: "disabled", running: false }),
+      inspectSync: async () => ({ running: false, managed: false }),
+    }),
+    { status: "ready" },
+  );
+});
+
+test("prepared readiness requires the exact ready candidate before lifecycle inspection", async () => {
+  const calls: string[] = [];
+  const options = {
+    expectedVersion: "0.2.0",
+    target: "windows-x64" as const,
+    paths: productPaths,
+    readInstalled: async () => {
+      calls.push("read:current");
+      return { version: "0.1.0" };
+    },
+    readState: async () => {
+      calls.push("read:update");
+      return readyState();
+    },
+    inspectReadiness: async () => {
+      calls.push("inspect:lifecycle");
+      return { status: "ready" as const };
+    },
+  };
+  assert.deepEqual(await checkPreparedProductUpdateReadiness(options), { status: "ready" });
+  assert.deepEqual(calls, ["read:current", "read:update", "inspect:lifecycle"]);
+
+  calls.length = 0;
+  await assert.rejects(
+    checkPreparedProductUpdateReadiness({
+      ...options,
+      expectedVersion: "0.3.0",
+    }),
+    /requires ready expected version 0\.3\.0/,
+  );
+  assert.deepEqual(calls, ["read:current", "read:update"]);
+});
+
+test("readiness command writes exactly one strict JSON line without update mutations", async () => {
+  const calls: string[] = [];
+  const output: string[] = [];
+  await runProductUpdateReadinessCommand({
+    expectedVersion: "0.2.0",
+    target: "windows-x64",
+    paths: productPaths,
+    check: async () => {
+      calls.push("check");
+      return {
+        status: "waiting",
+        reasonCode: "sync-active-requests",
+        message: "Cinba cannot install an update while Sync has active requests",
+      };
+    },
+    writeLine: (line) => output.push(line),
+  });
+  assert.deepEqual(calls, ["check"]);
+  assert.deepEqual(output, [
+    '{"status":"waiting","reasonCode":"sync-active-requests","message":"Cinba cannot install an update while Sync has active requests"}',
+  ]);
 });
 
 test("an unowned local Sync is rejected before state changes", async () => {

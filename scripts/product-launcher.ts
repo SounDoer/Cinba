@@ -28,6 +28,7 @@ import {
 } from "./product-uninstall.ts";
 import {
   beginForegroundUpdateHandoff,
+  runProductUpdateReadinessCommand,
   runStableProductUpdate,
   runUpdateHandoffHelper,
 } from "./product-update.ts";
@@ -78,6 +79,14 @@ async function run(): Promise<void> {
   const launcherCommand = parseStableLauncherCommand(process.argv.slice(2), process.execPath);
   if (launcherCommand.type === "update-handoff-helper") {
     await runUpdateHandoffHelper(launcherCommand);
+    return;
+  }
+  if (launcherCommand.type === "check-update-readiness") {
+    await runProductUpdateReadinessCommand({
+      expectedVersion: launcherCommand.expectedVersion,
+      target,
+      paths,
+    });
     return;
   }
   if (launcherCommand.type === "begin-update-handoff") {
@@ -204,7 +213,9 @@ async function run(): Promise<void> {
 }
 
 run().catch((error: unknown) => {
-  console.error(`[cinba] ${error instanceof Error ? error.message : String(error)}`);
+  console.error(
+    `[cinba] ${error instanceof Error ? error.message : String(error)}`.slice(0, 2_048),
+  );
   if (process.platform === "darwin" && process.env[MACOS_INSTALL_PARENT_PROCESS_ID]) {
     showMacosInstallationFailure();
   }
