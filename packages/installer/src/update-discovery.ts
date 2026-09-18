@@ -1,8 +1,9 @@
 import { type ProductTarget } from "./platform.ts";
 import { type ReleaseArtifact, type ReleaseManifest, parseReleaseManifest } from "./manifest.ts";
+import { RELEASE_MANIFEST_FILE_NAME } from "./product-release-constants.ts";
 
 export const CINBA_RELEASE_API = "https://api.github.com/repos/SounDoer/Cinba/releases/latest";
-export const CINBA_RELEASE_MANIFEST_ASSET = "cinba-release.json";
+export const CINBA_RELEASE_MANIFEST_ASSET = RELEASE_MANIFEST_FILE_NAME;
 
 type GitHubAsset = {
   name: string;

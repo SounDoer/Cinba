@@ -4,6 +4,8 @@ import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import {
+  PRODUCT_DATA_FORMAT_VERSION,
+  PRODUCT_PROTOCOL_VERSION,
   type ProductTarget,
   createArtifactInventory,
   requireProductTarget,
@@ -252,8 +254,8 @@ export async function buildProductPayload(): Promise<string> {
         product: "Cinba",
         version,
         revision,
-        protocolVersion: 1,
-        dataFormatVersion: 1,
+        protocolVersion: PRODUCT_PROTOCOL_VERSION,
+        dataFormatVersion: PRODUCT_DATA_FORMAT_VERSION,
         target,
         nodeVersion: process.versions.node,
       },

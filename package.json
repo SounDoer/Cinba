@@ -44,6 +44,7 @@
     "build:linux-artifact": "npm run build && node scripts/build-linux-artifact.ts",
     "build:macos-artifact": "npm run build && node scripts/build-macos-artifact.ts",
     "build:windows-artifact": "npm run build && node scripts/build-windows-artifact.ts",
+    "assemble:release": "node scripts/assemble-release.ts",
     "verify:payload": "node scripts/verify-product-payload.ts",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e && npm run build"
   },

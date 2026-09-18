@@ -11,6 +11,11 @@ export type {
   ProductTarget,
   ProductTargetDefinition,
 } from "./platform.ts";
+export {
+  PRODUCT_DATA_FORMAT_VERSION,
+  PRODUCT_PROTOCOL_VERSION,
+  RELEASE_MANIFEST_FILE_NAME,
+} from "./product-release-constants.ts";
 export { parseReleaseManifest } from "./manifest.ts";
 export type {
   LinuxMinimumSystem,
