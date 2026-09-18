@@ -174,7 +174,7 @@ jobs:
         run: |
           node scripts/assemble-release.ts dist/release
           node scripts/release-notes.ts dist/release/RELEASE_NOTES.md
-          sha256sum --check dist/release/SHA256SUMS
+          (cd dist/release && sha256sum --check SHA256SUMS)
 
       - name: Attest release metadata
         uses: actions/attest@v4
