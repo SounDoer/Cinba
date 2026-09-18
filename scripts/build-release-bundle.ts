@@ -8,6 +8,7 @@ import {
   verifyReleaseBundle,
 } from "@cinba/installer";
 import { buildDesktopApplication } from "./build-desktop-app.ts";
+import { buildProductLauncher } from "./build-product-launcher.ts";
 import { buildProductPayload } from "./build-product-payload.ts";
 
 const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -23,6 +24,9 @@ export async function buildReleaseBundle(): Promise<string> {
     JSON.parse(await readFile(join(payloadSource, "release.json"), "utf8")) as unknown,
   );
   await cp(payloadSource, join(root, "payload"), { recursive: true });
+  const launcher = await buildProductLauncher();
+  await mkdir(join(root, "launcher"), { recursive: true });
+  await cp(launcher, join(root, "launcher", target === "windows-x64" ? "cinba.exe" : "cinba"));
 
   if (target !== "linux-x64-gnu") {
     const [desktopSource] = await buildDesktopApplication();

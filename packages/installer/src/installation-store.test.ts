@@ -63,3 +63,17 @@ test("a current pointer cannot escape the releases directory", () => {
     { message: "installed release directory is not a safe direct child" },
   );
 });
+
+test("product path metadata is not mistaken for an installation path", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-install-product-paths-"));
+  const paths = {
+    ...layout(root),
+    identity: "release",
+    applicationId: "com.soundoer.cinba",
+  };
+  try {
+    assert.equal(await readCurrentRelease(paths), undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

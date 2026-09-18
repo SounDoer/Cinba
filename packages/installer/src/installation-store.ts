@@ -198,7 +198,11 @@ export function parseInstallationTransaction(value: unknown): InstallationTransa
 }
 
 function requireAbsoluteLayout(layout: InstallationLayout): void {
-  for (const [name, value] of Object.entries(layout)) {
+  for (const [name, value] of [
+    ["programDirectory", layout.programDirectory],
+    ["releasesDirectory", layout.releasesDirectory],
+    ["transactionDirectory", layout.transactionDirectory],
+  ] as const) {
     if (!isAbsolute(value)) {
       throw new Error(`${name} must be an absolute path`);
     }

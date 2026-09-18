@@ -22,6 +22,7 @@ export type ReleaseBundleMetadata = {
 export type VerifiedReleaseBundle = {
   rootDirectory: string;
   payloadDirectory: string;
+  launcher: string;
   desktopApplication: string | null;
   metadata: ReleaseBundleMetadata;
   payload: PayloadRelease;
@@ -146,6 +147,13 @@ export async function verifyReleaseBundle(
     );
   }
 
+  const launcher = join(
+    root,
+    "launcher",
+    metadata.target === "windows-x64" ? "cinba.exe" : "cinba",
+  );
+  await requireRegularFile(launcher, "Cinba launcher");
+
   let desktopApplication: string | null = null;
   if (metadata.target === "windows-x64") {
     desktopApplication = join(root, "desktop", "Cinba.exe");
@@ -160,6 +168,7 @@ export async function verifyReleaseBundle(
   return {
     rootDirectory: root,
     payloadDirectory,
+    launcher,
     desktopApplication,
     metadata,
     payload,
