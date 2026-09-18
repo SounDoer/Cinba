@@ -37,6 +37,9 @@ export type ManagedServiceStatus =
 
 export type ServiceAvailability = { productInstalled: boolean; componentCreated: boolean };
 
+const PLATFORM_SETTLE_TIMEOUT_MS = 5_000;
+const PLATFORM_SETTLE_INTERVAL_MS = 50;
+
 export type ServiceManagerOptions = {
   layout: InstallationLayout;
   serviceStateDirectory: string;
@@ -46,6 +49,38 @@ export type ServiceManagerOptions = {
   verifyHealth?: (definition: ManagedServiceDefinition) => Promise<void>;
   now?: () => Date;
 };
+
+async function waitForPlatform(
+  adapter: PlatformServiceAdapter,
+  definition: ManagedServiceDefinition,
+  settled: (snapshot: PlatformServiceSnapshot) => boolean,
+): Promise<PlatformServiceSnapshot> {
+  const deadline = Date.now() + PLATFORM_SETTLE_TIMEOUT_MS;
+  let snapshot = await adapter.inspect(definition);
+  while (!settled(snapshot) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, PLATFORM_SETTLE_INTERVAL_MS));
+    snapshot = await adapter.inspect(definition);
+  }
+  return snapshot;
+}
+
+async function waitForHealth(
+  verifyHealth: (definition: ManagedServiceDefinition) => Promise<void>,
+  definition: ManagedServiceDefinition,
+): Promise<void> {
+  const deadline = Date.now() + PLATFORM_SETTLE_TIMEOUT_MS;
+  while (true) {
+    try {
+      await verifyHealth(definition);
+      return;
+    } catch (error) {
+      if (Date.now() >= deadline) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, PLATFORM_SETTLE_INTERVAL_MS));
+    }
+  }
+}
 
 async function defaultVerifyHealth(definition: ManagedServiceDefinition): Promise<void> {
   const response = await fetch(definition.healthUrl, { signal: AbortSignal.timeout(2_000) });
@@ -113,7 +148,7 @@ async function applyPlatformMode(
     if (!snapshot.registered) {
       setFailure("registration-failed");
       await adapter.install(definition);
-      snapshot = await adapter.inspect(definition);
+      snapshot = await waitForPlatform(adapter, definition, (current) => current.registered);
       if (!snapshot.registered) {
         throw new Error(`${definition.displayName} registration was not installed`);
       }
@@ -121,19 +156,19 @@ async function applyPlatformMode(
     if (!snapshot.running) {
       setFailure("start-failed");
       await adapter.start(definition);
-      snapshot = await adapter.inspect(definition);
+      snapshot = await waitForPlatform(adapter, definition, (current) => current.running);
       if (!snapshot.running) {
         throw new Error(`${definition.displayName} did not start`);
       }
     }
     setFailure("health-failed");
-    await verifyHealth(definition);
+    await waitForHealth(verifyHealth, definition);
     return;
   }
   if (snapshot.running) {
     setFailure("stop-failed");
     await adapter.stop(definition);
-    snapshot = await adapter.inspect(definition);
+    snapshot = await waitForPlatform(adapter, definition, (current) => !current.running);
     if (snapshot.running) {
       throw new Error(`${definition.displayName} did not stop`);
     }
@@ -141,7 +176,7 @@ async function applyPlatformMode(
   if (snapshot.registered) {
     setFailure("removal-failed");
     await adapter.remove(definition);
-    snapshot = await adapter.inspect(definition);
+    snapshot = await waitForPlatform(adapter, definition, (current) => !current.registered);
     if (snapshot.registered) {
       throw new Error(`${definition.displayName} registration was not removed`);
     }

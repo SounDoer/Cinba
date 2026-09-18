@@ -157,6 +157,49 @@ test("a failed Background start compensates to the old mode", async () => {
   }
 });
 
+test("Background waits for an asynchronously starting platform service", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-service-settle-"));
+  const context = setup(root);
+  const adapter = fakeAdapter([]);
+  let started = false;
+  let inspectionsAfterStart = 0;
+  let healthChecks = 0;
+  adapter.start = async () => {
+    started = true;
+  };
+  adapter.inspect = async () => {
+    if (!started) {
+      return { registered: adapter.registered, running: false };
+    }
+    inspectionsAfterStart += 1;
+    return { registered: adapter.registered, running: inspectionsAfterStart >= 2 };
+  };
+  try {
+    const status = await setManagedServiceMode(
+      {
+        layout: context.layout,
+        serviceStateDirectory: context.stateDirectory,
+        definition: context.services.core,
+        adapter,
+        availability: { productInstalled: true, componentCreated: true },
+        verifyHealth: async () => {
+          healthChecks += 1;
+          if (healthChecks < 2) {
+            throw new Error("service is still opening its health port");
+          }
+        },
+      },
+      "background",
+    );
+    assert.equal(status.state, "background");
+    assert.equal(status.running, true);
+    assert.equal(inspectionsAfterStart >= 2, true);
+    assert.equal(healthChecks >= 2, true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("Core cannot be disabled and uncreated Sync cannot be configured", async () => {
   const root = await mkdtemp(join(tmpdir(), "cinba-service-boundary-"));
   const context = setup(root);

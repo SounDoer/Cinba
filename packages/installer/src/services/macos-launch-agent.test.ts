@@ -20,7 +20,10 @@ test("macOS LaunchAgents run the stable launcher only in the logged-in user sess
   assert.match(plist, /<string>\/Users\/cinba\/\.local\/bin\/cinba<\/string>/);
   assert.match(plist, /<string>service<\/string>\s*<string>core<\/string>/);
   assert.match(plist, /<key>RunAtLoad<\/key>\s*<true\/>/);
-  assert.match(plist, /<key>KeepAlive<\/key>\s*<true\/>/);
+  assert.match(
+    plist,
+    /<key>KeepAlive<\/key>\s*<dict>\s*<key>SuccessfulExit<\/key>\s*<false\/>\s*<\/dict>/,
+  );
   assert.doesNotMatch(plist, /Releases|UserName/);
 });
 
