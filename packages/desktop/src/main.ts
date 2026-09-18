@@ -15,7 +15,9 @@ import type { ProfileInput } from "./desktop-api.ts";
 import { authorizeDesktopIpcEvent } from "./desktop-ipc.ts";
 import { resolveDesktopRuntime, startDesktopAutomaticUpdate } from "./desktop-runtime.ts";
 import {
+  checkDesktopUpdateReadiness,
   createDesktopInstallReadyUpdate,
+  createDesktopReadinessPrompt,
   createDesktopUpdateConfirmation,
   launchDesktopUpdateHandoff,
 } from "./desktop-update.ts";
@@ -26,6 +28,7 @@ import { type DesktopWindowController, createDesktopWindowController } from "./w
 let tray: SystemTrayController | undefined;
 let removeIpcHandlers: (() => void) | undefined;
 let automaticUpdate: { abort(): void } | undefined;
+const updateInstallAbort = new AbortController();
 let openWhenReady = true;
 const runtime = resolveDesktopRuntime({
   packaged: app.isPackaged,
@@ -175,9 +178,18 @@ if (!hasSingleInstanceLock) {
         identity: runtime.identity,
         launcherPath: paths.launcherPath,
         processId: process.pid,
+        signal: updateInstallAbort.signal,
         getUpdate: () => window.getState().update,
         confirm: async (version) => {
           const result = await dialog.showMessageBox(createDesktopUpdateConfirmation(version));
+          return result.response === 0;
+        },
+        checkReadiness: (executable, version) =>
+          checkDesktopUpdateReadiness(executable, version, {
+            signal: updateInstallAbort.signal,
+          }),
+        promptReadiness: async (message, error) => {
+          const result = await dialog.showMessageBox(createDesktopReadinessPrompt(message, error));
           return result.response === 0;
         },
         abortAutomaticUpdate: () => {
@@ -185,7 +197,10 @@ if (!hasSingleInstanceLock) {
           automaticUpdate = undefined;
         },
         resumeAutomaticUpdate: startAutomaticUpdate,
-        launch: launchDesktopUpdateHandoff,
+        launch: (executable, arguments_) =>
+          launchDesktopUpdateHandoff(executable, arguments_, {
+            signal: updateInstallAbort.signal,
+          }),
         quit: () => app.quit(),
         showError: async (message) => {
           await dialog.showMessageBox({
@@ -222,6 +237,7 @@ if (!hasSingleInstanceLock) {
 
 app.on("window-all-closed", () => {});
 app.on("will-quit", () => {
+  updateInstallAbort.abort();
   automaticUpdate?.abort();
   removeIpcHandlers?.();
   tray?.dispose();

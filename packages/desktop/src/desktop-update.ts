@@ -1,11 +1,144 @@
 import { spawn } from "node:child_process";
-import type { ProductUpdateViewModel } from "@cinba/product-runtime";
+import {
+  type ProductUpdateReadiness,
+  type ProductUpdateViewModel,
+  parseProductUpdateReadinessJson,
+} from "@cinba/product-runtime";
+
+const MAX_ERROR_LENGTH = 2_048;
+const MAX_CAPTURE_LENGTH = 4_096;
+export const DESKTOP_READINESS_TIMEOUT_MS = 10_000;
+export const DESKTOP_HANDOFF_TIMEOUT_MS = 60_000;
+
+type DesktopUpdateChildOptions = {
+  signal?: AbortSignal;
+  timeoutMilliseconds?: number;
+};
+
+type DesktopUpdateChildResult = {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  stdout: string;
+  stderr: string;
+  stdoutExceeded: boolean;
+};
+
+function runDesktopUpdateChild(
+  executable: string,
+  arguments_: readonly string[],
+  stdio: "ignore" | ["ignore", "pipe", "pipe"],
+  timeoutMilliseconds: number,
+  timeoutLabel: string,
+  options: DesktopUpdateChildOptions,
+  spawnProcess: typeof spawn,
+): Promise<DesktopUpdateChildResult> {
+  return new Promise<DesktopUpdateChildResult>((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    let stdoutExceeded = false;
+    let settled = false;
+    let terminationError: Error | undefined;
+    const child = spawnProcess(executable, [...arguments_], {
+      shell: false,
+      stdio,
+      windowsHide: true,
+    });
+    const capture = (
+      current: string,
+      chunk: Buffer | string,
+    ): { value: string; exceeded: boolean } => {
+      const combined = `${current}${String(chunk)}`;
+      return {
+        value: combined.slice(-MAX_CAPTURE_LENGTH),
+        exceeded: combined.length > MAX_CAPTURE_LENGTH,
+      };
+    };
+    const onStdout = (chunk: Buffer | string): void => {
+      const captured = capture(stdout, chunk);
+      stdout = captured.value;
+      stdoutExceeded ||= captured.exceeded;
+    };
+    const onStderr = (chunk: Buffer | string): void => {
+      stderr = capture(stderr, chunk).value;
+    };
+    const actualTimeoutMilliseconds = options.timeoutMilliseconds ?? timeoutMilliseconds;
+    let timer: NodeJS.Timeout | undefined;
+    const cleanup = (): void => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+      options.signal?.removeEventListener("abort", onAbort);
+      child.removeListener("error", onError);
+      child.removeListener("close", onClose);
+      child.stdout?.removeListener("data", onStdout);
+      child.stderr?.removeListener("data", onStderr);
+    };
+    const rejectOnce = (error: unknown): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const onError = (error: Error): void => {
+      rejectOnce(terminationError ?? error);
+    };
+    const onClose = (code: number | null, signal: NodeJS.Signals | null): void => {
+      if (terminationError) {
+        rejectOnce(terminationError);
+        return;
+      }
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve({ code, signal, stdout, stderr, stdoutExceeded });
+    };
+    const terminate = (error: Error): void => {
+      if (settled || terminationError) {
+        return;
+      }
+      terminationError = error;
+      try {
+        child.kill();
+      } catch (killError) {
+        const detail = killError instanceof Error ? killError.message : String(killError);
+        rejectOnce(
+          new Error(
+            `${error.message}; child termination failed: ${detail}`.slice(0, MAX_ERROR_LENGTH),
+          ),
+        );
+      }
+    };
+    const onAbort = (): void => {
+      terminate(new Error(`Cinba ${timeoutLabel} was cancelled`));
+    };
+
+    child.stdout?.on("data", onStdout);
+    child.stderr?.on("data", onStderr);
+    child.once("error", onError);
+    child.once("close", onClose);
+    timer = setTimeout(
+      () =>
+        terminate(
+          new Error(`Cinba ${timeoutLabel} timed out after ${String(actualTimeoutMilliseconds)}ms`),
+        ),
+      actualTimeoutMilliseconds,
+    );
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    if (options.signal?.aborted) {
+      onAbort();
+    }
+  });
+}
 
 export type DesktopUpdateConfirmation = {
-  type: "info";
+  type: "info" | "error";
   title: string;
   message: string;
-  detail: string;
+  detail?: string;
   buttons: [string, string];
   defaultId: number;
   cancelId: number;
@@ -26,31 +159,91 @@ export function createDesktopUpdateConfirmation(version: string): DesktopUpdateC
   };
 }
 
+export function createDesktopReadinessPrompt(
+  message: string,
+  error = false,
+): DesktopUpdateConfirmation {
+  return {
+    type: error ? "error" : "info",
+    title: error ? "Cinba Update Check Failed" : "Cinba Update Is Waiting",
+    message,
+    buttons: ["Check Again", "Later"],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  };
+}
+
+export function checkDesktopUpdateReadiness(
+  executable: string,
+  version: string,
+  options: DesktopUpdateChildOptions = {},
+  spawnProcess: typeof spawn = spawn,
+): Promise<ProductUpdateReadiness> {
+  return runDesktopUpdateChild(
+    executable,
+    ["__check-update-readiness", version],
+    ["ignore", "pipe", "pipe"],
+    DESKTOP_READINESS_TIMEOUT_MS,
+    "update readiness check",
+    options,
+    spawnProcess,
+  ).then(({ code, signal, stdout, stderr, stdoutExceeded }) => {
+    if (code !== 0) {
+      const outcome =
+        code === null
+          ? `exited on signal ${signal ?? "unknown"}`
+          : `exited with code ${String(code)}`;
+      const detail = stderr.trim();
+      throw new Error(
+        `Cinba update readiness check ${outcome}${detail ? `: ${detail}` : ""}`.slice(
+          0,
+          MAX_ERROR_LENGTH,
+        ),
+      );
+    }
+    if (stdoutExceeded) {
+      throw new Error("Cinba update readiness output exceeded the allowed length");
+    }
+    const lines = stdout.endsWith("\n")
+      ? stdout.slice(0, -1).split(/\r?\n/)
+      : stdout.split(/\r?\n/);
+    if (lines.length !== 1 || !lines[0]) {
+      throw new Error("Cinba update readiness output must contain exactly one JSON line");
+    }
+    try {
+      return parseProductUpdateReadinessJson(lines[0]);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`Cinba update readiness check failed: ${detail}`.slice(0, MAX_ERROR_LENGTH), {
+        cause: error,
+      });
+    }
+  });
+}
+
 export function launchDesktopUpdateHandoff(
   executable: string,
   arguments_: readonly string[],
+  options: DesktopUpdateChildOptions = {},
   spawnProcess: typeof spawn = spawn,
 ): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    const child = spawnProcess(executable, [...arguments_], {
-      shell: false,
-      stdio: "ignore",
-      windowsHide: true,
-    });
-    child.once("error", reject);
-    child.once("exit", (code, signal) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(
-        new Error(
-          code === null
-            ? `Cinba update handoff exited on signal ${signal ?? "unknown"}`
-            : `Cinba update handoff exited with code ${code}`,
-        ),
+  return runDesktopUpdateChild(
+    executable,
+    arguments_,
+    "ignore",
+    DESKTOP_HANDOFF_TIMEOUT_MS,
+    "update handoff",
+    options,
+    spawnProcess,
+  ).then(({ code, signal }) => {
+    if (code !== 0) {
+      throw new Error(
+        code === null
+          ? `Cinba update handoff exited on signal ${signal ?? "unknown"}`
+          : `Cinba update handoff exited with code ${code}`,
       );
-    });
+    }
   });
 }
 
@@ -60,6 +253,9 @@ type InstallReadyUpdateOptions = {
   processId: number;
   getUpdate: () => ProductUpdateViewModel | undefined;
   confirm: (version: string) => Promise<boolean>;
+  signal?: AbortSignal;
+  checkReadiness: (executable: string, version: string) => Promise<ProductUpdateReadiness>;
+  promptReadiness: (message: string, error: boolean) => Promise<boolean>;
   abortAutomaticUpdate: () => void;
   resumeAutomaticUpdate: () => void;
   launch: (executable: string, arguments_: readonly string[]) => Promise<void>;
@@ -95,8 +291,45 @@ export function createDesktopInstallReadyUpdate(
       if (!(await options.confirm(version))) {
         return;
       }
-      if (readyVersion(options.getUpdate()) !== version) {
-        throw new Error("Desktop ready update changed during confirmation");
+      while (true) {
+        const current = options.getUpdate();
+        if (current?.phase !== "ready" || current.candidateVersion !== version) {
+          await options.showError(
+            `Cinba update candidate changed from ${version}; no update was installed.`,
+          );
+          return;
+        }
+        let readiness: ProductUpdateReadiness;
+        try {
+          readiness = await options.checkReadiness(options.launcherPath, version);
+        } catch (error) {
+          if (options.signal?.aborted) {
+            return;
+          }
+          const detail = error instanceof Error ? error.message : String(error);
+          const retry = await options.promptReadiness(
+            `Cinba could not check update readiness: ${detail}`.slice(0, MAX_ERROR_LENGTH),
+            true,
+          );
+          if (retry) {
+            continue;
+          }
+          return;
+        }
+        if (readiness.status === "waiting") {
+          if (await options.promptReadiness(readiness.message, false)) {
+            continue;
+          }
+          return;
+        }
+        const checked = options.getUpdate();
+        if (checked?.phase !== "ready" || checked.candidateVersion !== version) {
+          await options.showError(
+            `Cinba update candidate changed from ${version}; no update was installed.`,
+          );
+          return;
+        }
+        break;
       }
       options.abortAutomaticUpdate();
       try {
@@ -107,9 +340,14 @@ export function createDesktopInstallReadyUpdate(
           version,
         ]);
       } catch (error) {
+        if (options.signal?.aborted) {
+          return;
+        }
         options.resumeAutomaticUpdate();
         const detail = error instanceof Error ? error.message : String(error);
-        await options.showError(`Cinba could not start the update: ${detail}`.slice(0, 2_048));
+        await options.showError(
+          `Cinba could not start the update: ${detail}`.slice(0, MAX_ERROR_LENGTH),
+        );
         return;
       }
       handedOff = true;
