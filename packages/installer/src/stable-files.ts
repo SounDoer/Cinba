@@ -192,15 +192,17 @@ export async function prepareStableProductFiles(options: {
 }): Promise<PreparedStableFiles> {
   const replacements: Replacement[] = [];
   try {
+    // Copy the launcher before replacing Desktop. A macOS installer can carry its verified bundle
+    // inside the very application that this transaction replaces.
+    replacements.push(
+      await prepareReplacement(options.bundle.launcher, options.paths.launcherPath, options.mode),
+    );
     const desktop = desktopReplacement(options.bundle, options.paths);
     if (desktop) {
       replacements.push(
         await prepareReplacement(desktop.source, desktop.destination, options.mode),
       );
     }
-    replacements.push(
-      await prepareReplacement(options.bundle.launcher, options.paths.launcherPath, options.mode),
-    );
   } catch (error) {
     for (const replacement of replacements.toReversed()) {
       await rollbackReplacement(replacement);

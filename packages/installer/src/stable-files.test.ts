@@ -89,6 +89,55 @@ test("a first Desktop install places the whole application and launcher", async 
   }
 });
 
+test("a macOS installer can replace itself from its embedded bundle", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-stable-macos-self-install-"));
+  const desktopApplicationPath = join(root, "Applications", "Cinba.app");
+  const bundleRoot = join(desktopApplicationPath, "Contents", "Resources", "cinba-bundle");
+  const launcher = join(bundleRoot, "launcher", "cinba");
+  const stableApplication = join(bundleRoot, "desktop", "Cinba.app");
+  const productPaths = {
+    ...paths(root, true),
+    programDirectory: desktopApplicationPath,
+    desktopApplicationPath,
+    launcherDirectory: join(root, ".local", "bin"),
+    launcherPath: join(root, ".local", "bin", "cinba"),
+  };
+  try {
+    await mkdir(join(stableApplication, "Contents"), { recursive: true });
+    await mkdir(join(bundleRoot, "launcher"), { recursive: true });
+    await writeFile(join(desktopApplicationPath, "installer.txt"), "outer installer");
+    await writeFile(join(stableApplication, "Contents", "stable.txt"), "stable application");
+    await writeFile(launcher, "stable launcher");
+    const prepared = await prepareStableProductFiles({
+      bundle: {
+        ...(await bundle(root, false)),
+        rootDirectory: bundleRoot,
+        launcher,
+        desktopApplication: stableApplication,
+        metadata: {
+          schemaVersion: 1,
+          product: "Cinba",
+          version: "0.1.0",
+          revision: "a".repeat(40),
+          target: "macos-arm64",
+          kind: "desktop",
+        },
+      },
+      paths: productPaths,
+      mode: "replace",
+    });
+    assert.equal(
+      await readFile(join(desktopApplicationPath, "Contents", "stable.txt"), "utf8"),
+      "stable application",
+    );
+    assert.equal(await readFile(productPaths.launcherPath, "utf8"), "stable launcher");
+    await prepared.commit();
+    await assert.rejects(readFile(join(desktopApplicationPath, "installer.txt"), "utf8"), /ENOENT/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("create mode refuses an occupied launcher and removes the prepared Desktop", async () => {
   const root = await mkdtemp(join(tmpdir(), "cinba-stable-collision-"));
   const productPaths = paths(root, true);

@@ -1,10 +1,34 @@
 import { spawn } from "node:child_process";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
 import { installReleaseBundle } from "./bundle-installation.ts";
 import { type InstallationTransaction, readCurrentRelease } from "./installation-store.ts";
 import type { ProductPaths } from "./paths.ts";
 import type { ProductTarget } from "./platform.ts";
 import { prepareStableProductFiles } from "./stable-files.ts";
+
+function isInside(parent: string, child: string): boolean {
+  const path = relative(resolvePath(parent), resolvePath(child));
+  return path !== "" && path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path);
+}
+
+export function stableFileInstallMode(options: {
+  bundleDirectory: string;
+  paths: ProductPaths;
+  target: ProductTarget;
+  hasCurrentRelease: boolean;
+}): "create" | "replace" {
+  if (options.hasCurrentRelease) {
+    return "replace";
+  }
+  if (
+    options.target === "macos-arm64" &&
+    options.paths.desktopApplicationPath &&
+    isInside(options.paths.desktopApplicationPath, options.bundleDirectory)
+  ) {
+    return "replace";
+  }
+  return "create";
+}
 
 function childOutput(
   executable: string,
@@ -63,7 +87,12 @@ export async function installProductBundle(options: {
   transactionId?: string;
   verify?: typeof verifyInstalledProductRelease;
 }): Promise<InstallationTransaction> {
-  const mode = (await readCurrentRelease(options.paths)) ? "replace" : "create";
+  const mode = stableFileInstallMode({
+    bundleDirectory: options.bundleDirectory,
+    paths: options.paths,
+    target: options.target,
+    hasCurrentRelease: Boolean(await readCurrentRelease(options.paths)),
+  });
   return await installReleaseBundle({
     bundleDirectory: options.bundleDirectory,
     layout: options.paths,

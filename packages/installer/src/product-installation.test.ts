@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import test from "node:test";
-import { verifyInstalledProductRelease } from "./product-installation.ts";
+import type { ProductPaths } from "./paths.ts";
+import { stableFileInstallMode, verifyInstalledProductRelease } from "./product-installation.ts";
 
 const revision = "a".repeat(40);
 
@@ -43,5 +44,30 @@ test("the installed release probe rejects output from a different payload", asyn
       }),
     }),
     /identity probe failed/,
+  );
+});
+
+test("a first macOS install can replace the installer app that contains its bundle", () => {
+  const desktopApplicationPath = join(process.cwd(), "Applications", "Cinba.app");
+  const paths = {
+    desktopApplicationPath,
+  } as ProductPaths;
+  assert.equal(
+    stableFileInstallMode({
+      bundleDirectory: join(desktopApplicationPath, "Contents", "Resources", "cinba-bundle"),
+      paths,
+      target: "macos-arm64",
+      hasCurrentRelease: false,
+    }),
+    "replace",
+  );
+  assert.equal(
+    stableFileInstallMode({
+      bundleDirectory: join(process.cwd(), "Volumes", "Cinba", "cinba-bundle"),
+      paths,
+      target: "macos-arm64",
+      hasCurrentRelease: false,
+    }),
+    "create",
   );
 });
