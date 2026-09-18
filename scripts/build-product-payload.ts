@@ -191,6 +191,34 @@ async function buildEntries(payload: string): Promise<void> {
   });
 }
 
+async function buildDesktopPayload(payload: string, target: ProductTarget): Promise<void> {
+  if (target === "linux-x64-gnu") {
+    return;
+  }
+  await mkdir(join(payload, "lib"), { recursive: true });
+  await Promise.all([
+    build({
+      absWorkingDir: REPOSITORY_ROOT,
+      entryPoints: ["packages/desktop/src/main.ts"],
+      outfile: join(payload, "lib", "desktop.mjs"),
+      bundle: true,
+      format: "esm",
+      platform: "node",
+      target: "node24",
+      external: ["electron"],
+      sourcemap: false,
+      legalComments: "none",
+    }),
+    cp(
+      join(REPOSITORY_ROOT, "packages", "desktop", "src", "desktop-preload.cjs"),
+      join(payload, "lib", "desktop-preload.cjs"),
+    ),
+    cp(join(REPOSITORY_ROOT, "packages", "desktop", "dist"), join(payload, "dist"), {
+      recursive: true,
+    }),
+  ]);
+}
+
 export async function buildProductPayload(): Promise<string> {
   const target = requireProductTarget();
   const output = join(PRODUCT_DIST, target);
@@ -211,6 +239,7 @@ export async function buildProductPayload(): Promise<string> {
     copyPiRuntime(output, target),
     copyTuiNative(output, target),
     copyNodeRuntime(output),
+    buildDesktopPayload(output, target),
   ]);
 
   const version = await productVersion();

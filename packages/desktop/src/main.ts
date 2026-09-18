@@ -22,6 +22,7 @@ const runtime = resolveDesktopRuntime({
   packaged: app.isPackaged,
   modulePath: fileURLToPath(import.meta.url),
   resourcesPath: process.resourcesPath,
+  installedPayloadRoot: process.env.CINBA_PAYLOAD_ROOT,
 });
 
 const IPC_CHANNELS = [

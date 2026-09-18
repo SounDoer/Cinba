@@ -1,10 +1,9 @@
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Arch, type Configuration, Platform, build as buildElectron } from "electron-builder";
 import { build } from "esbuild";
 import { requireProductTarget } from "@cinba/installer";
-import { buildProductPayload } from "./build-product-payload.ts";
 
 const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const DESKTOP_DIST = join(REPOSITORY_ROOT, "dist", "desktop");
@@ -24,7 +23,6 @@ async function productVersion(): Promise<string> {
 
 export function createDesktopBuildConfiguration(options: {
   version: string;
-  payloadDirectory: string;
   outputDirectory: string;
 }): Configuration {
   return {
@@ -38,7 +36,6 @@ export function createDesktopBuildConfiguration(options: {
       output: options.outputDirectory,
     },
     files: ["**/*"],
-    extraResources: [{ from: options.payloadDirectory, to: "payload" }],
     extraMetadata: { version: options.version },
     win: {
       executableName: "Cinba",
@@ -57,8 +54,8 @@ async function prepareDesktopApplication(version: string): Promise<void> {
   await mkdir(join(STAGING_DIRECTORY, "lib"), { recursive: true });
   await build({
     absWorkingDir: REPOSITORY_ROOT,
-    entryPoints: ["packages/desktop/src/main.ts"],
-    outfile: join(STAGING_DIRECTORY, "lib", "desktop.mjs"),
+    entryPoints: ["packages/desktop/src/installed-bootstrap.ts"],
+    outfile: join(STAGING_DIRECTORY, "lib", "bootstrap.mjs"),
     bundle: true,
     format: "esm",
     platform: "node",
@@ -67,15 +64,6 @@ async function prepareDesktopApplication(version: string): Promise<void> {
     sourcemap: false,
     legalComments: "none",
   });
-  await Promise.all([
-    cp(
-      join(REPOSITORY_ROOT, "packages", "desktop", "src", "desktop-preload.cjs"),
-      join(STAGING_DIRECTORY, "lib", "desktop-preload.cjs"),
-    ),
-    cp(join(REPOSITORY_ROOT, "packages", "desktop", "dist"), join(STAGING_DIRECTORY, "dist"), {
-      recursive: true,
-    }),
-  ]);
   await writeFile(
     join(STAGING_DIRECTORY, "package.json"),
     `${JSON.stringify(
@@ -86,7 +74,7 @@ async function prepareDesktopApplication(version: string): Promise<void> {
         private: true,
         type: "module",
         version,
-        main: "lib/desktop.mjs",
+        main: "lib/bootstrap.mjs",
       },
       null,
       2,
@@ -100,7 +88,6 @@ export async function buildDesktopApplication(): Promise<string[]> {
     throw new Error("Cinba Desktop is released only for Windows x64 and macOS Apple Silicon");
   }
   const version = await productVersion();
-  const payloadDirectory = await buildProductPayload();
   await prepareDesktopApplication(version);
   const outputDirectory = join(DESKTOP_DIST, target);
   await rm(outputDirectory, { recursive: true, force: true });
@@ -111,7 +98,7 @@ export async function buildDesktopApplication(): Promise<string[]> {
   const outputs = await buildElectron({
     targets,
     publish: "never",
-    config: createDesktopBuildConfiguration({ version, payloadDirectory, outputDirectory }),
+    config: createDesktopBuildConfiguration({ version, outputDirectory }),
   });
   return outputs.length > 0
     ? outputs

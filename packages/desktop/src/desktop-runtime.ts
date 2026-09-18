@@ -1,4 +1,4 @@
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 
 export type DesktopRuntime =
   | {
@@ -18,13 +18,17 @@ export function resolveDesktopRuntime(options: {
   packaged: boolean;
   modulePath: string;
   resourcesPath: string;
+  installedPayloadRoot?: string;
 }): DesktopRuntime {
   if (options.packaged) {
+    if (!options.installedPayloadRoot || !isAbsolute(options.installedPayloadRoot)) {
+      throw new Error("packaged Desktop requires an absolute installed payload root");
+    }
     return {
       identity: "release",
       displayName: "Cinba",
       applicationId: "com.soundoer.cinba",
-      payloadRoot: resolve(options.resourcesPath, "payload"),
+      payloadRoot: resolve(options.installedPayloadRoot),
     };
   }
   return {

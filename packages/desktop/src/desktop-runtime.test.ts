@@ -20,19 +20,32 @@ test("source Desktop stays inside the Cinba Dev identity", () => {
   );
 });
 
-test("packaged Desktop uses only the bundled release payload", () => {
-  const resources = resolve("resources");
+test("packaged Desktop uses only the active installed release payload", () => {
+  const payload = resolve("releases", "a".repeat(40));
   assert.deepEqual(
     resolveDesktopRuntime({
       packaged: true,
       modulePath: resolve("app", "lib", "desktop.mjs"),
-      resourcesPath: resources,
+      resourcesPath: resolve("resources"),
+      installedPayloadRoot: payload,
     }),
     {
       identity: "release",
       displayName: "Cinba",
       applicationId: "com.soundoer.cinba",
-      payloadRoot: join(resources, "payload"),
+      payloadRoot: payload,
     },
+  );
+});
+
+test("packaged Desktop never falls back to a payload beside the app shell", () => {
+  assert.throws(
+    () =>
+      resolveDesktopRuntime({
+        packaged: true,
+        modulePath: resolve("app", "lib", "desktop.mjs"),
+        resourcesPath: resolve("resources"),
+      }),
+    { message: "packaged Desktop requires an absolute installed payload root" },
   );
 });
