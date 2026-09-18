@@ -38,7 +38,7 @@ export async function buildReleaseBundle(): Promise<string> {
     const desktopDestination =
       target === "macos-arm64" ? join(root, "desktop", "Cinba.app") : join(root, "desktop");
     await mkdir(dirname(desktopDestination), { recursive: true });
-    await cp(desktopSource, desktopDestination, { recursive: true });
+    await cp(desktopSource, desktopDestination, { recursive: true, dereference: true });
   } else {
     const installer = join(root, "install.sh");
     await writeFile(installer, renderBundledLinuxInstaller(), { mode: 0o755 });
