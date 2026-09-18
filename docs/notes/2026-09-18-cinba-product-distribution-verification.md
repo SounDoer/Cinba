@@ -43,17 +43,33 @@
 这只证明当前 Windows 主机构建链和隔离 bundle 安装可用，不等同于在干净 Windows 用户账号中实际
 点击 `.exe` 完成安装、PATH/Start Menu 注册、更新和卸载，因此下方 Windows 实机项目仍保持未勾选。
 
+## 首个正式 Release workflow
+
+GitHub Actions 已从提交 `fdbe7357edbc52e001c6097434249392f6bdedfd` 成功完成
+[Prepare product release](https://github.com/SounDoer/Cinba/actions/runs/35363804983)：
+
+- Windows、macOS、Linux runner 均通过完整 `npm run check`，构建并上传原生 artifact；
+- Draft Release `Cinba 0.1.0` 已创建，尚未正式发布，也尚未创建不可变 Git tag；
+- 六个预期资产齐全，`cinba-release.json` 的版本、revision、平台下限、文件大小和 SHA-256 与
+  GitHub asset digest 一致；
+- 三个平台 artifact、`install.sh`、`cinba-release.json` 和 `SHA256SUMS` 的 GitHub artifact
+  attestation 均可按 digest 查询；
+- 中英双语 Release notes 包含准确文件名、系统下限、SmartScreen、Gatekeeper、`xattr`、Linux
+  bootstrap、手工安装和更新说明。
+
+正式发布前仍需完成三平台真实用户安装验收；Draft 不能因为自动化通过就直接发布。
+
 ## 正式发版前置检查
 
-- [ ] 当前提交已推送到公开仓库的 `master`；
-- [ ] 仓库 Settings 中已启用 Immutable Releases；
-- [ ] Actions 允许 workflow 使用 `contents: write`、`id-token: write` 和 `attestations: write`；
-- [ ] 手工触发 **Prepare product release**，输入 `0.1.0`、完整 master SHA 和中英变更摘要；
-- [ ] Windows、macOS、Linux 原生 runner 均从同一 SHA 通过 `npm run check`；
-- [ ] draft 同时包含 `.exe`、`.dmg`、`.tar.gz`、`install.sh`、`cinba-release.json` 和 `SHA256SUMS`；
-- [ ] artifact 名、manifest revision、版本、大小和 SHA-256 一致；
-- [ ] GitHub artifact attestations 可查询；
-- [ ] Release notes 包含准确的中英双语三平台安装说明、SmartScreen/Gatekeeper 说明和 `xattr`
+- [x] 当前提交已推送到公开仓库的 `master`；
+- [x] 仓库 Settings 中已启用 Immutable Releases；
+- [x] Actions 允许 workflow 使用 `contents: write`、`id-token: write` 和 `attestations: write`；
+- [x] 手工触发 **Prepare product release**，输入 `0.1.0`、完整 master SHA 和中英变更摘要；
+- [x] Windows、macOS、Linux 原生 runner 均从同一 SHA 通过 `npm run check`；
+- [x] draft 同时包含 `.exe`、`.dmg`、`.tar.gz`、`install.sh`、`cinba-release.json` 和 `SHA256SUMS`；
+- [x] artifact 名、manifest revision、版本、大小和 SHA-256 一致；
+- [x] GitHub artifact attestations 可查询；
+- [x] Release notes 包含准确的中英双语三平台安装说明、SmartScreen/Gatekeeper 说明和 `xattr`
   命令；
 - [ ] 人工复核完整集合后才发布 draft；
 - [ ] 发布后 GitHub 将 Release 标记为 Immutable，updater 能发现它且忽略 draft/prerelease。
