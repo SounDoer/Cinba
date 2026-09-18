@@ -9,10 +9,12 @@ const MAX_ERROR_LENGTH = 2_048;
 const MAX_CAPTURE_LENGTH = 4_096;
 export const DESKTOP_READINESS_TIMEOUT_MS = 10_000;
 export const DESKTOP_HANDOFF_TIMEOUT_MS = 60_000;
+const DESKTOP_TERMINATION_GRACE_MS = 250;
 
 type DesktopUpdateChildOptions = {
   signal?: AbortSignal;
   timeoutMilliseconds?: number;
+  terminationGraceMilliseconds?: number;
 };
 
 type DesktopUpdateChildResult = {
@@ -29,6 +31,7 @@ function runDesktopUpdateChild(
   stdio: "ignore" | ["ignore", "pipe", "pipe"],
   timeoutMilliseconds: number,
   timeoutLabel: string,
+  timeoutError: (milliseconds: number) => Error,
   options: DesktopUpdateChildOptions,
   spawnProcess: typeof spawn,
 ): Promise<DesktopUpdateChildResult> {
@@ -62,16 +65,25 @@ function runDesktopUpdateChild(
       stderr = capture(stderr, chunk).value;
     };
     const actualTimeoutMilliseconds = options.timeoutMilliseconds ?? timeoutMilliseconds;
+    const terminationGraceMilliseconds =
+      options.terminationGraceMilliseconds ?? DESKTOP_TERMINATION_GRACE_MS;
     let timer: NodeJS.Timeout | undefined;
+    let terminationTimer: NodeJS.Timeout | undefined;
     const cleanup = (): void => {
       if (timer) {
         clearTimeout(timer);
+      }
+      if (terminationTimer) {
+        clearTimeout(terminationTimer);
       }
       options.signal?.removeEventListener("abort", onAbort);
       child.removeListener("error", onError);
       child.removeListener("close", onClose);
       child.stdout?.removeListener("data", onStdout);
       child.stderr?.removeListener("data", onStderr);
+      child.stdout?.destroy?.();
+      child.stderr?.destroy?.();
+      child.unref?.();
     };
     const rejectOnce = (error: unknown): void => {
       if (settled) {
@@ -101,16 +113,30 @@ function runDesktopUpdateChild(
         return;
       }
       terminationError = error;
+      let terminated = false;
       try {
-        child.kill();
-      } catch (killError) {
-        const detail = killError instanceof Error ? killError.message : String(killError);
-        rejectOnce(
-          new Error(
-            `${error.message}; child termination failed: ${detail}`.slice(0, MAX_ERROR_LENGTH),
-          ),
-        );
+        terminated = child.kill("SIGTERM");
+      } catch {
+        // Force termination below. A thrown kill must not leave this promise pending.
       }
+      if (!terminated) {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // The bounded rejection below is authoritative even when Windows reports kill failure.
+        }
+        rejectOnce(error);
+        return;
+      }
+      terminationTimer = setTimeout(() => {
+        try {
+          // Node maps SIGKILL to TerminateProcess on Windows.
+          child.kill("SIGKILL");
+        } catch {
+          // The process outcome is uncertain, but the caller must still settle in bounded time.
+        }
+        rejectOnce(error);
+      }, terminationGraceMilliseconds);
     };
     const onAbort = (): void => {
       terminate(new Error(`Cinba ${timeoutLabel} was cancelled`));
@@ -121,10 +147,7 @@ function runDesktopUpdateChild(
     child.once("error", onError);
     child.once("close", onClose);
     timer = setTimeout(
-      () =>
-        terminate(
-          new Error(`Cinba ${timeoutLabel} timed out after ${String(actualTimeoutMilliseconds)}ms`),
-        ),
+      () => terminate(timeoutError(actualTimeoutMilliseconds)),
       actualTimeoutMilliseconds,
     );
     options.signal?.addEventListener("abort", onAbort, { once: true });
@@ -132,6 +155,10 @@ function runDesktopUpdateChild(
       onAbort();
     }
   });
+}
+
+export class DesktopUpdateHandoffTimeoutError extends Error {
+  override name = "DesktopUpdateHandoffTimeoutError";
 }
 
 export type DesktopUpdateConfirmation = {
@@ -186,6 +213,8 @@ export function checkDesktopUpdateReadiness(
     ["ignore", "pipe", "pipe"],
     DESKTOP_READINESS_TIMEOUT_MS,
     "update readiness check",
+    (milliseconds) =>
+      new Error(`Cinba update readiness check timed out after ${String(milliseconds)}ms`),
     options,
     spawnProcess,
   ).then(({ code, signal, stdout, stderr, stdoutExceeded }) => {
@@ -234,6 +263,10 @@ export function launchDesktopUpdateHandoff(
     "ignore",
     DESKTOP_HANDOFF_TIMEOUT_MS,
     "update handoff",
+    (milliseconds) =>
+      new DesktopUpdateHandoffTimeoutError(
+        `Cinba update handoff timed out after ${String(milliseconds)}ms`,
+      ),
     options,
     spawnProcess,
   ).then(({ code, signal }) => {
@@ -341,6 +374,15 @@ export function createDesktopInstallReadyUpdate(
         ]);
       } catch (error) {
         if (options.signal?.aborted) {
+          return;
+        }
+        if (error instanceof DesktopUpdateHandoffTimeoutError) {
+          await options.showError(
+            "The update handoff timed out with an uncertain result. Restart Cinba before continuing.",
+          );
+          // The helper may already own the handoff. Quit instead of resuming new Core work while
+          // the blocking Desktop PID could release at an arbitrary later point.
+          options.quit();
           return;
         }
         options.resumeAutomaticUpdate();

@@ -57,7 +57,12 @@ import { createTuiUpdateConsumer, startProductUpdateObserver } from "./product-u
 import { StatusBar } from "./status-bar.ts";
 import {
   type TuiUpdateConfirmation,
+  TuiUpdateHandoffController,
+  blockTuiCoreInteractionDuringHandoff,
+  checkTuiUpdateReadiness,
   createTuiInstallReadyUpdate,
+  denyTuiPermissionDuringHandoff,
+  denyTuiProjectTrustDuringHandoff,
   launchTuiUpdateHandoff,
 } from "./tui-update.ts";
 
@@ -211,6 +216,8 @@ const promptInput = new PromptInput();
 const statusBar = new StatusBar();
 const interactionOwner = new InteractionOwner();
 const installedProductLauncher = parseInstalledProductLauncher(process.env);
+const updateInstallAbort = new AbortController();
+const updateHandoffController = new TuiUpdateHandoffController();
 const tuiLocalCommands = createTuiLocalCommands(installedProductLauncher !== undefined);
 promptInput.setTuiCommands(tuiLocalCommands);
 const consumeProductUpdate = createTuiUpdateConsumer({
@@ -364,6 +371,16 @@ function applyAction(action: ViewAction): void {
     }
 
     case "confirm_requested":
+      if (
+        denyTuiPermissionDuringHandoff(
+          updateHandoffController,
+          action.requestId,
+          (requestId, confirmed) => coreClient.respondConfirm(requestId, confirmed),
+          (text) => applyAction({ type: "notice", text }),
+        )
+      ) {
+        break;
+      }
       raiseConfirm(action.requestId, action.title, action.message);
       break;
 
@@ -527,6 +544,37 @@ function confirmTuiUpdate(confirmation: TuiUpdateConfirmation): Promise<boolean>
   });
 }
 
+function promptTuiReadiness(
+  confirmation: TuiUpdateConfirmation,
+  signal: AbortSignal,
+): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const dialog = new ConfirmDialog(confirmation.title, confirmation.message, {
+      positive: confirmation.positive,
+      negative: confirmation.negative,
+      defaultConfirmed: confirmation.defaultConfirmed,
+    });
+    let settled = false;
+    const finish = (confirmed: boolean): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      signal.removeEventListener("abort", onAbort);
+      resolve(confirmed);
+    };
+    const onAbort = (): void => finish(false);
+    dialog.onAnswer = finish;
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    setBottom(dialog);
+    tui.setFocus(dialog);
+  });
+}
+
 const coreClient = new CoreClient(SERVER_URL, {
   onConnectionChanged: (state) => {
     if (state === "connected") {
@@ -585,6 +633,16 @@ const coreClient = new CoreClient(SERVER_URL, {
     tui.requestRender();
   },
   onProjectTrustRequested: (request) => {
+    if (
+      denyTuiProjectTrustDuringHandoff(
+        updateHandoffController,
+        request.requestId,
+        (requestId, trusted) => coreClient.respondProjectTrust(requestId, trusted),
+        (text) => applyAction({ type: "notice", text }),
+      )
+    ) {
+      return;
+    }
     const details = [
       request.cwd,
       "",
@@ -665,9 +723,27 @@ const installReadyUpdate = createTuiInstallReadyUpdate({
   isBusy: () => busy,
   isCompacting: () => compacting,
   confirm: confirmTuiUpdate,
+  signal: updateInstallAbort.signal,
+  checkReadiness: (executable, version, signal) =>
+    checkTuiUpdateReadiness(executable, version, { signal }),
+  promptReadiness: promptTuiReadiness,
+  ownReadinessWait: (cancel) => {
+    const release = interactionOwner.replace(cancel);
+    confirming = true;
+    return () => {
+      const owned = release();
+      if (owned) {
+        confirming = false;
+        showPrompt();
+      }
+      return owned;
+    };
+  },
+  handoffController: updateHandoffController,
   stopObserver: stopProductUpdateObservation,
   restartObserver: startProductUpdateObservation,
-  launch: launchTuiUpdateHandoff,
+  launch: (executable, arguments_, signal) =>
+    launchTuiUpdateHandoff(executable, arguments_, { signal }),
   exit,
   showNotice: (text) => applyAction({ type: "notice", text }),
 });
@@ -725,6 +801,12 @@ function land(sessions: SessionSummary[]): void {
 }
 
 // ---- Interaction ----
+
+function blockCoreInteractionForHandoff(): boolean {
+  return blockTuiCoreInteractionDuringHandoff(updateHandoffController, (text) =>
+    applyAction({ type: "notice", text }),
+  );
+}
 
 /** Carry out one of Cinba's own commands. What it means here; the catalogue says which exist. */
 function runCommand(command: Command, line: string): void {
@@ -815,6 +897,9 @@ function runCommand(command: Command, line: string): void {
 }
 
 function submitInput(value: string, delivery: "default" | "followUp" = "default"): void {
+  if (blockCoreInteractionForHandoff()) {
+    return;
+  }
   if (confirming) {
     return;
   }
@@ -884,6 +969,9 @@ promptInput.input.onSubmit = (value: string) => submitInput(value);
 // Esc stops an answer in progress. Pressing it while idle does nothing: exiting
 // is Ctrl+C, so a slip of the hand cannot close the conversation.
 promptInput.input.onEscape = () => {
+  if (blockCoreInteractionForHandoff()) {
+    return;
+  }
   if (!busy && !compacting) {
     return;
   }
@@ -896,6 +984,7 @@ promptInput.input.onEscape = () => {
 
 function exit(): void {
   exiting = true;
+  updateInstallAbort.abort();
   stopProductUpdateObservation();
   if (retryRenderTimer) {
     clearInterval(retryRenderTimer);
@@ -909,6 +998,11 @@ function exit(): void {
 tui.addInputListener((data: string) => {
   if (matchesKey(data, "ctrl+c")) {
     exit();
+    return { consume: true };
+  }
+
+  if (blockCoreInteractionForHandoff()) {
+    return { consume: true };
   }
 
   if (matchesKey(data, "alt+enter") && promptInput.focused && !confirming) {

@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   DESKTOP_HANDOFF_TIMEOUT_MS,
   DESKTOP_READINESS_TIMEOUT_MS,
+  DesktopUpdateHandoffTimeoutError,
   checkDesktopUpdateReadiness,
   createDesktopInstallReadyUpdate,
   createDesktopReadinessPrompt,
@@ -14,17 +15,16 @@ import {
 type FakeChild = EventEmitter & {
   stdout: EventEmitter;
   stderr: EventEmitter;
-  kill: () => boolean;
+  kill: (signal?: NodeJS.Signals) => boolean;
+  unref: () => void;
 };
 
-function fakeChild(onKill: () => void = () => {}): FakeChild {
+function fakeChild(onKill: (signal?: NodeJS.Signals) => boolean = () => true): FakeChild {
   const child = new EventEmitter() as FakeChild;
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  child.kill = () => {
-    onKill();
-    return true;
-  };
+  child.kill = onKill;
+  child.unref = () => {};
   return child;
 }
 
@@ -141,6 +141,26 @@ test("handoff launch failure keeps Desktop running, resumes observation, and sho
   ];
   assert.match(error[1], /^Cinba could not start the update: claim failed/);
   assert.ok(error[1].length <= 2_048);
+});
+
+test("handoff timeout quits fail-safe without resuming automatic updates", async () => {
+  const { calls, install } = fixture({
+    launch: async () => {
+      throw new DesktopUpdateHandoffTimeoutError("Cinba update handoff timed out after 5ms");
+    },
+  });
+
+  await install();
+
+  assert.equal(calls.includes("resume"), false);
+  assert.equal(calls.includes("quit"), true);
+  assert.equal(
+    calls.some(
+      (call) =>
+        Array.isArray(call) && call[0] === "error" && /restart Cinba/i.test(String(call[1])),
+    ),
+    true,
+  );
 });
 
 test("concurrent install requests share one confirmation and handoff", async () => {
@@ -440,6 +460,7 @@ test("readiness timeout kills a never-exiting child and a later request can retr
   const firstChild = fakeChild(() => {
     killed += 1;
     setImmediate(() => firstChild.emit("close", null, "SIGTERM"));
+    return true;
   });
   const first = checkDesktopUpdateReadiness(
     "cinba",
@@ -468,6 +489,7 @@ test("abort kills readiness and cleans its listener after child settlement", asy
   const child = fakeChild(() => {
     killed += 1;
     setImmediate(() => child.emit("close", null, "SIGTERM"));
+    return true;
   });
   const pending = checkDesktopUpdateReadiness(
     "cinba",
@@ -488,6 +510,7 @@ test("readiness exit and abort races settle once without killing a completed chi
   let killed = 0;
   const child = fakeChild(() => {
     killed += 1;
+    return true;
   });
   const pending = checkDesktopUpdateReadiness(
     "cinba",
@@ -577,6 +600,7 @@ test("handoff timeout kills the short-lived begin child and waits for settlement
   const child = fakeChild(() => {
     killed += 1;
     setImmediate(() => child.emit("close", null, "SIGTERM"));
+    return true;
   });
   const pending = launchDesktopUpdateHandoff(
     "cinba",
@@ -587,4 +611,21 @@ test("handoff timeout kills the short-lived begin child and waits for settlement
 
   await assert.rejects(pending, /timed out after 5ms/);
   assert.equal(killed, 1);
+});
+
+test("Desktop child termination escalates and settles when close never arrives", async () => {
+  const signals: (NodeJS.Signals | undefined)[] = [];
+  const child = fakeChild((signal) => {
+    signals.push(signal);
+    return true;
+  });
+  const pending = checkDesktopUpdateReadiness(
+    "cinba",
+    "0.2.0",
+    { timeoutMilliseconds: 5, terminationGraceMilliseconds: 5 },
+    (() => child) as never,
+  );
+
+  await assert.rejects(pending, /timed out after 5ms/);
+  assert.deepEqual(signals, ["SIGTERM", "SIGKILL"]);
 });
