@@ -12,6 +12,34 @@ export type InstalledProductCommand = {
   arguments: string[];
 };
 
+export const CINBA_PRODUCT_LAUNCHER_PID = "CINBA_PRODUCT_LAUNCHER_PID";
+
+export function parseProductLauncherProcessId(
+  environment: NodeJS.ProcessEnv = process.env,
+): number | undefined {
+  const value = environment[CINBA_PRODUCT_LAUNCHER_PID];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) {
+    throw new Error(`${CINBA_PRODUCT_LAUNCHER_PID} must be a positive integer`);
+  }
+  return Number(value);
+}
+
+export function createInstalledProductEnvironment(
+  environment: NodeJS.ProcessEnv,
+  launcherProcessId: number,
+): NodeJS.ProcessEnv {
+  if (!Number.isSafeInteger(launcherProcessId) || launcherProcessId < 1) {
+    throw new Error("product launcher process id must be a positive integer");
+  }
+  const childEnvironment = { ...environment };
+  delete childEnvironment.CINBA_UPDATE_LEASE_TOKEN;
+  childEnvironment[CINBA_PRODUCT_LAUNCHER_PID] = String(launcherProcessId);
+  return childEnvironment;
+}
+
 async function requireRegularFile(path: string, description: string): Promise<void> {
   try {
     const status = await lstat(path);
@@ -85,10 +113,14 @@ export async function runInstalledProductCommand(
   command: InstalledProductCommand,
   options: { workingDirectory?: string; environment?: NodeJS.ProcessEnv } = {},
 ): Promise<number> {
+  const environment = createInstalledProductEnvironment(
+    options.environment ?? process.env,
+    process.pid,
+  );
   return await childExit(
     spawn(command.executable, command.arguments, {
       cwd: options.workingDirectory ?? process.cwd(),
-      env: options.environment ?? process.env,
+      env: environment,
       stdio: "inherit",
       windowsHide: true,
     }),

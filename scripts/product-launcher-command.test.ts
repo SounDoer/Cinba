@@ -67,45 +67,48 @@ test("the copied launcher recognizes only a bounded uninstall helper command", (
   );
 });
 
-test("the copied launcher accepts only a bounded update helper handoff", () => {
-  const artifact = resolve("cache", "Cinba-0.2.0-windows-x64.exe");
-  const sha256 = "a".repeat(64);
-  const revision = "b".repeat(40);
-  const leaseToken = "11111111-1111-4111-8111-111111111111";
+test("foreground update handoff accepts only surface, blocking PID, and TUI cwd", () => {
+  const executable = resolve("cinba");
+  const project = resolve("project");
   assert.deepEqual(
-    parseStableLauncherCommand(
-      ["__update-helper", "123", leaseToken, artifact, "0.2.0", revision, sha256],
-      resolve("cinba"),
-    ),
-    {
-      type: "update-helper",
-      parentProcessId: 123,
-      leaseToken,
-      artifactPath: artifact,
-      version: "0.2.0",
-      revision,
-      sha256,
-    },
+    parseStableLauncherCommand(["__begin-update-handoff", "desktop", "123"], executable),
+    { type: "begin-update-handoff", surface: "desktop", blockingProcessId: 123 },
   );
   assert.deepEqual(
-    parseStableLauncherCommand(
-      ["__update-helper", "0", leaseToken, artifact, "0.2.0", revision, sha256],
-      resolve("cinba"),
-    ),
+    parseStableLauncherCommand(["__begin-update-handoff", "tui", "123", project], executable),
     {
-      type: "product",
-      arguments: ["__update-helper", "0", leaseToken, artifact, "0.2.0", revision, sha256],
+      type: "begin-update-handoff",
+      surface: "tui",
+      blockingProcessId: 123,
+      workingDirectory: project,
     },
   );
-  assert.deepEqual(
-    parseStableLauncherCommand(
-      ["__update-helper", "123", leaseToken, "relative.exe", "0.2.0", revision, sha256],
-      resolve("cinba"),
-    ),
-    {
-      type: "product",
-      arguments: ["__update-helper", "123", leaseToken, "relative.exe", "0.2.0", revision, sha256],
-    },
+  assert.throws(
+    () =>
+      parseStableLauncherCommand(["__begin-update-handoff", "tui", "123", "relative"], executable),
+    /invalid foreground update handoff command/,
+  );
+  assert.throws(
+    () =>
+      parseStableLauncherCommand(["__begin-update-handoff", "desktop", "123", project], executable),
+    /invalid foreground update handoff command/,
+  );
+  assert.throws(
+    () => parseStableLauncherCommand(["__begin-update-handoff", "desktop", "0"], executable),
+    /process id must be a positive integer/,
+  );
+});
+
+test("copied update helper accepts only its parent PID", () => {
+  const executable = resolve("cinba");
+  assert.deepEqual(parseStableLauncherCommand(["__update-handoff-helper", "123"], executable), {
+    type: "update-handoff-helper",
+    parentProcessId: 123,
+  });
+  assert.throws(
+    () =>
+      parseStableLauncherCommand(["__update-handoff-helper", "123", "secret-token"], executable),
+    /invalid update handoff helper command/,
   );
 });
 

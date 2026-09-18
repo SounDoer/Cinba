@@ -26,7 +26,11 @@ import {
   runUninstallHelper,
   stopProductForUninstall,
 } from "./product-uninstall.ts";
-import { runStableProductUpdate, runWindowsUpdateHelper } from "./product-update.ts";
+import {
+  beginForegroundUpdateHandoff,
+  runStableProductUpdate,
+  runUpdateHandoffHelper,
+} from "./product-update.ts";
 
 function openMacosApplication(applicationPath: string): void {
   const child = spawn("/usr/bin/open", [applicationPath], {
@@ -72,8 +76,21 @@ async function run(): Promise<void> {
     environment: process.env,
   });
   const launcherCommand = parseStableLauncherCommand(process.argv.slice(2), process.execPath);
-  if (launcherCommand.type === "update-helper") {
-    await runWindowsUpdateHelper(launcherCommand);
+  if (launcherCommand.type === "update-handoff-helper") {
+    await runUpdateHandoffHelper(launcherCommand);
+    return;
+  }
+  if (launcherCommand.type === "begin-update-handoff") {
+    await beginForegroundUpdateHandoff({
+      platform,
+      paths,
+      target,
+      surface: launcherCommand.surface,
+      blockingProcessId: launcherCommand.blockingProcessId,
+      ...(launcherCommand.surface === "tui"
+        ? { workingDirectory: launcherCommand.workingDirectory }
+        : {}),
+    });
     return;
   }
   if (launcherCommand.type === "uninstall-helper") {

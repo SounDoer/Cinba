@@ -9,7 +9,12 @@ import {
   writeCurrentRelease,
 } from "./installation-store.ts";
 import { type ProductTarget, requireProductTarget } from "./platform.ts";
-import { resolveInstalledProductCommand } from "./stable-launcher.ts";
+import {
+  CINBA_PRODUCT_LAUNCHER_PID,
+  createInstalledProductEnvironment,
+  parseProductLauncherProcessId,
+  resolveInstalledProductCommand,
+} from "./stable-launcher.ts";
 
 const revision = "a".repeat(40);
 
@@ -106,4 +111,27 @@ test("the stable launcher fails closed when current is missing or inconsistent",
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("the stable launcher injects its PID without exposing update credentials", () => {
+  const environment = createInstalledProductEnvironment(
+    {
+      CINBA_UPDATE_LEASE_TOKEN: "must-not-survive",
+      KEEP_ME: "yes",
+    },
+    123,
+  );
+  assert.equal(environment[CINBA_PRODUCT_LAUNCHER_PID], "123");
+  assert.equal(environment.CINBA_UPDATE_LEASE_TOKEN, undefined);
+  assert.equal(environment.KEEP_ME, "yes");
+  assert.equal(parseProductLauncherProcessId(environment), 123);
+  assert.equal(parseProductLauncherProcessId({}), undefined);
+  assert.throws(
+    () => parseProductLauncherProcessId({ [CINBA_PRODUCT_LAUNCHER_PID]: "0" }),
+    /must be a positive integer/,
+  );
+  assert.throws(
+    () => createInstalledProductEnvironment({}, Number.MAX_SAFE_INTEGER + 1),
+    /must be a positive integer/,
+  );
 });

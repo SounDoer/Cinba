@@ -103,6 +103,20 @@ export {
 } from "./update-lock.ts";
 export type { ProductUpdateLease } from "./update-lock.ts";
 export type { UpdateCandidate, UpdateFailure, UpdatePhase, UpdateState } from "./update-state.ts";
+export {
+  UPDATE_HANDOFF_TTL_MS,
+  assertUpdateHandoffMatchesReadyState,
+  claimUpdateHandoff,
+  createUpdateHandoff,
+  parseUpdateHandoff,
+  reapClaimedUpdateHandoffs,
+  removeUpdateHandoff,
+  updateHandoffPath,
+  writeUpdateHandoff,
+  writeUpdateHandoffRecoveringStale,
+} from "./update-handoff.ts";
+export type { UpdateHandoff } from "./update-handoff.ts";
+export type { ClaimedUpdateHandoffReapResult } from "./update-handoff.ts";
 export { installPreparedUpdateArtifact } from "./update-installation.ts";
 export type {
   RunUpdateInstaller,
@@ -188,7 +202,13 @@ export {
   removeWindowsProductIntegration,
 } from "./windows-integration.ts";
 export type { RunWindowsIntegrationPowerShell } from "./windows-integration.ts";
-export { resolveInstalledProductCommand, runInstalledProductCommand } from "./stable-launcher.ts";
+export {
+  CINBA_PRODUCT_LAUNCHER_PID,
+  createInstalledProductEnvironment,
+  parseProductLauncherProcessId,
+  resolveInstalledProductCommand,
+  runInstalledProductCommand,
+} from "./stable-launcher.ts";
 export type { InstalledProductCommand } from "./stable-launcher.ts";
 export {
   activateCandidate,

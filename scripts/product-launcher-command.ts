@@ -10,13 +10,19 @@ export type StableLauncherCommand =
   | { type: "install"; bundleDirectory: string }
   | { type: "update" }
   | {
-      type: "update-helper";
+      type: "begin-update-handoff";
+      surface: "desktop";
+      blockingProcessId: number;
+    }
+  | {
+      type: "begin-update-handoff";
+      surface: "tui";
+      blockingProcessId: number;
+      workingDirectory: string;
+    }
+  | {
+      type: "update-handoff-helper";
       parentProcessId: number;
-      leaseToken: string;
-      artifactPath: string;
-      version: string;
-      revision: string;
-      sha256: string;
     }
   | { type: "uninstall"; purge: boolean; deleteAllCinbaData: boolean }
   | { type: "uninstall-helper"; parentProcessId: number; purge: boolean }
@@ -60,32 +66,54 @@ export function parseStableLauncherCommand(
     return { type: "uninstall-helper", parentProcessId, purge: arguments_[2] === "purge" };
   }
   if (
-    arguments_.length === 7 &&
-    arguments_[0] === "__update-helper" &&
-    /^[1-9]\d*$/.test(arguments_[1]!) &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
-      arguments_[2]!,
-    ) &&
-    isAbsolute(arguments_[3]!) &&
-    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(arguments_[4]!) &&
-    /^[0-9a-f]{40}$/.test(arguments_[5]!) &&
-    /^[0-9a-f]{64}$/.test(arguments_[6]!)
+    arguments_.length === 3 &&
+    arguments_[0] === "__begin-update-handoff" &&
+    arguments_[1] === "desktop"
   ) {
-    const parentProcessId = Number(arguments_[1]);
-    if (!Number.isSafeInteger(parentProcessId)) {
-      throw new Error("update helper parent process id is invalid");
-    }
+    const blockingProcessId = parsePositiveProcessId(arguments_[2]!);
     return {
-      type: "update-helper",
-      parentProcessId,
-      leaseToken: arguments_[2]!,
-      artifactPath: arguments_[3]!,
-      version: arguments_[4]!,
-      revision: arguments_[5]!,
-      sha256: arguments_[6]!,
+      type: "begin-update-handoff",
+      surface: "desktop",
+      blockingProcessId,
     };
   }
+  if (
+    arguments_.length === 4 &&
+    arguments_[0] === "__begin-update-handoff" &&
+    arguments_[1] === "tui" &&
+    isAbsolute(arguments_[3]!)
+  ) {
+    return {
+      type: "begin-update-handoff",
+      surface: "tui",
+      blockingProcessId: parsePositiveProcessId(arguments_[2]!),
+      workingDirectory: arguments_[3]!,
+    };
+  }
+  if (arguments_[0] === "__begin-update-handoff") {
+    throw new Error("invalid foreground update handoff command");
+  }
+  if (arguments_.length === 2 && arguments_[0] === "__update-handoff-helper") {
+    return {
+      type: "update-handoff-helper",
+      parentProcessId: parsePositiveProcessId(arguments_[1]!),
+    };
+  }
+  if (arguments_[0] === "__update-handoff-helper") {
+    throw new Error("invalid update handoff helper command");
+  }
   return { type: "product", arguments: arguments_ };
+}
+
+export function parsePositiveProcessId(value: string): number {
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new Error("process id must be a positive integer");
+  }
+  const processId = Number(value);
+  if (!Number.isSafeInteger(processId)) {
+    throw new Error("process id must be a positive integer");
+  }
+  return processId;
 }
 
 export function parseExpectedProductInstallRelease(

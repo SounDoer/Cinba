@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { chmod, copyFile, lstat, mkdtemp, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, join, win32 } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { ensureLocalCore, inspectLocalCore, stopLocalCore } from "@cinba/core-manager";
 import {
   type ProductPaths,
@@ -9,19 +9,28 @@ import {
   type ProductUpdateLease,
   type ServiceMode,
   type UpdateCandidate,
+  type UpdateHandoff,
   type UpdateState,
+  acquireProductUpdateLease,
+  assertUpdateHandoffMatchesReadyState,
   claimTransferredProductUpdateLease,
+  claimUpdateHandoff,
   cleanupInstallation,
   cleanupUpdateCandidateCache,
+  createUpdateHandoff,
   installPreparedUpdateArtifact,
   prepareProductUpdate,
   readCurrentRelease,
   readUpdateState,
+  reapClaimedUpdateHandoffs,
   recordUpdateInstallationResult,
   releasePath,
+  removeUpdateHandoff,
   requireProductTarget,
   resolveProductPaths,
   runWithProductUpdateLease,
+  writeUpdateHandoff,
+  writeUpdateHandoffRecoveringStale,
 } from "@cinba/installer";
 import {
   createManagedSyncControlConfig,
@@ -42,6 +51,361 @@ type SyncSnapshot = {
   safeToStop?: boolean;
   draining?: boolean;
 };
+
+type SupportedPlatform = "win32" | "darwin" | "linux";
+
+export type UpdateRestartCommand = {
+  executable: string;
+  arguments: string[];
+  workingDirectory?: string;
+};
+
+export function createUpdateRestartCommand(options: {
+  platform: SupportedPlatform;
+  paths: Pick<ProductPaths, "launcherPath" | "desktopApplicationPath">;
+  handoff: UpdateHandoff;
+}): UpdateRestartCommand {
+  if (options.handoff.surface === "tui") {
+    const workingDirectory = (options.handoff.restart as { workingDirectory: string })
+      .workingDirectory;
+    return {
+      executable: options.paths.launcherPath,
+      arguments: ["tui", workingDirectory],
+      workingDirectory,
+    };
+  }
+  if (!options.paths.desktopApplicationPath) {
+    throw new Error("Cinba Desktop restart is unavailable on this platform");
+  }
+  return options.platform === "darwin"
+    ? {
+        executable: "/usr/bin/open",
+        arguments: [options.paths.desktopApplicationPath],
+      }
+    : {
+        executable: options.paths.desktopApplicationPath,
+        arguments: [],
+      };
+}
+
+export type RunUpdateRestart = (command: UpdateRestartCommand) => Promise<void>;
+
+export async function restartUpdateSurface(options: {
+  platform: SupportedPlatform;
+  paths: Pick<ProductPaths, "launcherPath" | "desktopApplicationPath">;
+  handoff: UpdateHandoff;
+  run?: RunUpdateRestart;
+}): Promise<void> {
+  const command = createUpdateRestartCommand(options);
+  await (
+    options.run ??
+    ((restart: UpdateRestartCommand) =>
+      new Promise<void>((resolveRestart, reject) => {
+        const child = spawn(restart.executable, restart.arguments, {
+          ...(restart.workingDirectory ? { cwd: restart.workingDirectory } : {}),
+          detached: true,
+          stdio: "ignore",
+          windowsHide: true,
+        });
+        child.once("spawn", () => {
+          child.unref();
+          resolveRestart();
+        });
+        child.once("error", reject);
+      }))
+  )(command);
+}
+
+function defaultProcessIsAlive(processId: number): boolean {
+  try {
+    process.kill(processId, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+export async function waitForProcessExit(
+  processId: number,
+  options: {
+    processIsAlive?: (processId: number) => boolean;
+    delay?: (milliseconds: number) => Promise<void>;
+    timeoutMs?: number;
+  } = {},
+): Promise<void> {
+  if (!Number.isSafeInteger(processId) || processId < 1) {
+    throw new Error("wait process id must be a positive integer");
+  }
+  const processIsAlive = options.processIsAlive ?? defaultProcessIsAlive;
+  const delay =
+    options.delay ??
+    ((milliseconds: number) =>
+      new Promise<void>((resolveDelay) => setTimeout(resolveDelay, milliseconds)));
+  const deadline = Date.now() + (options.timeoutMs ?? 30_000);
+  while (processIsAlive(processId)) {
+    if (Date.now() >= deadline) {
+      throw new Error("a Cinba foreground process did not exit in time");
+    }
+    await delay(100);
+  }
+}
+
+type DetachedHelper = {
+  processId: number;
+  terminate: () => Promise<void>;
+  detach?: () => void;
+};
+
+export async function launchForegroundUpdateHandoff(options: {
+  launcherPath: string;
+  stateDirectory: string;
+  handoff: UpdateHandoff;
+  lease: Pick<ProductUpdateLease, "transferTo" | "waitForClaim" | "cancelTransfer">;
+  parentProcessId?: number;
+  platform: SupportedPlatform;
+  makeTemporaryDirectory?: () => Promise<string>;
+  writeHandoff?: typeof writeUpdateHandoff;
+  copyFile?: (source: string, destination: string) => Promise<void>;
+  makeExecutable?: (path: string) => Promise<void>;
+  startDetached?: (executable: string, arguments_: readonly string[]) => Promise<DetachedHelper>;
+  removeHandoff?: (stateDirectory: string, id?: string) => Promise<void>;
+  removeTemporaryDirectory?: (path: string) => Promise<void>;
+}): Promise<void> {
+  const directory = await (
+    options.makeTemporaryDirectory ?? (() => mkdtemp(join(tmpdir(), "cinba-update-")))
+  )();
+  const helper = join(
+    directory,
+    options.platform === "win32" ? "cinba-update-helper.exe" : "cinba-update-helper",
+  );
+  let child: DetachedHelper | undefined;
+  try {
+    await (options.writeHandoff ?? writeUpdateHandoff)(options.stateDirectory, options.handoff);
+    await (options.copyFile ?? copyFile)(options.launcherPath, helper);
+    if (options.platform !== "win32") {
+      await (options.makeExecutable ?? ((path: string) => chmod(path, 0o700)))(helper);
+    }
+    child = await (
+      options.startDetached ??
+      ((executable: string, arguments_: readonly string[]) =>
+        new Promise<DetachedHelper>((resolveChild, reject) => {
+          const processChild = spawn(executable, [...arguments_], {
+            detached: true,
+            stdio: "inherit",
+            windowsHide: true,
+          });
+          processChild.once("spawn", () => {
+            if (!processChild.pid) {
+              reject(new Error("Cinba update helper did not report a PID"));
+              return;
+            }
+            resolveChild({
+              processId: processChild.pid,
+              terminate: () =>
+                new Promise<void>((resolveTermination) => {
+                  if (processChild.exitCode !== null) {
+                    resolveTermination();
+                    return;
+                  }
+                  processChild.once("exit", () => resolveTermination());
+                  if (!processChild.kill()) {
+                    resolveTermination();
+                  }
+                }),
+              detach: () => processChild.unref(),
+            });
+          });
+          processChild.once("error", reject);
+        }))
+    )(helper, ["__update-handoff-helper", String(options.parentProcessId ?? process.pid)]);
+    await options.lease.transferTo(child.processId);
+    await options.lease.waitForClaim(child.processId);
+    child.detach?.();
+  } catch (error) {
+    try {
+      await child?.terminate();
+    } catch {
+      // Preserve the handoff failure.
+    }
+    if (child) {
+      try {
+        await options.lease.cancelTransfer(child.processId);
+      } catch {
+        // Preserve the handoff failure.
+      }
+    }
+    try {
+      await (options.removeHandoff ?? removeUpdateHandoff)(
+        options.stateDirectory,
+        options.handoff.id,
+      );
+    } catch {
+      // Preserve the handoff failure.
+    }
+    try {
+      await (
+        options.removeTemporaryDirectory ??
+        ((path: string) => rm(path, { recursive: true, force: true }))
+      )(directory);
+    } catch {
+      // Preserve the handoff failure.
+    }
+    throw error;
+  }
+}
+
+export async function beginForegroundUpdateHandoff(options: {
+  platform: SupportedPlatform;
+  paths: ProductPaths;
+  target: ProductTarget;
+  surface: "desktop" | "tui";
+  blockingProcessId: number;
+  workingDirectory?: string;
+  processIsAlive?: (processId: number) => boolean;
+  now?: () => Date;
+  acquireLease?: (stateDirectory: string) => Promise<ProductUpdateLease>;
+  readState?: typeof readUpdateState;
+  reapClaimed?: typeof reapClaimedUpdateHandoffs;
+  reportHandoffRecovery?: (warning: string) => void;
+  launch?: typeof launchForegroundUpdateHandoff;
+}): Promise<void> {
+  if (!(options.processIsAlive ?? defaultProcessIsAlive)(options.blockingProcessId)) {
+    throw new Error("the foreground update blocking process is not running");
+  }
+  const lease = await (options.acquireLease ?? acquireProductUpdateLease)(
+    options.paths.stateDirectory,
+  );
+  let failure: unknown;
+  try {
+    const reaped = await (options.reapClaimed ?? reapClaimedUpdateHandoffs)(
+      options.paths.stateDirectory,
+      { currentLeaseToken: lease.token },
+    );
+    const report =
+      options.reportHandoffRecovery ??
+      ((warning: string) => {
+        console.warn(`[cinba] ${warning.slice(0, 2_048)}`);
+      });
+    for (const id of reaped.retained) {
+      report(`retained fresh claimed update handoff claimed-${id}.json`);
+    }
+    for (const warning of reaped.warnings) {
+      report(warning);
+    }
+    const state = await (options.readState ?? readUpdateState)(options.paths.stateDirectory);
+    if (
+      state?.phase !== "ready" ||
+      !state.candidate?.artifactPath ||
+      state.candidate.target !== options.target
+    ) {
+      throw new Error("foreground update handoff requires a matching ready update");
+    }
+    const handoff = createUpdateHandoff({
+      createdAt: (options.now ?? (() => new Date()))(),
+      surface: options.surface,
+      blockingProcessId: options.blockingProcessId,
+      candidate: state.candidate,
+      restart:
+        options.surface === "desktop" ? {} : { workingDirectory: options.workingDirectory ?? "" },
+      leaseToken: lease.token,
+    });
+    await (options.launch ?? launchForegroundUpdateHandoff)({
+      launcherPath: options.paths.launcherPath,
+      stateDirectory: options.paths.stateDirectory,
+      handoff,
+      lease,
+      platform: options.platform,
+      writeHandoff: (stateDirectory, value) =>
+        writeUpdateHandoffRecoveringStale(stateDirectory, value, {
+          currentLeaseToken: lease.token,
+        }),
+    });
+  } catch (error) {
+    failure = error;
+  }
+  try {
+    await lease.release();
+  } catch (error) {
+    failure ??= error;
+  }
+  if (failure) {
+    throw failure;
+  }
+}
+
+export async function runUpdateHandoffWorkerOperation(options: {
+  parentProcessId: number;
+  claimHandoff: () => Promise<UpdateHandoff>;
+  validateHandoff: (handoff: UpdateHandoff) => Promise<void>;
+  claimLease: (handoff: UpdateHandoff) => Promise<() => Promise<void>>;
+  waitForProcess: (processId: number) => Promise<void>;
+  install: (handoff: UpdateHandoff) => Promise<void>;
+  restart: (handoff: UpdateHandoff) => Promise<void>;
+  removeHandoff: (handoff: UpdateHandoff) => Promise<void>;
+  cleanupHelper: () => Promise<void>;
+  reportSecondaryFailure?: (error: unknown) => void;
+}): Promise<void> {
+  let handoff: UpdateHandoff | undefined;
+  let release: (() => Promise<void>) | undefined;
+  let failure: unknown;
+  let installationAttempted = false;
+  try {
+    handoff = await options.claimHandoff();
+    await options.validateHandoff(handoff);
+    release = await options.claimLease(handoff);
+    await options.waitForProcess(options.parentProcessId);
+    await options.waitForProcess(handoff.blockingProcessId);
+    installationAttempted = true;
+    await options.install(handoff);
+  } catch (error) {
+    failure = error;
+  }
+  if (handoff && installationAttempted) {
+    try {
+      await options.restart(handoff);
+    } catch (error) {
+      if (failure) {
+        options.reportSecondaryFailure?.(error);
+      } else {
+        failure = error;
+      }
+    }
+  }
+  if (handoff) {
+    try {
+      await options.removeHandoff(handoff);
+    } catch (error) {
+      if (failure) {
+        options.reportSecondaryFailure?.(error);
+      } else {
+        failure = error;
+      }
+    }
+  }
+  if (release) {
+    try {
+      await release();
+    } catch (error) {
+      if (failure) {
+        options.reportSecondaryFailure?.(error);
+      } else {
+        failure = error;
+      }
+    }
+  }
+  try {
+    await options.cleanupHelper();
+  } catch (error) {
+    if (failure) {
+      options.reportSecondaryFailure?.(error);
+    } else {
+      failure = error;
+    }
+  }
+  if (failure) {
+    throw failure;
+  }
+}
 
 export async function installPreparedCandidate(options: {
   stateDirectory: string;
@@ -261,139 +625,6 @@ export async function coordinateProductUpdate(options: {
   }
 }
 
-export async function launchWindowsUpdateHelper(options: {
-  launcherPath: string;
-  artifactPath: string;
-  version: string;
-  revision: string;
-  sha256: string;
-  lease: Pick<ProductUpdateLease, "token" | "transferTo" | "waitForClaim" | "cancelTransfer">;
-  processId?: number;
-  makeTemporaryDirectory?: () => Promise<string>;
-  copyFile?: (source: string, destination: string) => Promise<void>;
-  removeTemporaryDirectory?: (path: string) => Promise<void>;
-  startDetached?: (
-    executable: string,
-    arguments_: readonly string[],
-  ) => Promise<{
-    processId: number;
-    terminate: () => Promise<void>;
-    detach?: () => void;
-  }>;
-}): Promise<void> {
-  const directory = await (
-    options.makeTemporaryDirectory ?? (() => mkdtemp(join(tmpdir(), "cinba-update-")))
-  )();
-  const helper = win32.join(directory, "cinba-update-helper.exe");
-  let handoff:
-    | {
-        processId: number;
-        terminate: () => Promise<void>;
-        detach?: () => void;
-      }
-    | undefined;
-  try {
-    await (options.copyFile ?? copyFile)(options.launcherPath, helper);
-    handoff = await (
-      options.startDetached ??
-      ((executable: string, arguments_: readonly string[]) =>
-        new Promise<{
-          processId: number;
-          terminate: () => Promise<void>;
-          detach: () => void;
-        }>((resolve, reject) => {
-          const child = spawn(executable, [...arguments_], {
-            detached: true,
-            stdio: "inherit",
-            windowsHide: true,
-          });
-          child.once("spawn", () => {
-            if (!child.pid) {
-              reject(new Error("Windows update helper did not report a PID"));
-              return;
-            }
-            resolve({
-              processId: child.pid,
-              terminate: () =>
-                new Promise<void>((resolveTermination) => {
-                  if (child.exitCode !== null) {
-                    resolveTermination();
-                    return;
-                  }
-                  child.once("exit", () => resolveTermination());
-                  if (!child.kill()) {
-                    resolveTermination();
-                  }
-                }),
-              detach: () => {
-                child.unref();
-              },
-            });
-          });
-          child.once("error", reject);
-        }))
-    )(helper, [
-      "__update-helper",
-      String(options.processId ?? process.pid),
-      options.lease.token,
-      options.artifactPath,
-      options.version,
-      options.revision,
-      options.sha256,
-    ]);
-    await options.lease.transferTo(handoff.processId);
-    await options.lease.waitForClaim(handoff.processId);
-    handoff.detach?.();
-  } catch (error) {
-    try {
-      await handoff?.terminate();
-    } catch {
-      // Preserve the spawn/transfer error that explains why handoff did not start.
-    }
-    if (handoff) {
-      try {
-        await options.lease.cancelTransfer(handoff.processId);
-      } catch {
-        // Preserve the spawn/transfer/claim error.
-      }
-    }
-    try {
-      await (
-        options.removeTemporaryDirectory ??
-        ((path: string) => rm(path, { recursive: true, force: true }))
-      )(directory);
-    } catch {
-      // Preserve the copy/spawn error that explains why handoff did not start.
-    }
-    throw error;
-  }
-}
-
-function processExists(processId: number): boolean {
-  try {
-    process.kill(processId, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
-export async function waitForUpdateParentExit(
-  processId: number,
-  delay: (milliseconds: number) => Promise<void> = (milliseconds) =>
-    new Promise((resolve) => setTimeout(resolve, milliseconds)),
-): Promise<void> {
-  for (let attempt = 0; attempt < 300; attempt += 1) {
-    if (!processExists(processId)) {
-      return;
-    }
-    await delay(100);
-  }
-  throw new Error("the Cinba launcher did not exit in time");
-}
-
-type SupportedPlatform = "win32" | "darwin" | "linux";
-
 async function installedRelease(paths: ProductPaths, target: ProductTarget) {
   const current = await readCurrentRelease(paths);
   if (!current) {
@@ -505,7 +736,7 @@ async function installWithLifecycle(options: {
   });
 }
 
-function scheduleWindowsUpdateHelperCleanup(helper: string): void {
+function scheduleWindowsUpdateHelperCleanup(directory: string): void {
   const child = spawn(
     "powershell.exe",
     [
@@ -522,7 +753,7 @@ function scheduleWindowsUpdateHelperCleanup(helper: string): void {
       env: {
         ...process.env,
         CINBA_HELPER_PID: String(process.pid),
-        CINBA_HELPER_DIRECTORY: dirname(helper),
+        CINBA_HELPER_DIRECTORY: directory,
       },
       stdio: "ignore",
       windowsHide: true,
@@ -532,138 +763,126 @@ function scheduleWindowsUpdateHelperCleanup(helper: string): void {
   child.unref();
 }
 
-export async function runWindowsUpdateHelperOperation(options: {
-  claimUpdateLease: () => Promise<() => Promise<void>>;
-  waitForParent: () => Promise<void>;
-  validateTarget: () => Promise<void>;
-  install: () => Promise<void>;
-  cleanup: () => Promise<void>;
-}): Promise<void> {
-  let failure: unknown;
-  let release: (() => Promise<void>) | undefined;
-  try {
-    release = await options.claimUpdateLease();
-    await options.waitForParent();
-    await options.validateTarget();
-    await options.install();
-  } catch (error) {
-    failure = error;
-  }
-  if (release) {
-    try {
-      await release();
-    } catch (error) {
-      failure ??= error;
-    }
-  }
-  try {
-    await options.cleanup();
-  } catch (error) {
-    failure ??= error;
-  }
-  if (failure) {
-    throw failure;
-  }
+function boundedUpdateDiagnostic(error: unknown, secret?: string): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return (secret ? message.replaceAll(secret, "[redacted]") : message).slice(0, 2_048);
 }
 
-async function preparedWindowsUpdate(
-  paths: ProductPaths,
-  options: {
-    artifactPath: string;
-    version: string;
-    revision: string;
-    sha256: string;
-  },
-): Promise<{ currentVersion: string; candidate: UpdateCandidate }> {
-  const state = await readUpdateState(paths.stateDirectory);
-  const candidate = state?.candidate;
+export async function cleanupCopiedUpdateHelper(options: {
+  platform: SupportedPlatform;
+  helperPath: string;
+  temporaryDirectory?: string;
+  removeDirectory?: (path: string) => Promise<void>;
+  scheduleWindowsCleanup?: (path: string) => void;
+}): Promise<void> {
+  const temporaryDirectory = resolve(options.temporaryDirectory ?? tmpdir());
+  const helper = resolve(options.helperPath);
+  const directory = dirname(helper);
+  const expectedName =
+    options.platform === "win32" ? "cinba-update-helper.exe" : "cinba-update-helper";
   if (
-    state?.phase !== "ready" ||
-    !candidate ||
-    candidate.target !== "windows-x64" ||
-    candidate.artifactPath !== options.artifactPath ||
-    candidate.version !== options.version ||
-    candidate.revision !== options.revision ||
-    candidate.sha256 !== options.sha256
+    basename(helper) !== expectedName ||
+    dirname(directory) !== temporaryDirectory ||
+    !/^cinba-update-.+$/u.test(basename(directory))
   ) {
-    throw new Error("Windows update helper state does not match the prepared candidate");
+    throw new Error("update helper is not a safe Cinba update helper path");
   }
-  return { currentVersion: state.currentVersion, candidate };
+  const [directoryStatus, helperStatus] = await Promise.all([lstat(directory), lstat(helper)]);
+  if (directoryStatus.isSymbolicLink() || helperStatus.isSymbolicLink()) {
+    throw new Error("update helper cleanup path must not be a symbolic link");
+  }
+  if (!directoryStatus.isDirectory() || !helperStatus.isFile()) {
+    throw new Error("update helper cleanup path is not a regular helper file");
+  }
+  if (options.platform === "win32") {
+    (options.scheduleWindowsCleanup ?? scheduleWindowsUpdateHelperCleanup)(directory);
+  } else {
+    await (
+      options.removeDirectory ?? ((path: string) => rm(path, { recursive: true, force: true }))
+    )(directory);
+  }
 }
 
-export async function runWindowsUpdateHelper(options: {
-  parentProcessId: number;
-  leaseToken: string;
-  artifactPath: string;
-  version: string;
-  revision: string;
-  sha256: string;
-}): Promise<void> {
-  let paths: ProductPaths | undefined;
-  let prepared: Awaited<ReturnType<typeof preparedWindowsUpdate>> | undefined;
-  await runWindowsUpdateHelperOperation({
-    claimUpdateLease: async () => {
-      if (requireProductTarget() !== "windows-x64" || process.platform !== "win32") {
-        throw new Error("the Windows update helper is available only on Windows");
-      }
-      paths = resolveProductPaths({
-        platform: "win32",
-        homeDirectory: homedir(),
-        environment: process.env,
-      });
-      const lease = await claimTransferredProductUpdateLease(
-        paths.stateDirectory,
-        options.leaseToken,
-      );
-      return lease.release;
-    },
-    waitForParent: () => waitForUpdateParentExit(options.parentProcessId),
-    validateTarget: async () => {
-      if (!paths) {
-        throw new Error("Windows update paths were not initialized");
-      }
-      prepared = await preparedWindowsUpdate(paths, options);
-    },
-    install: async () => {
-      if (!paths || !prepared) {
-        throw new Error("Windows update paths were not initialized");
-      }
-      const currentPaths = paths;
-      const currentPrepared = prepared;
-      await installPreparedCandidate({
-        stateDirectory: currentPaths.stateDirectory,
-        currentVersion: currentPrepared.currentVersion,
-        candidate: currentPrepared.candidate,
-        install: () =>
-          installWithLifecycle({
-            paths: currentPaths,
-            target: "windows-x64",
-            artifactPath: options.artifactPath,
-            sha256: options.sha256,
-            version: options.version,
-            revision: options.revision,
-          }),
-        readCurrent: () => readCurrentRelease(currentPaths),
-        cleanup: () => cleanupCompletedUpdate(currentPaths, currentPrepared.candidate),
-        reportStateFailure: (error) => {
-          console.warn(
-            `[cinba] Could not record update failure: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        },
-        reportCleanupFailure: (error) => {
-          console.warn(
-            `[cinba] Update installed, but cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        },
-      });
-      console.log("Cinba update installed successfully.");
-    },
-    cleanup: async () => {
-      if (basename(process.execPath) === "cinba-update-helper.exe") {
-        scheduleWindowsUpdateHelperCleanup(process.execPath);
-      }
-    },
+export async function runUpdateHandoffHelper(options: { parentProcessId: number }): Promise<void> {
+  const platform = process.platform;
+  if (platform !== "win32" && platform !== "darwin" && platform !== "linux") {
+    throw new Error(`Cinba is not available on ${platform}`);
+  }
+  const target = requireProductTarget();
+  const paths = resolveProductPaths({
+    platform,
+    homeDirectory: homedir(),
+    environment: process.env,
   });
+  let leaseToken: string | undefined;
+  try {
+    await runUpdateHandoffWorkerOperation({
+      parentProcessId: options.parentProcessId,
+      claimHandoff: async () => {
+        const claimed = await claimUpdateHandoff(paths.stateDirectory);
+        leaseToken = claimed.handoff.leaseToken;
+        return claimed.handoff;
+      },
+      validateHandoff: async (handoff) => {
+        if (handoff.candidate.target !== target) {
+          throw new Error("update handoff target does not match this launcher");
+        }
+        await assertUpdateHandoffMatchesReadyState(paths.stateDirectory, handoff);
+      },
+      claimLease: async (handoff) => {
+        const lease = await claimTransferredProductUpdateLease(
+          paths.stateDirectory,
+          handoff.leaseToken,
+        );
+        return lease.release;
+      },
+      waitForProcess: (processId) => waitForProcessExit(processId),
+      install: async (handoff) => {
+        await assertUpdateHandoffMatchesReadyState(paths.stateDirectory, handoff);
+        const state = await readUpdateState(paths.stateDirectory);
+        if (state?.phase !== "ready" || !state.candidate) {
+          throw new Error("update handoff lost its ready candidate");
+        }
+        await installPreparedCandidate({
+          stateDirectory: paths.stateDirectory,
+          currentVersion: state.currentVersion,
+          candidate: handoff.candidate,
+          install: () =>
+            installWithLifecycle({
+              paths,
+              target,
+              artifactPath: handoff.candidate.artifactPath,
+              sha256: handoff.candidate.sha256,
+              version: handoff.candidate.version,
+              revision: handoff.candidate.revision,
+            }),
+          readCurrent: () => readCurrentRelease(paths),
+          cleanup: () => cleanupCompletedUpdate(paths, handoff.candidate),
+          reportStateFailure: (error) => {
+            console.warn(
+              `[cinba] Could not record update state: ${boundedUpdateDiagnostic(error)}`,
+            );
+          },
+          reportCleanupFailure: (error) => {
+            console.warn(`[cinba] Update cleanup failed: ${boundedUpdateDiagnostic(error)}`);
+          },
+        });
+      },
+      restart: (handoff) => restartUpdateSurface({ platform, paths, handoff }),
+      removeHandoff: (handoff) => removeUpdateHandoff(paths.stateDirectory, handoff.id),
+      cleanupHelper: () => cleanupCopiedUpdateHelper({ platform, helperPath: process.execPath }),
+      reportSecondaryFailure: (error) => {
+        console.warn(
+          `[cinba] Update follow-up failed: ${boundedUpdateDiagnostic(error, leaseToken)}`,
+        );
+      },
+    });
+    console.log("Cinba update installed successfully.");
+  } catch (error) {
+    throw new Error(`update handoff failed: ${boundedUpdateDiagnostic(error, leaseToken)}`, {
+      cause: error,
+    });
+  }
 }
 
 export async function runStableProductUpdate(options: {
@@ -674,6 +893,15 @@ export async function runStableProductUpdate(options: {
   confirm: (version: string) => Promise<boolean>;
 }): Promise<void> {
   await runWithProductUpdateLease(options.paths.stateDirectory, async (lease) => {
+    const reaped = await reapClaimedUpdateHandoffs(options.paths.stateDirectory, {
+      currentLeaseToken: lease.token,
+    });
+    for (const message of [
+      ...reaped.retained.map((id) => `retained fresh claimed update handoff claimed-${id}.json`),
+      ...reaped.warnings,
+    ]) {
+      console.warn(`[cinba] ${message.slice(0, 2_048)}`);
+    }
     const current = await installedRelease(options.paths, options.target);
     await runExplicitProductUpdate({
       interactive: options.interactive,
@@ -692,43 +920,25 @@ export async function runStableProductUpdate(options: {
         if (!candidate.artifactPath) {
           throw new Error("prepared update does not have an artifact");
         }
-        if (options.platform === "win32") {
-          await launchWindowsUpdateHelper({
-            launcherPath: options.paths.launcherPath,
-            artifactPath: candidate.artifactPath,
-            version: candidate.version,
-            revision: candidate.revision,
-            sha256: candidate.sha256,
-            lease,
-          });
-          return "started";
-        }
-        await installPreparedCandidate({
-          stateDirectory: options.paths.stateDirectory,
-          currentVersion: current.release.version,
+        const handoff = createUpdateHandoff({
+          surface: "tui",
+          blockingProcessId: process.pid,
           candidate,
-          install: () =>
-            installWithLifecycle({
-              paths: options.paths,
-              target: options.target,
-              artifactPath: candidate.artifactPath!,
-              sha256: candidate.sha256,
-              version: candidate.version,
-              revision: candidate.revision,
-            }),
-          readCurrent: () => readCurrentRelease(options.paths),
-          cleanup: () => cleanupCompletedUpdate(options.paths, candidate),
-          reportStateFailure: (error) => {
-            console.warn(
-              `[cinba] Could not record update failure: ${error instanceof Error ? error.message : String(error)}`,
-            );
-          },
-          reportCleanupFailure: (error) => {
-            console.warn(
-              `[cinba] Update installed, but cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
-            );
-          },
+          restart: { workingDirectory: process.cwd() },
+          leaseToken: lease.token,
         });
+        await launchForegroundUpdateHandoff({
+          launcherPath: options.paths.launcherPath,
+          stateDirectory: options.paths.stateDirectory,
+          handoff,
+          lease,
+          platform: options.platform,
+          writeHandoff: (stateDirectory, value) =>
+            writeUpdateHandoffRecoveringStale(stateDirectory, value, {
+              currentLeaseToken: lease.token,
+            }),
+        });
+        return "started";
       },
       write: console.log,
     });
