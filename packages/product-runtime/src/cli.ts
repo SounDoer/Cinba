@@ -10,6 +10,7 @@ import {
   stopLocalCore,
 } from "@cinba/core-manager";
 import { type ServiceMode, requireProductTarget, resolveProductPaths } from "@cinba/installer";
+import { checkForProductUpdatesAutomatically } from "./automatic-update.ts";
 import { resolveProductPayloadLayout } from "./layout.ts";
 import { formatInstalledDoctorReport, runInstalledDoctor } from "./doctor.ts";
 import {
@@ -35,6 +36,12 @@ export type ProductCommand =
   | { type: "help" };
 
 export type ProductServiceComponent = "core" | "sync";
+
+export type ProductCliDependencies = {
+  readRelease: typeof readProductRelease;
+  checkForUpdates: typeof checkForProductUpdatesAutomatically;
+  executeCommand?: (command: ProductCommand) => Promise<void>;
+};
 
 export type ProductServiceProcess = {
   component: ProductServiceComponent;
@@ -346,14 +353,62 @@ function formatCoreStatus(status: Awaited<ReturnType<typeof inspectLocalCore>>):
 export async function runProductCli(
   arguments_: readonly string[] = process.argv.slice(2),
   workingDirectory = process.cwd(),
+  overrides: Partial<ProductCliDependencies> = {},
 ): Promise<void> {
+  const dependencies: ProductCliDependencies = {
+    readRelease: readProductRelease,
+    checkForUpdates: checkForProductUpdatesAutomatically,
+    ...overrides,
+  };
   const payloadRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const payload = resolveProductPayloadLayout(payloadRoot);
-  const release = await readProductRelease(payload.root);
+  const release = await dependencies.readRelease(payload.root);
   if (release.target !== requireProductTarget()) {
     throw new Error(`this ${release.target} release cannot run on the current platform`);
   }
   const command = parseProductCommand(arguments_, workingDirectory);
+  if (command.type === "tui") {
+    const controller = new AbortController();
+    const platform = process.platform;
+    if (platform !== "win32" && platform !== "darwin" && platform !== "linux") {
+      throw new Error(`Cinba is not available on ${platform}`);
+    }
+    const paths = resolveProductPaths({
+      platform,
+      homeDirectory: homedir(),
+      environment: process.env,
+    });
+    const automaticUpdate = dependencies
+      .checkForUpdates({ release, paths, signal: controller.signal })
+      .catch(() => undefined);
+    try {
+      if (dependencies.executeCommand) {
+        await dependencies.executeCommand(command);
+        return;
+      }
+      const config = createProductCoreConfig(payload.root);
+      await ensureLocalCore({ config, expectedRevision: release.revision });
+      const code = await waitForExit(
+        spawn(process.execPath, [payload.tuiEntry], {
+          cwd: command.workingDirectory,
+          stdio: "inherit",
+          windowsHide: true,
+          env: process.env,
+        }),
+      );
+      if (code !== 0) {
+        throw new Error(`Cinba terminal exited with code ${code}`);
+      }
+      return;
+    } finally {
+      controller.abort();
+      await automaticUpdate;
+    }
+  }
+  if (dependencies.executeCommand) {
+    await dependencies.executeCommand(command);
+    return;
+  }
   if (command.type === "help") {
     console.log(formatProductHelp());
     return;
@@ -402,19 +457,6 @@ export async function runProductCli(
   if (command.type === "sync") {
     await runProductService(createProductServiceProcess(payload.root, release.revision, "sync"));
     return;
-  }
-
-  await ensureLocalCore({ config, expectedRevision: release.revision });
-  const code = await waitForExit(
-    spawn(process.execPath, [payload.tuiEntry], {
-      cwd: command.workingDirectory,
-      stdio: "inherit",
-      windowsHide: true,
-      env: process.env,
-    }),
-  );
-  if (code !== 0) {
-    throw new Error(`Cinba terminal exited with code ${code}`);
   }
 }
 

@@ -1,12 +1,34 @@
 import assert from "node:assert/strict";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { requireProductTarget } from "@cinba/installer";
 import {
   createProductCoreConfig,
   createProductServiceProcess,
   formatProductHelp,
   parseProductCommand,
+  runProductCli,
 } from "./cli.ts";
+import type { ProductRelease } from "./release.ts";
+
+const release: ProductRelease = {
+  schemaVersion: 1,
+  product: "Cinba",
+  version: "0.1.0",
+  revision: "a".repeat(40),
+  protocolVersion: 1,
+  dataFormatVersion: 1,
+  target: requireProductTarget(),
+  nodeVersion: "24.0.0",
+};
+
+function deferred<T>() {
+  let resolvePromise!: (value: T) => void;
+  const promise = new Promise<T>((settle) => {
+    resolvePromise = settle;
+  });
+  return { promise, resolve: resolvePromise };
+}
 
 test("the installed command defaults to the TUI and keeps management explicit", () => {
   const project = resolve("project");
@@ -108,4 +130,110 @@ test("foreground Sync never receives managed ownership records or a control toke
   });
   assert.equal(service.controlStateDirectory, undefined);
   assert.equal(service.environment.CINBA_LOCAL_SYNC_CONTROL_TOKEN, undefined);
+});
+
+test("the installed TUI aborts and joins its non-blocking automatic update check", async () => {
+  let checks = 0;
+  let executions = 0;
+  let signal: AbortSignal | undefined;
+  const tuiStarted = deferred<void>();
+  const aborted = deferred<void>();
+  const cleanup = deferred<undefined>();
+  const running = runProductCli([], resolve("project"), {
+    readRelease: async () => release,
+    checkForUpdates: (options) => {
+      checks += 1;
+      signal = options.signal;
+      signal?.addEventListener("abort", () => aborted.resolve());
+      return cleanup.promise;
+    },
+    executeCommand: async (command) => {
+      executions += 1;
+      assert.equal(command.type, "tui");
+      assert.equal(checks, 1);
+      assert.equal(signal?.aborted, false);
+      tuiStarted.resolve();
+    },
+  });
+
+  await tuiStarted.promise;
+  assert.equal(checks, 1);
+  assert.equal(executions, 1);
+  assert.equal(
+    await Promise.race([
+      aborted.promise.then(() => true),
+      new Promise<boolean>((settle) => setImmediate(() => settle(false))),
+    ]),
+    true,
+  );
+  await aborted.promise;
+  assert.equal(signal?.aborted, true);
+
+  let completed = false;
+  void running.then(() => {
+    completed = true;
+  });
+  await Promise.resolve();
+  assert.equal(completed, false);
+
+  cleanup.resolve(undefined);
+  await running;
+  assert.equal(completed, true);
+});
+
+test("TUI failure is preserved after automatic update cleanup", async () => {
+  const childError = new Error("terminal stopped by SIGTERM");
+  const cleanup = deferred<undefined>();
+  const aborted = deferred<void>();
+  const running = runProductCli([], resolve("project"), {
+    readRelease: async () => release,
+    checkForUpdates: (options) => {
+      options.signal?.addEventListener("abort", () => aborted.resolve());
+      return cleanup.promise;
+    },
+    executeCommand: async () => {
+      throw childError;
+    },
+  });
+
+  const rejection = assert.rejects(running, (error: unknown) => error === childError);
+  assert.equal(
+    await Promise.race([
+      aborted.promise.then(() => true),
+      new Promise<boolean>((settle) => setImmediate(() => settle(false))),
+    ]),
+    true,
+  );
+  await aborted.promise;
+  cleanup.resolve(undefined);
+  await rejection;
+});
+
+test("non-TUI installed commands do not start automatic update checks", async () => {
+  const commands = [
+    ["help"],
+    ["version"],
+    ["doctor"],
+    ["service", "core"],
+    ["core", "status"],
+    ["sync", "serve"],
+  ];
+  let checks = 0;
+  let executions = 0;
+
+  for (const commandArguments of commands) {
+    await runProductCli(commandArguments, resolve("project"), {
+      readRelease: async () => release,
+      checkForUpdates: async () => {
+        checks += 1;
+        return undefined;
+      },
+      executeCommand: async () => {
+        executions += 1;
+      },
+    });
+  }
+
+  assert.equal(checks, 0);
+  assert.equal(executions, commands.length);
 });

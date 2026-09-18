@@ -104,6 +104,28 @@ test("discovers one target artifact from an immutable stable Cinba release", asy
   }
 });
 
+test("release and manifest requests share the caller abort signal", async () => {
+  const controller = new AbortController();
+  const signals: Array<AbortSignal | null | undefined> = [];
+  const fakeFetch: typeof fetch = async (input, init) => {
+    signals.push(init?.signal);
+    return String(input) === CINBA_RELEASE_API
+      ? Response.json(githubRelease())
+      : Response.json(manifest());
+  };
+
+  await discoverCinbaUpdate({
+    currentVersion: "0.1.0",
+    currentRevision: "0".repeat(40),
+    target: "windows-x64",
+    signal: controller.signal,
+    fetch: fakeFetch,
+    probeSystem: async () => supportedSystems["windows-x64"],
+  });
+
+  assert.deepEqual(signals, [controller.signal, controller.signal]);
+});
+
 test("a same or older immutable release leaves the installation current", async () => {
   const result = await discoverCinbaUpdate({
     currentVersion: "0.2.0",

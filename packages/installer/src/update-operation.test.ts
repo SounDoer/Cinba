@@ -39,6 +39,7 @@ function available(): Extract<UpdateDiscovery, { state: "available" }> {
 test("one update operation advances through discovery and download to ready", async () => {
   const root = await mkdtemp(join(tmpdir(), "cinba-update-operation-"));
   const artifactPath = join(root, "cache", "Cinba.exe");
+  const controller = new AbortController();
   try {
     const result = await prepareProductUpdate({
       currentVersion: "0.1.0",
@@ -47,7 +48,11 @@ test("one update operation advances through discovery and download to ready", as
       stateDirectory: join(root, "state"),
       cacheDirectory: join(root, "cache"),
       now: () => new Date("2026-09-18T01:02:03Z"),
-      discover: async () => available(),
+      signal: controller.signal,
+      discover: async (options) => {
+        assert.equal(options.signal, controller.signal);
+        return available();
+      },
       download: async () => ({
         version: "0.2.0",
         revision,

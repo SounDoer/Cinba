@@ -147,6 +147,7 @@ export async function discoverCinbaUpdate(options: {
   currentRevision: string;
   target: ProductTarget;
   fetch?: typeof fetch;
+  signal?: AbortSignal;
   probeSystem?: (target: ProductTarget) => Promise<DetectedSystem>;
 }): Promise<UpdateDiscovery> {
   stableVersionParts(options.currentVersion);
@@ -158,7 +159,11 @@ export async function discoverCinbaUpdate(options: {
   };
   const release = parseGitHubRelease(
     await jsonResponse(
-      await fetcher(CINBA_RELEASE_API, { headers, redirect: "error" }),
+      await fetcher(CINBA_RELEASE_API, {
+        headers,
+        redirect: "error",
+        ...(options.signal ? { signal: options.signal } : {}),
+      }),
       "GitHub latest release",
       1_000_000,
     ),
@@ -177,7 +182,11 @@ export async function discoverCinbaUpdate(options: {
   );
   const manifest = parseReleaseManifest(
     await jsonResponse(
-      await fetcher(manifestUrl, { headers, redirect: "follow" }),
+      await fetcher(manifestUrl, {
+        headers,
+        redirect: "follow",
+        ...(options.signal ? { signal: options.signal } : {}),
+      }),
       "Cinba release manifest",
       1_000_000,
     ),

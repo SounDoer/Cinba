@@ -87,6 +87,7 @@ export async function prepareProductUpdate(options: {
       currentRevision: options.currentRevision,
       target: options.target,
       ...(options.fetch ? { fetch: options.fetch } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
     });
     if (update.state === "current") {
       const current = state("current", options.currentVersion, checkedAt, null);

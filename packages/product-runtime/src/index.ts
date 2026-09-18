@@ -7,7 +7,17 @@ export {
   parseProductCommand,
   runProductCli,
 } from "./cli.ts";
-export type { ProductCommand, ProductServiceComponent, ProductServiceProcess } from "./cli.ts";
+export type {
+  ProductCliDependencies,
+  ProductCommand,
+  ProductServiceComponent,
+  ProductServiceProcess,
+} from "./cli.ts";
+export {
+  checkForProductUpdatesAutomatically,
+  toAutomaticUpdateViewModel,
+} from "./automatic-update.ts";
+export type { AutomaticUpdateViewModel } from "./automatic-update.ts";
 export {
   formatProductComponentMode,
   inspectProductComponentMode,
