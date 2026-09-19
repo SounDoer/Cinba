@@ -288,6 +288,51 @@ function isDetectedSystem(value: unknown, target: ProductTarget): value is Detec
   );
 }
 
+/** Node's fetch reports every network failure as "fetch failed"; the reason is in its cause. */
+function networkFailureDetail(error: unknown): string {
+  let cause = error instanceof Error && error.cause !== undefined ? error.cause : error;
+  // A refused connection to several addresses arrives as an AggregateError without a message.
+  if (cause instanceof AggregateError && !cause.message && cause.errors.length > 0) {
+    cause = cause.errors[0];
+  }
+  if (cause instanceof Error) {
+    const code = (cause as NodeJS.ErrnoException).code;
+    if (!cause.message) {
+      return code ?? cause.name;
+    }
+    return code && !cause.message.includes(code) ? `${code}: ${cause.message}` : cause.message;
+  }
+  return String(cause);
+}
+
+/** Names what could not be reached and why; a cancellation stays the caller's own abort error. */
+export function networkFailure(
+  message: string,
+  error: unknown,
+  signal: AbortSignal | null | undefined,
+): unknown {
+  if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) {
+    return error;
+  }
+  return new Error(`${message} (${networkFailureDetail(error)}).`, { cause: error });
+}
+
+async function fetchReleaseResource(
+  fetcher: typeof fetch,
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  try {
+    return await fetcher(url, init);
+  } catch (error) {
+    throw networkFailure(
+      "Cinba could not reach GitHub Releases to check for updates",
+      error,
+      init.signal,
+    );
+  }
+}
+
 export async function discoverCinbaUpdate(options: {
   currentVersion: string;
   currentRevision: string;
@@ -305,7 +350,7 @@ export async function discoverCinbaUpdate(options: {
   };
   const release = parseGitHubRelease(
     await jsonResponse(
-      await fetcher(CINBA_RELEASE_API, {
+      await fetchReleaseResource(fetcher, CINBA_RELEASE_API, {
         headers,
         redirect: "error",
         ...(options.signal ? { signal: options.signal } : {}),
@@ -328,7 +373,7 @@ export async function discoverCinbaUpdate(options: {
   );
   const manifest = parseReleaseManifest(
     await jsonResponse(
-      await fetcher(manifestUrl, {
+      await fetchReleaseResource(fetcher, manifestUrl, {
         headers,
         redirect: "follow",
         ...(options.signal ? { signal: options.signal } : {}),

@@ -156,6 +156,61 @@ test("a server without range support safely replaces the partial artifact", asyn
   }
 });
 
+test("a download that cannot connect names GitHub Releases and the network cause", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-update-offline-"));
+  try {
+    await assert.rejects(
+      downloadUpdateCandidate({
+        update: update(),
+        cacheDirectory: root,
+        fetch: async () => {
+          throw new TypeError("fetch failed", {
+            cause: Object.assign(new Error("getaddrinfo ENOTFOUND github.com"), {
+              code: "ENOTFOUND",
+            }),
+          });
+        },
+      }),
+      /^Error: Cinba could not download the update from GitHub Releases \(getaddrinfo ENOTFOUND github\.com\)\.$/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a connection lost mid-download is named and keeps the received bytes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-update-dropped-"));
+  const candidate = update();
+  const partialPath = join(root, "updates", revision, `${candidate.artifact.fileName}.partial`);
+  try {
+    await assert.rejects(
+      downloadUpdateCandidate({
+        update: candidate,
+        cacheDirectory: root,
+        fetch: async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(body.subarray(0, 7));
+              },
+              pull(controller) {
+                controller.error(
+                  new TypeError("terminated", {
+                    cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
+                  }),
+                );
+              },
+            }),
+          ),
+      }),
+      /^Error: Cinba could not download the update from GitHub Releases \(read ECONNRESET\)\.$/,
+    );
+    assert.deepEqual(new Uint8Array(await readFile(partialPath)), body.subarray(0, 7));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("cancellation is forwarded without deleting resumable progress", async () => {
   const root = await mkdtemp(join(tmpdir(), "cinba-update-cancel-"));
   const candidate = update();

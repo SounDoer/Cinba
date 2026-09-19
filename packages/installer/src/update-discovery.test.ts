@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
+import { type AddressInfo, createServer } from "node:net";
 import test from "node:test";
 import {
   CINBA_RELEASE_API,
@@ -141,6 +143,84 @@ test("a same or older immutable release leaves the installation current", async 
     probeSystem: async () => supportedSystems["linux-x64-gnu"],
   });
   assert.equal(result.state, "current");
+});
+
+test("an unreachable GitHub Releases names the check and the network cause", async () => {
+  const lookupFailure = Object.assign(new Error("getaddrinfo ENOTFOUND api.github.com"), {
+    code: "ENOTFOUND",
+  });
+  const server = createServer().listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const closedPort = (server.address() as AddressInfo).port;
+  server.close();
+  await once(server, "close");
+  const failures: Array<[typeof fetch, RegExp]> = [
+    [
+      async () => {
+        throw new TypeError("fetch failed", { cause: lookupFailure });
+      },
+      /\(getaddrinfo ENOTFOUND api\.github\.com\)\.$/,
+    ],
+    // Node's own fetch, refused by a closed local port, reports the cause as ECONNREFUSED.
+    [async (_input, init) => fetch(`http://127.0.0.1:${closedPort}/`, init), /ECONNREFUSED/],
+  ];
+  for (const [fetcher, cause] of failures) {
+    await assert.rejects(
+      discoverCinbaUpdate({
+        currentVersion: "0.1.0",
+        currentRevision: "0".repeat(40),
+        target: "windows-x64",
+        fetch: fetcher,
+      }),
+      (error) => {
+        assert.ok(error instanceof Error);
+        assert.match(
+          error.message,
+          /^Cinba could not reach GitHub Releases to check for updates \(/,
+        );
+        assert.match(error.message, cause);
+        assert.ok(error.cause instanceof TypeError);
+        return true;
+      },
+    );
+  }
+});
+
+test("a manifest download that cannot connect is reported the same way", async () => {
+  await assert.rejects(
+    discoverCinbaUpdate({
+      currentVersion: "0.1.0",
+      currentRevision: "0".repeat(40),
+      target: "windows-x64",
+      fetch: async (input) => {
+        if (String(input) === CINBA_RELEASE_API) {
+          return Response.json(githubRelease());
+        }
+        throw new TypeError("fetch failed", {
+          cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
+        });
+      },
+    }),
+    /^Error: Cinba could not reach GitHub Releases to check for updates \(read ECONNRESET\)\.$/,
+  );
+});
+
+test("a cancelled check keeps the abort error", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(
+    discoverCinbaUpdate({
+      currentVersion: "0.1.0",
+      currentRevision: "0".repeat(40),
+      target: "windows-x64",
+      signal: controller.signal,
+      fetch: async (_input, init) => {
+        init?.signal?.throwIfAborted();
+        return Response.json(githubRelease());
+      },
+    }),
+    { name: "AbortError" },
+  );
 });
 
 test("accepts each target exactly at its manifest minimum system boundary", async () => {

@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, open, rename, rm, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import type { UpdateDiscovery } from "./update-discovery.ts";
+import { type UpdateDiscovery, networkFailure } from "./update-discovery.ts";
+
+const DOWNLOAD_FAILURE = "Cinba could not download the update from GitHub Releases";
 
 export type DownloadedUpdate = {
   version: string;
@@ -57,6 +59,7 @@ async function writeResponse(
   path: string,
   expectedSize: number,
   existingSize: number,
+  signal: AbortSignal | undefined,
 ): Promise<number> {
   if (!response.ok) {
     throw new Error(`update download failed with HTTP ${response.status}`);
@@ -88,7 +91,13 @@ async function writeResponse(
   try {
     const reader = response.body.getReader();
     while (true) {
-      const result = await reader.read();
+      let result: Awaited<ReturnType<typeof reader.read>>;
+      try {
+        result = await reader.read();
+      } catch (error) {
+        // The connection dropped mid-download; the partial file is kept for the next attempt.
+        throw networkFailure(DOWNLOAD_FAILURE, error, signal);
+      }
       if (result.done) {
         break;
       }
@@ -146,15 +155,26 @@ export async function downloadUpdateCandidate(options: {
   await rm(artifactPath, { force: true });
   const partialPath = `${artifactPath}.partial`;
   const existingSize = await partialSize(partialPath, expected.size);
-  const response = await (options.fetch ?? fetch)(update.downloadUrl, {
-    headers: {
-      "User-Agent": `Cinba/${update.currentVersion}`,
-      ...(existingSize > 0 ? { Range: `bytes=${existingSize}-` } : {}),
-    },
-    redirect: "follow",
-    signal: options.signal,
-  });
-  const size = await writeResponse(response, partialPath, expected.size, existingSize);
+  let response: Response;
+  try {
+    response = await (options.fetch ?? fetch)(update.downloadUrl, {
+      headers: {
+        "User-Agent": `Cinba/${update.currentVersion}`,
+        ...(existingSize > 0 ? { Range: `bytes=${existingSize}-` } : {}),
+      },
+      redirect: "follow",
+      signal: options.signal,
+    });
+  } catch (error) {
+    throw networkFailure(DOWNLOAD_FAILURE, error, options.signal);
+  }
+  const size = await writeResponse(
+    response,
+    partialPath,
+    expected.size,
+    existingSize,
+    options.signal,
+  );
   const sha256 = size === expected.size ? await fileSha256(partialPath) : "";
   if (size !== expected.size || sha256 !== expected.sha256) {
     if (size >= expected.size) {
