@@ -106,6 +106,68 @@ test("macOS normal uninstall includes release storage outside the application", 
   );
 });
 
+test("each platform removes only its own empty product root, never the shared parent", () => {
+  const purge = {
+    mode: "purge",
+    authorization: { kind: "non-interactive", deleteAllCinbaData: true },
+  } as const;
+  const cases: Array<[ResolveProductPathsOptions, string]> = [
+    [pathOptions, "C:\\Users\\cinba-test\\AppData\\Local\\Cinba"],
+    [
+      { platform: "darwin", homeDirectory: "/Users/ada", environment: {} },
+      "/Users/ada/Library/Application Support/com.soundoer.cinba",
+    ],
+    [
+      { platform: "linux", homeDirectory: "/home/ada", environment: {} },
+      "/home/ada/.local/share/cinba",
+    ],
+    [
+      {
+        platform: "linux",
+        homeDirectory: "/home/ada",
+        identity: "development",
+        environment: { XDG_DATA_HOME: "/srv/xdg" },
+      },
+      "/srv/xdg/cinba-dev",
+    ],
+  ];
+  for (const [options, productRoot] of cases) {
+    assert.deepEqual(createUninstallPlan(options, purge).emptyParents, [productRoot]);
+    assert.deepEqual(createUninstallPlan(options, { mode: "normal" }).emptyParents, [productRoot]);
+  }
+});
+
+test("purge leaves no empty Cinba-owned directory behind", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-uninstall-purge-"));
+  const options = nativePathOptions(root);
+  const plan = createUninstallPlan(options, {
+    mode: "purge",
+    authorization: { kind: "non-interactive", deleteAllCinbaData: true },
+  });
+  try {
+    for (const target of plan.targets) {
+      await mkdir(target.kind === "launcher" ? dirname(target.path) : target.path, {
+        recursive: true,
+      });
+      await writeFile(
+        target.kind === "launcher" ? target.path : join(target.path, "owned.txt"),
+        target.kind,
+      );
+    }
+    const [productRoot] = plan.emptyParents;
+    assert.ok(productRoot);
+    const sharedParent = dirname(productRoot);
+    await writeFile(join(sharedParent, "other-application.txt"), "not Cinba");
+
+    const result = await executeUninstallPlan(plan);
+    assert.deepEqual(result.failed, []);
+    await assert.rejects(access(productRoot), { code: "ENOENT" });
+    assert.equal(await readFile(join(sharedParent, "other-application.txt"), "utf8"), "not Cinba");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("normal uninstall executes every owned target while preserving durable data", async () => {
   const root = await mkdtemp(join(tmpdir(), "cinba-uninstall-execute-"));
   const options = nativePathOptions(root);
@@ -151,6 +213,7 @@ test("uninstall continues through bounded failures and releases state before the
       { kind: "cache" as const, path: join(process.cwd(), "cache") },
     ],
     preserved: [],
+    emptyParents: [],
   };
   const delays: number[] = [];
   const result = await executeUninstallPlan(
@@ -207,6 +270,7 @@ test(
         mode: "normal",
         targets: [{ kind: "program", path: program }],
         preserved: [],
+        emptyParents: [],
       });
       assert.deepEqual(result.failed, []);
       await assert.rejects(access(program), { code: "ENOENT" });

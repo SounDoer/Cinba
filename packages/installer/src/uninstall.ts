@@ -1,6 +1,7 @@
-import { rm } from "node:fs/promises";
+import { rm, rmdir } from "node:fs/promises";
 import { dirname, isAbsolute, posix, resolve, win32 } from "node:path";
 import {
+  PRODUCT_IDENTITIES,
   type ProductPaths,
   type ResolveProductPathsOptions,
   resolveProductPaths,
@@ -34,6 +35,8 @@ export type UninstallPlan = {
   mode: UninstallRequest["mode"];
   targets: UninstallTarget[];
   preserved: { kind: "persistent-data" | "configuration"; path: string }[];
+  /** Cinba-owned directories that hold targets; each is removed after them only if left empty. */
+  emptyParents: string[];
 };
 
 export type UninstallResult = {
@@ -124,6 +127,22 @@ export function createUninstallPlan(
   if (!inside(pathImplementation, paths.launcherDirectory, checked.launcher)) {
     throw new Error("launcherPath must be inside launcherDirectory");
   }
+  // Data sits in a directory of its own on every platform, which on Windows and macOS also holds
+  // state, logs, or releases. Only that directory is owned; the shared directory above it is not.
+  const productRoot = validateProductPath(
+    pathImplementation,
+    pathImplementation.dirname(checked.data),
+    "product root",
+  );
+  const definition = PRODUCT_IDENTITIES[paths.identity];
+  const ownedNames: readonly string[] = [
+    definition.directoryName,
+    definition.slug,
+    definition.applicationId,
+  ];
+  if (!ownedNames.includes(pathImplementation.basename(productRoot))) {
+    throw new Error("dataDirectory must be inside a Cinba-owned directory");
+  }
 
   const targets: UninstallTarget[] = [
     { kind: "program", path: checked.program },
@@ -152,6 +171,7 @@ export function createUninstallPlan(
             { kind: "configuration", path: checked.configuration },
           ]
         : [],
+    emptyParents: [productRoot],
   };
 }
 
@@ -205,6 +225,14 @@ export async function executeUninstallPlan(
       result.removed.push(target);
     } catch (error) {
       result.failed.push({ target, error });
+    }
+  }
+  for (const parent of plan.emptyParents) {
+    try {
+      // rmdir removes only an empty directory, so preserved data or a failure log keeps it.
+      await rmdir(validateNativePath(parent, "uninstall parent"));
+    } catch {
+      // Not empty, already gone, or still in use; it held nothing the plan was asked to remove.
     }
   }
   return result;
