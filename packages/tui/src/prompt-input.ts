@@ -24,8 +24,14 @@ const UPDATE_COMMAND: TuiLocalCommand = {
   summary: "install the ready update and restart",
 };
 
+const UNINSTALL_COMMAND: TuiLocalCommand = {
+  source: "tui",
+  name: "uninstall",
+  summary: "uninstall Cinba from this computer, optionally deleting all data",
+};
+
 export function createTuiLocalCommands(installed: boolean): readonly TuiLocalCommand[] {
-  return installed ? [UPDATE_COMMAND] : [];
+  return installed ? [UPDATE_COMMAND, UNINSTALL_COMMAND] : [];
 }
 
 function matchTuiCommands(

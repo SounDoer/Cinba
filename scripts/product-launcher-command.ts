@@ -28,7 +28,18 @@ export type StableLauncherCommand =
     }
   | { type: "check-update-readiness"; expectedVersion: string }
   | { type: "uninstall"; purge: boolean; deleteAllCinbaData: boolean }
-  | { type: "uninstall-helper"; parentProcessId: number; purge: boolean }
+  | {
+      type: "uninstall-helper";
+      parentProcessId: number;
+      purge: boolean;
+      blockingProcessId?: number;
+    }
+  | {
+      type: "begin-uninstall";
+      surface: "desktop" | "tui";
+      blockingProcessId: number;
+      purge: boolean;
+    }
   | { type: "product"; arguments: string[] };
 
 export function parseStableLauncherCommand(
@@ -57,16 +68,40 @@ export function parseStableLauncherCommand(
     };
   }
   if (
-    arguments_.length === 3 &&
+    (arguments_.length === 3 || arguments_.length === 4) &&
     arguments_[0] === "__uninstall-helper" &&
     /^[1-9]\d*$/.test(arguments_[1]!) &&
-    (arguments_[2] === "normal" || arguments_[2] === "purge")
+    (arguments_[2] === "normal" || arguments_[2] === "purge") &&
+    (arguments_.length === 3 || /^[1-9]\d*$/.test(arguments_[3]!))
   ) {
     const parentProcessId = Number(arguments_[1]);
     if (!Number.isSafeInteger(parentProcessId)) {
       throw new Error("uninstall helper parent process id is invalid");
     }
-    return { type: "uninstall-helper", parentProcessId, purge: arguments_[2] === "purge" };
+    return {
+      type: "uninstall-helper",
+      parentProcessId,
+      purge: arguments_[2] === "purge",
+      ...(arguments_.length === 4
+        ? { blockingProcessId: parsePositiveProcessId(arguments_[3]!) }
+        : {}),
+    };
+  }
+  if (
+    arguments_.length === 4 &&
+    arguments_[0] === "__begin-uninstall" &&
+    (arguments_[1] === "desktop" || arguments_[1] === "tui") &&
+    (arguments_[3] === "normal" || arguments_[3] === "purge")
+  ) {
+    return {
+      type: "begin-uninstall",
+      surface: arguments_[1],
+      blockingProcessId: parsePositiveProcessId(arguments_[2]!),
+      purge: arguments_[3] === "purge",
+    };
+  }
+  if (arguments_[0] === "__begin-uninstall") {
+    throw new Error("invalid foreground uninstall command");
   }
   if (
     arguments_.length === 4 &&

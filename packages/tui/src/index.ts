@@ -65,6 +65,8 @@ import {
   denyTuiProjectTrustDuringHandoff,
   launchTuiUpdateHandoff,
 } from "./tui-update.ts";
+import { createTuiUninstall, launchTuiUninstallHandoff } from "./tui-uninstall.ts";
+import { TextInput } from "./settings-components.ts";
 
 /**
  * Which core to talk to. Nothing here starts one: the service has to be running.
@@ -748,6 +750,52 @@ const installReadyUpdate = createTuiInstallReadyUpdate({
   showNotice: (text) => applyAction({ type: "notice", text }),
 });
 
+/** Ask for one line of text in place of the input at the bottom. */
+function askTuiText(label: string): Promise<string | undefined> {
+  return new Promise<string | undefined>((resolve) => {
+    const input = new TextInput(label);
+    let releaseOwnership = (): boolean => false;
+    const finish = (value: string | undefined): void => {
+      releaseOwnership();
+      confirming = false;
+      showPrompt();
+      resolve(value);
+    };
+    input.onAnswer = finish;
+    releaseOwnership = interactionOwner.replace(() => finish(undefined));
+    confirming = true;
+    setBottom(input);
+    tui.setFocus(input);
+  });
+}
+
+const uninstallProduct = createTuiUninstall({
+  launcher: installedProductLauncher,
+  isBusy: () => busy,
+  isCompacting: () => compacting,
+  choose: (title, choices) =>
+    new Promise<string | undefined>((resolve) => choose(title, choices, resolve)),
+  confirm: confirmTuiUpdate,
+  askText: askTuiText,
+  handoffController: updateHandoffController,
+  stopObserver: stopProductUpdateObservation,
+  restartObserver: startProductUpdateObservation,
+  signal: updateInstallAbort.signal,
+  launch: (executable, arguments_, signal) =>
+    launchTuiUninstallHandoff(executable, arguments_, { signal }),
+  exit,
+  showNotice: (text) => applyAction({ type: "notice", text }),
+});
+
+/** Run one of the installed TUI's own commands. */
+function runTuiCommand(name: string): void {
+  if (name === "uninstall") {
+    void uninstallProduct();
+  } else {
+    void installReadyUpdate();
+  }
+}
+
 const syncFlow = new SyncFlow(new CoreSyncControlClient(SERVER_URL), {
   append: (line) => transcript.append(line),
   showInteraction: showFlowInteraction,
@@ -919,7 +967,7 @@ function submitInput(value: string, delivery: "default" | "followUp" = "default"
       if (command?.source === "tui") {
         promptInput.input.setValue("");
         promptInput.clearHints();
-        void installReadyUpdate();
+        runTuiCommand(command.name);
         return;
       }
       applyAction({ type: "notice", text: "Commands cannot be queued while answering." });
@@ -932,7 +980,7 @@ function submitInput(value: string, delivery: "default" | "followUp" = "default"
     if (command?.source === "cinba") {
       runCommand(command, text);
     } else if (command?.source === "tui") {
-      void installReadyUpdate();
+      runTuiCommand(command.name);
     } else if (command?.source === "skill") {
       coreClient.prompt(text);
     } else {

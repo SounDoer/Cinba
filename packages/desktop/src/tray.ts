@@ -7,6 +7,7 @@ import {
 } from "@cinba/core-manager";
 import type { ProductUpdateViewModel } from "@cinba/product-runtime";
 import { createDesktopUpdatePresentation } from "./desktop-api.ts";
+import type { DesktopUninstallMode } from "./desktop-uninstall.ts";
 import type { CoreProfile } from "./profiles.ts";
 import type { CoreProfileStore } from "./profile-store.ts";
 
@@ -48,6 +49,22 @@ export function createTrayUpdateMenuItem(
         installReadyUpdate();
       }
     },
+  };
+}
+
+/** Only an installed Desktop can remove the product; purge stays a separate, explicit entry. */
+export function createTrayUninstallMenuItem(
+  uninstall: ((mode: DesktopUninstallMode) => void) | undefined,
+): { label: string; submenu: { label: string; click: () => void }[] } | undefined {
+  if (!uninstall) {
+    return undefined;
+  }
+  return {
+    label: "Uninstall",
+    submenu: [
+      { label: "Uninstall Cinba…", click: () => uninstall("normal") },
+      { label: "Uninstall and Delete All Data…", click: () => uninstall("purge") },
+    ],
   };
 }
 
@@ -206,6 +223,7 @@ export async function createSystemTrayController(options: {
   expectedRevision?: string;
   productName?: "Cinba" | "Cinba Dev";
   installReadyUpdate: () => Promise<void>;
+  uninstall?: (mode: DesktopUninstallMode) => Promise<void>;
 }): Promise<SystemTrayController> {
   const { Menu, Tray, app, nativeImage, shell } = await import("electron");
   let status = STOPPED;
@@ -270,6 +288,11 @@ export async function createSystemTrayController(options: {
           click: () => void refreshStatus(),
         },
         { label: "Open Local Core Log", click: () => void openCoreLog() },
+        ...[
+          createTrayUninstallMenuItem(
+            options.uninstall && ((mode) => void options.uninstall?.(mode)),
+          ),
+        ].filter((item) => item !== undefined),
         { label: `Quit ${productName}`, click: () => app.quit() },
       ]),
     );

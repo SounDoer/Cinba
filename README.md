@@ -77,7 +77,9 @@ safely interrupted. `cinba update` performs an immediate explicit check.
 
 Normal uninstall removes the program, release cache, launchers, and managed service registrations
 while preserving user data. `--purge` requires confirmation and also removes Cinba data. It never
-removes an independently owned Pi installation.
+removes an independently owned Pi installation. Desktop offers the same two choices under the tray's
+Uninstall menu, and an installed TUI offers them through `/uninstall`; both refuse while Core has
+active work, hand removal to a separate helper, and quit before anything is deleted.
 
 ## Cinba and Cinba Dev
 

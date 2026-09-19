@@ -21,6 +21,11 @@ import {
   createDesktopUpdateConfirmation,
   launchDesktopUpdateHandoff,
 } from "./desktop-update.ts";
+import {
+  confirmDesktopUninstall,
+  createDesktopUninstall,
+  launchDesktopUninstallHandoff,
+} from "./desktop-uninstall.ts";
 import { createCoreProfileStore } from "./profile-store.ts";
 import { type SystemTrayController, createSystemTrayController } from "./tray.ts";
 import { type DesktopWindowController, createDesktopWindowController } from "./window.ts";
@@ -211,6 +216,27 @@ if (!hasSingleInstanceLock) {
           });
         },
       });
+      const uninstall = createDesktopUninstall({
+        identity: runtime.identity,
+        launcherPath: paths.launcherPath,
+        processId: process.pid,
+        signal: updateInstallAbort.signal,
+        confirm: (mode) =>
+          confirmDesktopUninstall(mode, (options) => dialog.showMessageBox(options)),
+        launch: (executable, arguments_) =>
+          launchDesktopUninstallHandoff(executable, arguments_, {
+            signal: updateInstallAbort.signal,
+          }),
+        quit: () => app.quit(),
+        showError: async (message) => {
+          await dialog.showMessageBox({
+            type: "error",
+            title: "Cinba Uninstall Failed",
+            message: "Cinba could not start the uninstall.",
+            detail: message,
+          });
+        },
+      });
       removeIpcHandlers = registerDesktopIpc(window, installReadyUpdate);
       tray = await createSystemTrayController({
         openWindow: window.open,
@@ -220,6 +246,7 @@ if (!hasSingleInstanceLock) {
         localConfig,
         productName: runtime.displayName,
         installReadyUpdate,
+        ...(runtime.identity === "release" ? { uninstall } : {}),
         ...(release ? { expectedRevision: release.revision } : {}),
       });
       if (runtime.identity === "release" && release) {

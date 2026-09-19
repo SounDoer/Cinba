@@ -6,13 +6,13 @@ import {
   parseProductUpdateReadinessJson,
 } from "@cinba/product-runtime/automatic-update";
 
-const MAX_ERROR_LENGTH = 2_048;
+export const MAX_ERROR_LENGTH = 2_048;
 const MAX_CAPTURE_LENGTH = 4_096;
 export const TUI_READINESS_TIMEOUT_MS = 10_000;
 export const TUI_HANDOFF_TIMEOUT_MS = 60_000;
 const TUI_TERMINATION_GRACE_MS = 250;
 
-type TuiUpdateChildOptions = {
+export type TuiUpdateChildOptions = {
   signal?: AbortSignal;
   timeoutMilliseconds?: number;
   terminationGraceMilliseconds?: number;
@@ -26,7 +26,7 @@ type TuiUpdateChildResult = {
   stdoutExceeded: boolean;
 };
 
-function runTuiUpdateChild(
+export function runTuiUpdateChild(
   executable: string,
   arguments_: readonly string[],
   stdio: "ignore" | ["ignore", "pipe", "pipe"] | ["ignore", "ignore", "pipe"],
@@ -165,17 +165,23 @@ export class TuiUpdateHandoffTimeoutError extends Error {
 export class TuiUpdateHandoffController {
   #active: AbortController | undefined;
   #blockedInteractionNoticeShown = false;
+  #purpose: "update" | "uninstall" = "update";
 
   get inProgress(): boolean {
     return this.#active !== undefined;
   }
 
-  begin(): { signal: AbortSignal; finish: () => void } {
+  get purpose(): "update" | "uninstall" {
+    return this.#purpose;
+  }
+
+  begin(purpose: "update" | "uninstall" = "update"): { signal: AbortSignal; finish: () => void } {
     if (this.#active) {
-      throw new Error("TUI update handoff is already in progress");
+      throw new Error(`TUI ${this.#purpose} handoff is already in progress`);
     }
     const controller = new AbortController();
     this.#active = controller;
+    this.#purpose = purpose;
     this.#blockedInteractionNoticeShown = false;
     return {
       signal: controller.signal,
@@ -194,7 +200,7 @@ export class TuiUpdateHandoffController {
     }
     if (!this.#blockedInteractionNoticeShown) {
       this.#blockedInteractionNoticeShown = true;
-      showNotice("Preparing update handoff…");
+      showNotice(`Preparing ${this.#purpose} handoff…`);
     }
     return true;
   }
@@ -211,7 +217,7 @@ function denyTuiRemoteRequestDuringHandoff(
     return false;
   }
   respond(requestId, false);
-  showNotice(`${requestName} was denied while the update handoff was in progress.`);
+  showNotice(`${requestName} was denied while the ${controller.purpose} handoff was in progress.`);
   return true;
 }
 

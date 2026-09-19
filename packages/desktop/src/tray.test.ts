@@ -3,9 +3,24 @@ import test from "node:test";
 import {
   createCoreMenuItems,
   createTrayBitmap,
+  createTrayUninstallMenuItem,
   createTrayUpdateMenuItem,
   createTrayViewModel,
 } from "./tray.ts";
+
+test("installed Desktop offers normal uninstall and a separate delete-all-data entry", () => {
+  assert.equal(createTrayUninstallMenuItem(undefined), undefined);
+  const modes: string[] = [];
+  const item = createTrayUninstallMenuItem((mode) => modes.push(mode));
+  assert.deepEqual(
+    item?.submenu.map((entry) => entry.label),
+    ["Uninstall Cinba…", "Uninstall and Delete All Data…"],
+  );
+  for (const entry of item?.submenu ?? []) {
+    entry.click();
+  }
+  assert.deepEqual(modes, ["normal", "purge"]);
+});
 
 test("tray icons are non-empty BGRA bitmaps with transparent corners", () => {
   for (const tone of ["stopped", "running", "busy", "error"] as const) {

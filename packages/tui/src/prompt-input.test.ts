@@ -47,6 +47,18 @@ test("development TUI does not register installed local commands", () => {
 test("installed local command catalogue supplies the update help entry", () => {
   assert.deepEqual(
     createTuiLocalCommands(true).map((command) => `/${command.name}  ${command.summary}`),
-    ["/update  install the ready update and restart"],
+    [
+      "/update  install the ready update and restart",
+      "/uninstall  uninstall Cinba from this computer, optionally deleting all data",
+    ],
   );
+});
+
+test("installed local uninstall command is selected by exact input", () => {
+  const prompt = new PromptInput();
+  prompt.setTuiCommands(createTuiLocalCommands(true));
+  for (const key of "/uninstall") {
+    prompt.handleInput(key);
+  }
+  assert.equal(prompt.pending()?.name, "uninstall");
 });

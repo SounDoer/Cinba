@@ -21,6 +21,7 @@ import {
   waitForMacosInstallerExit,
 } from "./macos-install-handoff.ts";
 import {
+  beginForegroundUninstall,
   confirmPurge,
   launchUninstallHelper,
   runUninstallHelper,
@@ -105,6 +106,10 @@ async function run(): Promise<void> {
   }
   if (launcherCommand.type === "uninstall-helper") {
     await runUninstallHelper(launcherCommand);
+    return;
+  }
+  if (launcherCommand.type === "begin-uninstall") {
+    await beginForegroundUninstall(launcherCommand);
     return;
   }
   if (launcherCommand.type === "uninstall") {

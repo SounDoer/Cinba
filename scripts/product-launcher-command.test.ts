@@ -65,6 +65,41 @@ test("the copied launcher recognizes only a bounded uninstall helper command", (
     parseStableLauncherCommand(["__uninstall-helper", "0", "purge"], resolve("cinba")),
     { type: "product", arguments: ["__uninstall-helper", "0", "purge"] },
   );
+  assert.deepEqual(
+    parseStableLauncherCommand(["__uninstall-helper", "123", "normal", "456"], resolve("cinba")),
+    { type: "uninstall-helper", parentProcessId: 123, purge: false, blockingProcessId: 456 },
+  );
+  assert.deepEqual(
+    parseStableLauncherCommand(["__uninstall-helper", "123", "normal", "0"], resolve("cinba")),
+    { type: "product", arguments: ["__uninstall-helper", "123", "normal", "0"] },
+  );
+});
+
+test("foreground uninstall accepts only surface, blocking PID, and removal mode", () => {
+  const executable = resolve("cinba");
+  assert.deepEqual(
+    parseStableLauncherCommand(["__begin-uninstall", "desktop", "123", "normal"], executable),
+    { type: "begin-uninstall", surface: "desktop", blockingProcessId: 123, purge: false },
+  );
+  assert.deepEqual(
+    parseStableLauncherCommand(["__begin-uninstall", "tui", "123", "purge"], executable),
+    { type: "begin-uninstall", surface: "tui", blockingProcessId: 123, purge: true },
+  );
+  for (const commandArguments of [
+    ["__begin-uninstall", "desktop", "123"],
+    ["__begin-uninstall", "web", "123", "normal"],
+    ["__begin-uninstall", "desktop", "123", "--force"],
+    ["__begin-uninstall", "desktop", "123", "purge", "extra"],
+  ]) {
+    assert.throws(
+      () => parseStableLauncherCommand(commandArguments, executable),
+      /invalid foreground uninstall command/,
+    );
+  }
+  assert.throws(
+    () => parseStableLauncherCommand(["__begin-uninstall", "desktop", "0", "normal"], executable),
+    /process id must be a positive integer/,
+  );
 });
 
 test("foreground update handoff accepts only surface, blocking PID, expected version, and TUI cwd", () => {

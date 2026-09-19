@@ -5,13 +5,13 @@ import {
   parseProductUpdateReadinessJson,
 } from "@cinba/product-runtime";
 
-const MAX_ERROR_LENGTH = 2_048;
+export const MAX_ERROR_LENGTH = 2_048;
 const MAX_CAPTURE_LENGTH = 4_096;
 export const DESKTOP_READINESS_TIMEOUT_MS = 10_000;
 export const DESKTOP_HANDOFF_TIMEOUT_MS = 60_000;
 const DESKTOP_TERMINATION_GRACE_MS = 250;
 
-type DesktopUpdateChildOptions = {
+export type DesktopUpdateChildOptions = {
   signal?: AbortSignal;
   timeoutMilliseconds?: number;
   terminationGraceMilliseconds?: number;
@@ -25,7 +25,7 @@ type DesktopUpdateChildResult = {
   stdoutExceeded: boolean;
 };
 
-function runDesktopUpdateChild(
+export function runDesktopUpdateChild(
   executable: string,
   arguments_: readonly string[],
   stdio: "ignore" | ["ignore", "pipe", "pipe"],

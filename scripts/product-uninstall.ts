@@ -62,14 +62,17 @@ function uninstallCoreConfig(options: {
   };
 }
 
-async function waitForParentExit(processId: number): Promise<void> {
+async function waitForParentExit(
+  processId: number,
+  description = "the Cinba launcher",
+): Promise<void> {
   for (let attempt = 0; attempt < 300; attempt += 1) {
     if (!processExists(processId)) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error("the Cinba launcher did not exit in time");
+  throw new Error(`${description} did not exit in time`);
 }
 
 export async function confirmPurge(): Promise<void> {
@@ -90,7 +93,9 @@ export async function confirmPurge(): Promise<void> {
   }
 }
 
-export async function stopProductForUninstall(): Promise<void> {
+export async function stopProductForUninstall(
+  options: { stopDesktop?: boolean } = {},
+): Promise<void> {
   const platform = supportedPlatform();
   const homeDirectory = homedir();
   const paths = resolveProductPaths({ platform, homeDirectory, environment: process.env });
@@ -106,7 +111,7 @@ export async function stopProductForUninstall(): Promise<void> {
     throw new Error("Cinba cannot be uninstalled while the local Core has active work");
   }
   // A running Desktop keeps its program files open, which would stall the uninstall helper.
-  if (platform === "win32" && paths.desktopApplicationPath) {
+  if (platform === "win32" && paths.desktopApplicationPath && options.stopDesktop !== false) {
     const stopped = await stopWindowsDesktopApplication({
       desktopApplicationPath: paths.desktopApplicationPath,
     });
@@ -132,7 +137,10 @@ export async function stopProductForUninstall(): Promise<void> {
   }
 }
 
-export async function launchUninstallHelper(options: { purge: boolean }): Promise<void> {
+export async function launchUninstallHelper(options: {
+  purge: boolean;
+  blockingProcessId?: number;
+}): Promise<void> {
   const paths = resolveProductPaths({
     platform: supportedPlatform(),
     homeDirectory: homedir(),
@@ -151,10 +159,17 @@ export async function launchUninstallHelper(options: { purge: boolean }): Promis
     }
     child = spawn(
       helper,
-      ["__uninstall-helper", String(process.pid), options.purge ? "purge" : "normal"],
+      [
+        "__uninstall-helper",
+        String(process.pid),
+        options.purge ? "purge" : "normal",
+        ...(options.blockingProcessId ? [String(options.blockingProcessId)] : []),
+      ],
       {
         detached: true,
-        stdio: "inherit",
+        // A surface reads this launcher's stderr until it closes; an inherited pipe held by the
+        // helper would stay open until the surface itself exits, which the helper waits for.
+        stdio: options.blockingProcessId ? "ignore" : "inherit",
         windowsHide: true,
       },
     );
@@ -176,6 +191,33 @@ export async function launchUninstallHelper(options: { purge: boolean }): Promis
     await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     throw error;
   }
+}
+
+/**
+ * Uninstall requested from a running Desktop or TUI. That surface cannot remove itself, so this
+ * refuses active Core work while it can still report back, stops the services, and leaves the
+ * removal to a detached helper that first waits for the surface to exit. A requesting Desktop is
+ * not force-stopped here: it would take its own quit handling with it, and the helper stops any
+ * leftovers once the Desktop process is gone.
+ */
+export async function beginForegroundUninstall(
+  options: { surface: "desktop" | "tui"; blockingProcessId: number; purge: boolean },
+  dependencies: {
+    processIsAlive?: (processId: number) => boolean;
+    stopProduct?: typeof stopProductForUninstall;
+    launchHelper?: typeof launchUninstallHelper;
+  } = {},
+): Promise<void> {
+  if (!(dependencies.processIsAlive ?? processExists)(options.blockingProcessId)) {
+    throw new Error("the Cinba process that requested the uninstall is not running");
+  }
+  await (dependencies.stopProduct ?? stopProductForUninstall)({
+    stopDesktop: options.surface !== "desktop",
+  });
+  await (dependencies.launchHelper ?? launchUninstallHelper)({
+    purge: options.purge,
+    blockingProcessId: options.blockingProcessId,
+  });
 }
 
 async function removeProductIntegrations(platform: SupportedPlatform): Promise<void> {
@@ -239,10 +281,17 @@ function scheduleWindowsHelperCleanup(helper: string): void {
 export async function runUninstallHelper(options: {
   parentProcessId: number;
   purge: boolean;
+  blockingProcessId?: number;
 }): Promise<void> {
   const platform = supportedPlatform();
   try {
     await waitForParentExit(options.parentProcessId);
+    if (options.blockingProcessId) {
+      await waitForParentExit(options.blockingProcessId, "the Cinba Desktop or TUI");
+      // The surface may have reconnected to Core before it exited, and a requesting Desktop was
+      // left running; this helper is a copy outside the install, so stopping Desktop spares it.
+      await stopProductForUninstall();
+    }
     const homeDirectory = homedir();
     await removeProductIntegrations(platform);
     const plan = createUninstallPlan(
