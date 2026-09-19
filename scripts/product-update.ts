@@ -44,6 +44,7 @@ import {
   stopManagedSyncControl,
   waitForManagedSyncExit,
 } from "@cinba/product-runtime";
+import { scheduleWindowsHelperDirectoryRemoval } from "./windows-helper-cleanup.ts";
 
 type ComponentSnapshot = { mode: ServiceMode; running: boolean };
 type CoreSnapshot = { running: boolean; managed: boolean; safeToStop?: boolean };
@@ -861,33 +862,6 @@ async function installWithLifecycle(options: {
   });
 }
 
-function scheduleWindowsUpdateHelperCleanup(directory: string): void {
-  const child = spawn(
-    "powershell.exe",
-    [
-      "-NoLogo",
-      "-NoProfile",
-      "-NonInteractive",
-      "-WindowStyle",
-      "Hidden",
-      "-Command",
-      "Wait-Process -Id $env:CINBA_HELPER_PID -ErrorAction SilentlyContinue; Remove-Item -LiteralPath $env:CINBA_HELPER_DIRECTORY -Recurse -Force -ErrorAction SilentlyContinue",
-    ],
-    {
-      detached: true,
-      env: {
-        ...process.env,
-        CINBA_HELPER_PID: String(process.pid),
-        CINBA_HELPER_DIRECTORY: directory,
-      },
-      stdio: "ignore",
-      windowsHide: true,
-    },
-  );
-  child.once("error", () => {});
-  child.unref();
-}
-
 function boundedUpdateDiagnostic(error: unknown, secret?: string): string {
   const message = error instanceof Error ? error.message : String(error);
   return (secret ? message.replaceAll(secret, "[redacted]") : message).slice(0, 2_048);
@@ -920,7 +894,7 @@ export async function cleanupCopiedUpdateHelper(options: {
     throw new Error("update helper cleanup path is not a regular helper file");
   }
   if (options.platform === "win32") {
-    (options.scheduleWindowsCleanup ?? scheduleWindowsUpdateHelperCleanup)(directory);
+    (options.scheduleWindowsCleanup ?? scheduleWindowsHelperDirectoryRemoval)(directory);
   } else {
     await (
       options.removeDirectory ?? ((path: string) => rm(path, { recursive: true, force: true }))

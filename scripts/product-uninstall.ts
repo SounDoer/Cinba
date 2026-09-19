@@ -20,6 +20,7 @@ import {
   inspectProductComponentMode,
   setProductComponentMode,
 } from "../packages/product-runtime/src/managed-services.ts";
+import { scheduleWindowsHelperDirectoryRemoval } from "./windows-helper-cleanup.ts";
 
 type SupportedPlatform = "win32" | "darwin" | "linux";
 
@@ -251,33 +252,6 @@ async function removeProductIntegrations(platform: SupportedPlatform): Promise<v
   }
 }
 
-function scheduleWindowsHelperCleanup(helper: string): void {
-  const child = spawn(
-    "powershell.exe",
-    [
-      "-NoLogo",
-      "-NoProfile",
-      "-NonInteractive",
-      "-WindowStyle",
-      "Hidden",
-      "-Command",
-      "Wait-Process -Id $env:CINBA_HELPER_PID -ErrorAction SilentlyContinue; Remove-Item -LiteralPath $env:CINBA_HELPER_DIRECTORY -Recurse -Force -ErrorAction SilentlyContinue",
-    ],
-    {
-      detached: true,
-      env: {
-        ...process.env,
-        CINBA_HELPER_PID: String(process.pid),
-        CINBA_HELPER_DIRECTORY: dirname(helper),
-      },
-      stdio: "ignore",
-      windowsHide: true,
-    },
-  );
-  child.once("error", () => {});
-  child.unref();
-}
-
 export async function runUninstallHelper(options: {
   parentProcessId: number;
   purge: boolean;
@@ -317,7 +291,7 @@ export async function runUninstallHelper(options: {
   } finally {
     const helper = process.execPath;
     if (platform === "win32") {
-      scheduleWindowsHelperCleanup(helper);
+      scheduleWindowsHelperDirectoryRemoval(dirname(helper));
     } else if (basename(dirname(helper)).startsWith("cinba-uninstall-")) {
       await rm(dirname(helper), { recursive: true, force: true });
     }
