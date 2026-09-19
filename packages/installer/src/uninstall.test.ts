@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { access, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -151,14 +152,27 @@ test("uninstall continues through bounded failures and releases state before the
     ],
     preserved: [],
   };
-  const result = await executeUninstallPlan(plan, async (path) => {
-    calls.push(path.toString());
-    if (path.toString().endsWith("program")) {
-      throw new Error("busy");
-    }
-  });
-  assert.deepEqual(calls, [
-    join(process.cwd(), "program"),
+  const delays: number[] = [];
+  const result = await executeUninstallPlan(
+    plan,
+    async (path) => {
+      calls.push(path.toString());
+      if (path.toString().endsWith("program")) {
+        throw new Error("busy");
+      }
+    },
+    async (milliseconds) => {
+      delays.push(milliseconds);
+    },
+  );
+  // Program files can stay locked for a while after Desktop exits, so they are retried with
+  // backoff for about 30 seconds before the rest of the plan continues.
+  const programAttempts = calls.filter((path) => path.endsWith("program")).length;
+  assert.equal(programAttempts, delays.length + 1);
+  assert.deepEqual(delays.slice(0, 6), [100, 200, 400, 800, 1_600, 2_000]);
+  const waited = delays.reduce((total, milliseconds) => total + milliseconds, 0);
+  assert.ok(waited >= 30_000 && waited < 32_000);
+  assert.deepEqual(calls.slice(programAttempts), [
     join(process.cwd(), "cache"),
     join(process.cwd(), "state"),
     join(process.cwd(), "launcher"),
@@ -166,3 +180,38 @@ test("uninstall continues through bounded failures and releases state before the
   assert.equal(result.failed.length, 1);
   assert.equal(result.removed.length, 3);
 });
+
+test(
+  "program files locked briefly after Desktop exits are still removed",
+  { skip: process.platform !== "win32" },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "cinba-uninstall-locked-"));
+    const program = join(root, "Programs", "Cinba");
+    const desktop = join(program, "desktop");
+    try {
+      await mkdir(desktop, { recursive: true });
+      const image = join(desktop, "Cinba.exe");
+      await copyFile(process.execPath, image);
+      // A running image cannot be deleted; this one exits after the first attempts fail.
+      const running = spawn(image, ["-e", "setTimeout(() => {}, 1500)"], {
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      await new Promise<void>((resolve, reject) => {
+        running.once("spawn", resolve);
+        running.once("error", reject);
+      });
+      const result = await executeUninstallPlan({
+        schemaVersion: 1,
+        identity: "release",
+        mode: "normal",
+        targets: [{ kind: "program", path: program }],
+        preserved: [],
+      });
+      assert.deepEqual(result.failed, []);
+      await assert.rejects(access(program), { code: "ENOENT" });
+    } finally {
+      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  },
+);

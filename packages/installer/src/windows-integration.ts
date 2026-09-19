@@ -40,10 +40,12 @@ if ($action -eq 'install') {
 
 // Desktop is a tray app without a window to close, so the uninstall terminates it. It keeps no
 // unsaved state of its own; the caller has already confirmed that Core has no active work.
+// Every process started from the Desktop directory counts: Electron's GPU, renderer, utility,
+// and crash reporter children outlive the main process briefly and keep its files open.
 const WINDOWS_DESKTOP_STOP_SCRIPT = String.raw`
 $ErrorActionPreference = 'Stop'
-$path = $env:CINBA_DESKTOP_APPLICATION
-function Get-CinbaDesktop { Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq $path } }
+$directory = [System.IO.Path]::GetDirectoryName($env:CINBA_DESKTOP_APPLICATION) + [System.IO.Path]::DirectorySeparatorChar
+function Get-CinbaDesktop { Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($directory, [System.StringComparison]::OrdinalIgnoreCase) } }
 $processes = @(Get-CinbaDesktop)
 foreach ($process in $processes) { Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue }
 foreach ($process in $processes) { Wait-Process -Id $process.ProcessId -Timeout 30 -ErrorAction SilentlyContinue }

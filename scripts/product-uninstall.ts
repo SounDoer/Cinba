@@ -1,5 +1,15 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { appendFile, chmod, copyFile, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
+import {
+  appendFile,
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readdir,
+  rename,
+  rm,
+  stat,
+} from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, posix, win32 } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -158,12 +168,49 @@ function currentProductPaths(): ProductPaths {
 const UNINSTALL_HELPER_LOG = "uninstall-helper.log";
 const REPORTED_UNINSTALL_HELPER_LOG = "uninstall-helper.reported.log";
 
+const HELPER_DIRECTORY_PREFIX = "cinba-uninstall-";
+// A helper finishes within a couple of minutes; an older copy was abandoned.
+const ABANDONED_HELPER_AGE_MS = 10 * 60_000;
+
+/**
+ * A launcher killed while it copied the helper leaves a partial copy that nothing runs or removes.
+ * Removal fails harmlessly for a copy that is still running on Windows.
+ */
+async function removeAbandonedHelperDirectories(temporaryDirectory: string): Promise<void> {
+  let names: string[];
+  try {
+    names = await readdir(temporaryDirectory);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (!name.startsWith(HELPER_DIRECTORY_PREFIX)) {
+      continue;
+    }
+    const directory = join(temporaryDirectory, name);
+    try {
+      const status = await stat(directory);
+      if (status.isDirectory() && Date.now() - status.mtimeMs > ABANDONED_HELPER_AGE_MS) {
+        await rm(directory, { recursive: true, force: true });
+      }
+    } catch {
+      // Still in use or already gone.
+    }
+  }
+}
+
 export async function launchUninstallHelper(
   options: { purge: boolean; blockingProcessId?: number },
-  dependencies: { paths?: ProductPaths; spawnHelper?: typeof spawn } = {},
+  dependencies: {
+    paths?: ProductPaths;
+    spawnHelper?: typeof spawn;
+    temporaryDirectory?: string;
+  } = {},
 ): Promise<void> {
   const paths = dependencies.paths ?? currentProductPaths();
-  const directory = await mkdtemp(join(tmpdir(), "cinba-uninstall-"));
+  const temporaryDirectory = dependencies.temporaryDirectory ?? tmpdir();
+  await removeAbandonedHelperDirectories(temporaryDirectory);
+  const directory = await mkdtemp(join(temporaryDirectory, HELPER_DIRECTORY_PREFIX));
   const helper = join(
     directory,
     process.platform === "win32" ? "cinba-helper.exe" : "cinba-helper",
@@ -183,6 +230,9 @@ export async function launchUninstallHelper(
         ...(options.blockingProcessId ? [String(options.blockingProcessId)] : []),
       ],
       {
+        // Desktop starts in its own program directory, and Windows cannot remove a directory
+        // that a running process works in, so the helper must not inherit that directory.
+        cwd: temporaryDirectory,
         detached: true,
         // A surface reads this launcher's stderr until it closes; an inherited pipe held by the
         // helper would stay open until the surface itself exits, which the helper waits for.
@@ -268,6 +318,33 @@ async function removeProductIntegrations(platform: SupportedPlatform): Promise<v
   }
 }
 
+/**
+ * Windows can keep Desktop's files locked after its processes exit, beyond the retries in the
+ * uninstall plan. Rather than leave a half-removed install, the program directory is moved aside,
+ * so a reinstall cannot collide with it, and a detached shell removes it once the files are
+ * released. If that never happens, the shell leaves the helper failure log for the next launch.
+ */
+export async function deferWindowsProgramRemoval(
+  programDirectory: string,
+  logDirectory: string,
+  dependencies: {
+    move?: (from: string, to: string) => Promise<void>;
+    schedule?: typeof scheduleWindowsHelperDirectoryRemoval;
+  } = {},
+): Promise<void> {
+  const aside = `${programDirectory}.uninstall-${String(process.pid)}`;
+  let pending = programDirectory;
+  try {
+    await (dependencies.move ?? rename)(programDirectory, aside);
+    pending = aside;
+  } catch {
+    // A lock that blocks the rename too; remove the directory where it is.
+  }
+  (dependencies.schedule ?? scheduleWindowsHelperDirectoryRemoval)(pending, {
+    failureLog: join(logDirectory, UNINSTALL_HELPER_LOG),
+  });
+}
+
 async function removeProduct(platform: SupportedPlatform, purge: boolean): Promise<void> {
   await removeProductIntegrations(platform);
   const plan = createUninstallPlan(
@@ -280,9 +357,18 @@ async function removeProduct(platform: SupportedPlatform, purge: boolean): Promi
       : { mode: "normal" },
   );
   const result = await executeUninstallPlan(plan);
-  if (result.failed.length > 0) {
+  const failed = [];
+  for (const failure of result.failed) {
+    if (platform === "win32" && failure.target.kind === "program") {
+      await deferWindowsProgramRemoval(failure.target.path, currentProductPaths().logDirectory);
+      console.log("Cinba will finish removing its program files once Windows releases them.");
+    } else {
+      failed.push(failure);
+    }
+  }
+  if (failed.length > 0) {
     throw new Error(
-      `Cinba uninstall could not remove: ${result.failed.map(({ target }) => target.kind).join(", ")}`,
+      `Cinba uninstall could not remove: ${failed.map(({ target }) => target.kind).join(", ")}`,
     );
   }
 }
@@ -292,13 +378,17 @@ async function removeProduct(platform: SupportedPlatform, purge: boolean): Promi
  * next launch can report it. Both uninstall modes remove the log directory, so a log left behind
  * means the uninstall did not finish.
  */
-async function recordUninstallHelperFailure(paths: ProductPaths, error: unknown): Promise<void> {
+async function recordUninstallHelperFailure(
+  paths: ProductPaths,
+  error: unknown,
+  phases: readonly string[],
+): Promise<void> {
   const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
   try {
     await mkdir(paths.logDirectory, { recursive: true });
     await appendFile(
       join(paths.logDirectory, UNINSTALL_HELPER_LOG),
-      `${new Date().toISOString()} uninstall failed: ${detail}\n`,
+      `${new Date().toISOString()} uninstall failed: ${detail}\n  phases: ${phases.join(", ")}\n`,
     );
   } catch {
     // Nothing else could report it; the original error is still thrown.
@@ -329,10 +419,16 @@ export async function runUninstallHelper(
 ): Promise<void> {
   const platform = supportedPlatform();
   const paths = dependencies.paths ?? currentProductPaths();
+  // Milliseconds from the helper's start to the end of each step, for the failure log.
+  const started = Date.now();
+  const phases: string[] = [];
+  const phase = (name: string) => phases.push(`${name} ${String(Date.now() - started)}ms`);
   try {
     await waitForParentExit(options.parentProcessId);
+    phase("launcher exited");
     if (options.blockingProcessId) {
       await waitForParentExit(options.blockingProcessId, "the Cinba Desktop or TUI");
+      phase("surface exited");
       // The launcher took the installation lock for this helper so a reinstall waits for the
       // removal; the service mode changes below run under that lock instead of taking it again.
       if (!(await installationLockHeldBy(paths, process.pid))) {
@@ -341,6 +437,7 @@ export async function runUninstallHelper(
       // The surface may have reconnected to Core before it exited, and a requesting Desktop was
       // left running; this helper is a copy outside the install, so stopping Desktop spares it.
       await (dependencies.stopProduct ?? stopProductForUninstall)({ installationLockHeld: true });
+      phase("product stopped");
     }
     await (dependencies.removeProduct ?? removeProduct)(platform, options.purge);
     console.log(
@@ -349,12 +446,13 @@ export async function runUninstallHelper(
         : "Cinba was removed. User data was preserved.",
     );
   } catch (error) {
-    await recordUninstallHelperFailure(paths, error);
+    phase("failed");
+    await recordUninstallHelperFailure(paths, error, phases);
     throw error;
   } finally {
     const helperDirectory = dirname(process.execPath);
     // Only a copied helper removes its own directory, never the runtime it was started from.
-    if (basename(helperDirectory).startsWith("cinba-uninstall-")) {
+    if (basename(helperDirectory).startsWith(HELPER_DIRECTORY_PREFIX)) {
       if (platform === "win32") {
         scheduleWindowsHelperDirectoryRemoval(helperDirectory);
       } else {

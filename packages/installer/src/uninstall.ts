@@ -155,9 +155,37 @@ export function createUninstallPlan(
   };
 }
 
+// Windows can keep program files locked for a while after Desktop's processes exit, while images
+// unmap and antivirus scans finish. Node's own retries compound at every directory level of a
+// deep tree, so the program is retried here instead, with backoff, for about 30 seconds.
+const PROGRAM_REMOVAL_WAIT_MS = 30_000;
+const PROGRAM_REMOVAL_MAX_DELAY_MS = 2_000;
+
+async function removeProgram(
+  path: string,
+  remove: typeof rm,
+  delay: (milliseconds: number) => Promise<void>,
+): Promise<void> {
+  let waited = 0;
+  for (let next = 100; ; next = Math.min(next * 2, PROGRAM_REMOVAL_MAX_DELAY_MS)) {
+    try {
+      await remove(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (waited >= PROGRAM_REMOVAL_WAIT_MS) {
+        throw error;
+      }
+    }
+    await delay(next);
+    waited += next;
+  }
+}
+
 export async function executeUninstallPlan(
   plan: UninstallPlan,
   remove: typeof rm = rm,
+  delay: (milliseconds: number) => Promise<void> = (milliseconds) =>
+    new Promise((wake) => setTimeout(wake, milliseconds)),
 ): Promise<UninstallResult> {
   const result: UninstallResult = { removed: [], failed: [] };
   // The launcher is last so a platform-specific helper can keep managing the rest of the plan.
@@ -168,12 +196,12 @@ export async function executeUninstallPlan(
   const targets = plan.targets.toSorted((left, right) => order(left) - order(right));
   for (const target of targets) {
     try {
-      await remove(validateNativePath(target.path, `uninstall target ${target.kind}`), {
-        recursive: true,
-        force: true,
-        maxRetries: 10,
-        retryDelay: 100,
-      });
+      const path = validateNativePath(target.path, `uninstall target ${target.kind}`);
+      if (target.kind === "program") {
+        await removeProgram(path, remove, delay);
+      } else {
+        await remove(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      }
       result.removed.push(target);
     } catch (error) {
       result.failed.push({ target, error });
