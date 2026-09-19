@@ -4,9 +4,8 @@
 
 最后更新：2026-09-19
 
-状态：Draft 已从 `44e0eae` 重建；Windows 复测中 TUI 卸载因 Core 停止后 TUI 退出而中断、Desktop
-卸载因短暂文件占用留下半卸载状态，阻断发布；macOS 需用新 Draft 重测，其余平台、干净账号和正式
-发布待验收
+状态：Draft 已从 `f4025b4` 重建；Windows 当前用户探针与各轮复测完成，Desktop/TUI 卸载入口通过；
+macOS 需用新 Draft 重测，其余平台、干净账号和正式发布待验收
 
 对应规格：`docs/specs/2026-09-17-cinba-product-distribution-design.md`
 
@@ -192,8 +191,25 @@ manifest、`SHA256SUMS` 与 Windows attestation 校验一致。复测结果：
 
 已由 `27f83c5`（交接期间 TUI 忽略 Core 断开、launcher 改为 detached）、`cc7b5bf`（helper 不再继承
 Desktop 程序目录作为工作目录，停止 Desktop 目录下全部进程，程序目录退避重试并在失败时改名交给
-cmd.exe 延迟删除）和 `4db4f92`（去掉 PATH 变更后多余的 WM_SETTINGCHANGE 广播）修复，待重建
-Draft 后复测。
+cmd.exe 延迟删除）和 `4db4f92`（去掉 PATH 变更后多余的 WM_SETTINGCHANGE 广播）修复。
+
+从 `f4025b4ffb773cc7500aeebd40d94401251ac3a0` 重建 Draft
+（[Prepare product release](https://github.com/SounDoer/Cinba/actions/runs/35436879885)），资产、
+manifest、`SHA256SUMS` 与 Windows attestation 校验一致。在同一当前用户上复测三个界面卸载入口，
+全部通过：
+
+- TUI（常驻 `cmd.exe` 中运行）`/uninstall` 普通卸载：选择默认保留数据、确认默认 Cancel；确认后
+  TUI 干净退回 shell 提示符，helper 约 13 秒完成；程序、注册、开始菜单、计划任务和 PATH 移除，
+  仅保留 `Data`；
+- 重装后保留数据恢复（标记文件仍在，仅 `lastSessionId` 随新会话变化）；
+- Desktop 托盘 “Uninstall Cinba…”：对话框默认 Cancel；Desktop 退出后 helper 约 8 秒完成，
+  `Data` 哈希不变；
+- Desktop 托盘 “Uninstall and Delete All Data…”：两个对话框均默认 Cancel，第二个对话框的确认
+  勾选框默认未勾选；勾选并确认后约 8 秒完成，程序与全部数据删除；
+- 三次卸载均无 `uninstall-helper.log`，`%TEMP%` 无 helper 残留；容器外真实路径亦无残留；
+- 仍存在的小问题：purge 后留下空的 `%LOCALAPPDATA%\Cinba`（本次仅见于 MSIX 重定向视图）。
+
+未实测：不勾选确认框直接点击删除按钮的拒绝路径（由单元测试覆盖）、TUI purge 的键入确认。
 
 未覆盖：干净账号、SmartScreen、TUI 交互、On-demand 空闲停止、注销或重启后 Background 恢复、
 离线安装，以及 Cinba Dev 与正式 Sync 同时运行的实测。下方 Windows 验收项仍保持未勾选。
