@@ -194,7 +194,7 @@ export type {
   InstallationTransaction,
   InstalledRelease,
 } from "./installation-store.ts";
-export { acquireInstallationLock } from "./installation-lock.ts";
+export { acquireInstallationLock, waitForInstallationIdle } from "./installation-lock.ts";
 export { installReleaseBundle } from "./bundle-installation.ts";
 export type { InstallReleaseBundleOptions, PreparedStableFiles } from "./bundle-installation.ts";
 export { prepareStableProductFiles, recoverStableProductFiles } from "./stable-files.ts";
@@ -207,6 +207,7 @@ export type { PowerShellPathResult, RunPathPowerShell } from "./windows-path.ts"
 export {
   configureWindowsProductIntegration,
   removeWindowsProductIntegration,
+  stopWindowsDesktopApplication,
 } from "./windows-integration.ts";
 export type { RunWindowsIntegrationPowerShell } from "./windows-integration.ts";
 export {

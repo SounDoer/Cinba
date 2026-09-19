@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   configureWindowsProductIntegration,
   removeWindowsProductIntegration,
+  stopWindowsDesktopApplication,
 } from "./windows-integration.ts";
 
 test("Windows product registration receives paths through environment only", async () => {
@@ -54,6 +55,37 @@ test("Windows product registration rejects unstable versions and relative paths"
       launcherPath: "relative\\cinba.exe",
       version: "0.1.0",
     }),
+    /absolute Windows path/,
+  );
+});
+
+test("uninstall stops only the Desktop running from the installed path", async () => {
+  const desktopApplicationPath =
+    "C:\\Users\\Ada Name\\AppData\\Local\\Programs\\Cinba\\desktop\\Cinba.exe";
+  const stopped = await stopWindowsDesktopApplication({
+    desktopApplicationPath,
+    environment: {},
+    run: async (script, environment) => {
+      assert.equal(script.includes("Ada Name"), false);
+      assert.match(script, /ExecutablePath -eq \$path/);
+      assert.match(script, /Stop-Process/);
+      assert.equal(environment.CINBA_DESKTOP_APPLICATION, desktopApplicationPath);
+      return { exitCode: 0, stdout: "stopped 3\r\n", stderr: "" };
+    },
+  });
+  assert.equal(stopped, 3);
+});
+
+test("uninstall refuses to continue while Desktop survives the stop request", async () => {
+  await assert.rejects(
+    stopWindowsDesktopApplication({
+      desktopApplicationPath: "C:\\Cinba\\desktop\\Cinba.exe",
+      run: async () => ({ exitCode: 0, stdout: "running\n", stderr: "" }),
+    }),
+    /Cinba Desktop is still running/,
+  );
+  await assert.rejects(
+    stopWindowsDesktopApplication({ desktopApplicationPath: "desktop\\Cinba.exe" }),
     /absolute Windows path/,
   );
 });

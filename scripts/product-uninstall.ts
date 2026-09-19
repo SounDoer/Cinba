@@ -1,10 +1,11 @@
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, posix, win32 } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { type LocalCoreConfig, inspectLocalCore, stopLocalCore } from "@cinba/core-manager";
 import {
+  acquireInstallationLock,
   createUninstallPlan,
   executeUninstallPlan,
   readCurrentRelease,
@@ -13,6 +14,7 @@ import {
   removeWindowsProductIntegration,
   removeWindowsUserPath,
   resolveProductPaths,
+  stopWindowsDesktopApplication,
 } from "@cinba/installer";
 import {
   inspectProductComponentMode,
@@ -103,6 +105,15 @@ export async function stopProductForUninstall(): Promise<void> {
   if (localCore.running && localCore.managed && localCore.safeToStop === false) {
     throw new Error("Cinba cannot be uninstalled while the local Core has active work");
   }
+  // A running Desktop keeps its program files open, which would stall the uninstall helper.
+  if (platform === "win32" && paths.desktopApplicationPath) {
+    const stopped = await stopWindowsDesktopApplication({
+      desktopApplicationPath: paths.desktopApplicationPath,
+    });
+    if (stopped > 0) {
+      console.log("Cinba Desktop was closed.");
+    }
+  }
 
   const sync = await inspectProductComponentMode("sync");
   if (sync.state !== "not-created" && sync.state !== "not-installed") {
@@ -122,17 +133,23 @@ export async function stopProductForUninstall(): Promise<void> {
 }
 
 export async function launchUninstallHelper(options: { purge: boolean }): Promise<void> {
+  const paths = resolveProductPaths({
+    platform: supportedPlatform(),
+    homeDirectory: homedir(),
+    environment: process.env,
+  });
   const directory = await mkdtemp(join(tmpdir(), "cinba-uninstall-"));
   const helper = join(
     directory,
     process.platform === "win32" ? "cinba-helper.exe" : "cinba-helper",
   );
+  let child: ChildProcess | undefined;
   try {
     await copyFile(process.execPath, helper);
     if (process.platform !== "win32") {
       await chmod(helper, 0o755);
     }
-    const child = spawn(
+    child = spawn(
       helper,
       ["__uninstall-helper", String(process.pid), options.purge ? "purge" : "normal"],
       {
@@ -141,13 +158,22 @@ export async function launchUninstallHelper(options: { purge: boolean }): Promis
         windowsHide: true,
       },
     );
+    const spawned = child;
     await new Promise<void>((resolve, reject) => {
-      child.once("spawn", resolve);
-      child.once("error", reject);
+      spawned.once("spawn", resolve);
+      spawned.once("error", reject);
     });
-    child.unref();
+    if (!spawned.pid) {
+      throw new Error("the Cinba uninstall helper did not start");
+    }
+    // The helper owns the installation lock so an installer waits instead of racing the removal.
+    // It is never released here: deleting runtime state removes it, and a dead helper's lock is
+    // reclaimed by the next installation.
+    await acquireInstallationLock(paths, { processId: spawned.pid });
+    spawned.unref();
   } catch (error) {
-    await rm(directory, { recursive: true, force: true });
+    child?.kill();
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     throw error;
   }
 }
@@ -214,34 +240,37 @@ export async function runUninstallHelper(options: {
   parentProcessId: number;
   purge: boolean;
 }): Promise<void> {
-  await waitForParentExit(options.parentProcessId);
   const platform = supportedPlatform();
-  const homeDirectory = homedir();
-  await removeProductIntegrations(platform);
-  const plan = createUninstallPlan(
-    { platform, homeDirectory, environment: process.env },
-    options.purge
-      ? {
-          mode: "purge",
-          authorization: { kind: "non-interactive", deleteAllCinbaData: true },
-        }
-      : { mode: "normal" },
-  );
-  const result = await executeUninstallPlan(plan);
-  if (result.failed.length > 0) {
-    throw new Error(
-      `Cinba uninstall could not remove: ${result.failed.map(({ target }) => target.kind).join(", ")}`,
+  try {
+    await waitForParentExit(options.parentProcessId);
+    const homeDirectory = homedir();
+    await removeProductIntegrations(platform);
+    const plan = createUninstallPlan(
+      { platform, homeDirectory, environment: process.env },
+      options.purge
+        ? {
+            mode: "purge",
+            authorization: { kind: "non-interactive", deleteAllCinbaData: true },
+          }
+        : { mode: "normal" },
     );
-  }
-  console.log(
-    options.purge
-      ? "Cinba and all Cinba data were removed."
-      : "Cinba was removed. User data was preserved.",
-  );
-  const helper = process.execPath;
-  if (platform === "win32") {
-    scheduleWindowsHelperCleanup(helper);
-  } else if (basename(dirname(helper)).startsWith("cinba-uninstall-")) {
-    await rm(dirname(helper), { recursive: true, force: true });
+    const result = await executeUninstallPlan(plan);
+    if (result.failed.length > 0) {
+      throw new Error(
+        `Cinba uninstall could not remove: ${result.failed.map(({ target }) => target.kind).join(", ")}`,
+      );
+    }
+    console.log(
+      options.purge
+        ? "Cinba and all Cinba data were removed."
+        : "Cinba was removed. User data was preserved.",
+    );
+  } finally {
+    const helper = process.execPath;
+    if (platform === "win32") {
+      scheduleWindowsHelperCleanup(helper);
+    } else if (basename(dirname(helper)).startsWith("cinba-uninstall-")) {
+      await rm(dirname(helper), { recursive: true, force: true });
+    }
   }
 }

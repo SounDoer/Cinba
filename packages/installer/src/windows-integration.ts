@@ -38,6 +38,22 @@ if ($action -eq 'install') {
 }
 `;
 
+// Desktop is a tray app without a window to close, so the uninstall terminates it. It keeps no
+// unsaved state of its own; the caller has already confirmed that Core has no active work.
+const WINDOWS_DESKTOP_STOP_SCRIPT = String.raw`
+$ErrorActionPreference = 'Stop'
+$path = $env:CINBA_DESKTOP_APPLICATION
+function Get-CinbaDesktop { Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq $path } }
+$processes = @(Get-CinbaDesktop)
+foreach ($process in $processes) { Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue }
+foreach ($process in $processes) { Wait-Process -Id $process.ProcessId -Timeout 30 -ErrorAction SilentlyContinue }
+if (@(Get-CinbaDesktop).Count -gt 0) {
+  Write-Output 'running'
+} else {
+  Write-Output "stopped $($processes.Count)"
+}
+`;
+
 async function runPowerShell(
   script: string,
   environment: NodeJS.ProcessEnv,
@@ -110,4 +126,23 @@ export async function removeWindowsProductIntegration(options: {
   if (result.exitCode !== 0 || result.stdout.trim() !== "removed" || result.stderr.trim()) {
     throw new Error("could not remove Cinba registration for the current Windows user");
   }
+}
+
+export async function stopWindowsDesktopApplication(options: {
+  desktopApplicationPath: string;
+  environment?: NodeJS.ProcessEnv;
+  run?: RunWindowsIntegrationPowerShell;
+}): Promise<number> {
+  const result = await (options.run ?? runPowerShell)(WINDOWS_DESKTOP_STOP_SCRIPT, {
+    ...(options.environment ?? process.env),
+    CINBA_DESKTOP_APPLICATION: requireWindowsPath(
+      options.desktopApplicationPath,
+      "desktopApplicationPath",
+    ),
+  });
+  const stopped = /^stopped (\d+)$/.exec(result.stdout.trim());
+  if (result.exitCode !== 0 || !stopped || result.stderr.trim()) {
+    throw new Error("Cinba Desktop is still running; quit it from the tray and uninstall again");
+  }
+  return Number(stopped[1]);
 }

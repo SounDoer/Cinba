@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { installReleaseBundle } from "./bundle-installation.ts";
+import { acquireInstallationLock } from "./installation-lock.ts";
 import {
   type InstallationLayout,
   readCurrentRelease,
   readInstallationTransaction,
+  writeInstallationTransaction,
 } from "./installation-store.ts";
 import { createArtifactInventory } from "./inventory.ts";
 
@@ -171,6 +173,47 @@ test("an expected release mismatch fails before staging or stable file changes",
     assert.equal(prepared, false);
     assert.equal(await readInstallationTransaction(paths), undefined);
     assert.equal(await readCurrentRelease(paths), undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rerunning the installer repairs a staging transaction left by a dead installer", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-bundle-install-stale-staging-"));
+  const paths = layout(root);
+  const staleId = "87654321-4321-4321-8321-cba987654321";
+  const staleCandidate = join(paths.releasesDirectory, `.${revision}.${staleId}.candidate`);
+  try {
+    const bundle = await createBundle(root);
+    await mkdir(staleCandidate, { recursive: true });
+    await writeFile(join(staleCandidate, "partial.txt"), "partial");
+    await writeInstallationTransaction(paths, {
+      schemaVersion: 1,
+      id: staleId,
+      phase: "staging",
+      candidate: {
+        ...identity,
+        protocolVersion: 1,
+        dataFormatVersion: 1,
+        directory: `.${revision}.${staleId}.candidate`,
+      },
+      previous: null,
+      startedAt: "2026-09-19T00:00:00.000Z",
+      updatedAt: "2026-09-19T00:00:00.000Z",
+      failure: null,
+    });
+    // The dead installer's lock is left behind as well.
+    await acquireInstallationLock(paths, { processId: 2_147_483_647 });
+
+    const transaction = await installReleaseBundle({
+      bundleDirectory: bundle,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId,
+    });
+    assert.equal(transaction.phase, "committed");
+    assert.equal((await readCurrentRelease(paths))?.revision, revision);
+    await assert.rejects(readFile(join(staleCandidate, "partial.txt")), { code: "ENOENT" });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

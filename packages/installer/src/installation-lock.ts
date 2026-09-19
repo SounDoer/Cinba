@@ -5,6 +5,12 @@ import type { InstallationLayout } from "./installation-store.ts";
 
 type LockRecord = { schemaVersion: 1; pid: number; token: string };
 
+const LOCK_BUSY = "CINBA_INSTALLATION_LOCK_BUSY";
+
+function busy(message: string, cause: unknown): Error {
+  return Object.assign(new Error(message, { cause }), { code: LOCK_BUSY });
+}
+
 function lockPath(layout: InstallationLayout): string {
   return join(layout.transactionDirectory, "install.lock");
 }
@@ -65,9 +71,7 @@ async function acquireAcquisitionMutex(
       }
       const owner = await readLock(ownerPath);
       if (!owner || processIsAlive(owner.pid)) {
-        throw new Error("another Cinba installation lock acquisition is active", {
-          cause: error,
-        });
+        throw busy("another Cinba installation lock acquisition is active", error);
       }
       await rm(path, { recursive: true, force: true });
     }
@@ -100,7 +104,7 @@ export async function acquireInstallationLock(
       }
       const owner = await readLock(path);
       if (!owner || processIsAlive(owner.pid)) {
-        throw new Error("another Cinba installation transaction is active", { cause: error });
+        throw busy("another Cinba installation transaction is active", error);
       }
       await rm(path);
       const handle = await open(path, "wx", 0o600);
@@ -120,4 +124,29 @@ export async function acquireInstallationLock(
       await rm(path, { force: true });
     }
   };
+}
+
+export async function waitForInstallationIdle(
+  layout: InstallationLayout,
+  options: { timeoutMs?: number; pollMs?: number } = {},
+): Promise<void> {
+  const deadline = Date.now() + (options.timeoutMs ?? 180_000);
+  for (;;) {
+    try {
+      const unlock = await acquireInstallationLock(layout);
+      await unlock();
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== LOCK_BUSY) {
+        throw error;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(
+          "another Cinba installation or uninstall is still running; try again after it finishes",
+          { cause: error },
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, options.pollMs ?? 500));
+    }
+  }
 }

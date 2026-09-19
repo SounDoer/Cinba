@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { createDataSnapshot } from "./data-snapshot.ts";
 import { createArtifactInventory } from "./inventory.ts";
-import { acquireInstallationLock } from "./installation-lock.ts";
+import { acquireInstallationLock, waitForInstallationIdle } from "./installation-lock.ts";
 import {
   type InstallationLayout,
   readCurrentRelease,
@@ -471,6 +471,35 @@ test("a lock left by a dead installer is recovered without deleting its successo
       message: "another Cinba installation transaction is active",
     });
     await activeUnlock();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an installer waits for a running uninstall to release the lock", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-install-wait-"));
+  const paths = layout(root);
+  try {
+    const unlock = await acquireInstallationLock(paths);
+    const waiting = waitForInstallationIdle(paths, { timeoutMs: 5_000, pollMs: 10 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await unlock();
+    await waiting;
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an installer refuses clearly when the lock stays held", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-install-wait-timeout-"));
+  const paths = layout(root);
+  try {
+    const unlock = await acquireInstallationLock(paths);
+    await assert.rejects(waitForInstallationIdle(paths, { timeoutMs: 50, pollMs: 10 }), {
+      message:
+        "another Cinba installation or uninstall is still running; try again after it finishes",
+    });
+    await unlock();
   } finally {
     await rm(root, { recursive: true, force: true });
   }

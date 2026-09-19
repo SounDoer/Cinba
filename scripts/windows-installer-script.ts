@@ -37,10 +37,13 @@ Section "Install Cinba"
   InitPluginsDir
   SetOutPath "$PLUGINSDIR\\CinbaBundle"
   File /r "${bundle}\\*.*"
-  ExecWait '"$PLUGINSDIR\\CinbaBundle\\launcher\\cinba.exe" install' $0
+  DetailPrint "Installing Cinba. This waits for any running Cinba uninstall to finish."
+  nsExec::ExecToStack '"$PLUGINSDIR\\CinbaBundle\\launcher\\cinba.exe" install'
+  Pop $0
+  Pop $1
   ${"$"}{If} $0 != 0
-    MessageBox MB_ICONSTOP "Cinba installation failed with exit code $0."
-    SetErrorLevel $0
+    MessageBox MB_ICONSTOP "Cinba installation failed (exit code $0).$\\r$\\n$\\r$\\n$1"
+    SetErrorLevel 1
     Abort
   ${"$"}{EndIf}
 SectionEnd

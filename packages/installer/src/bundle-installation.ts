@@ -6,6 +6,7 @@ import {
   type StageCandidateOptions,
   activateCandidate,
   discardReadyCandidate,
+  recoverInterruptedInstallation,
   stageCandidate,
 } from "./transaction.ts";
 
@@ -42,6 +43,14 @@ export async function installReleaseBundle(
   ) {
     throw new Error("release bundle identity does not match the expected release");
   }
+  // Every transaction phase except "ready" runs under the installation lock, so one found here
+  // was left by a process that died. Rerunning the installer is the documented repair path.
+  await recoverInterruptedInstallation({
+    layout: options.layout,
+    verify: options.verify,
+    dataMigration: options.dataMigration,
+    now: options.now,
+  });
   await stageCandidate({
     sourceDirectory: bundle.payloadDirectory,
     layout: options.layout,

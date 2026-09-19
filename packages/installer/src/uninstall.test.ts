@@ -137,7 +137,7 @@ test("normal uninstall executes every owned target while preserving durable data
   }
 });
 
-test("uninstall continues through bounded failures and deletes the launcher last", async () => {
+test("uninstall continues through bounded failures and releases state before the launcher", async () => {
   const calls: string[] = [];
   const plan = {
     schemaVersion: 1 as const,
@@ -145,7 +145,9 @@ test("uninstall continues through bounded failures and deletes the launcher last
     mode: "normal" as const,
     targets: [
       { kind: "launcher" as const, path: join(process.cwd(), "launcher") },
+      { kind: "runtime-state" as const, path: join(process.cwd(), "state") },
       { kind: "program" as const, path: join(process.cwd(), "program") },
+      { kind: "cache" as const, path: join(process.cwd(), "cache") },
     ],
     preserved: [],
   };
@@ -155,7 +157,12 @@ test("uninstall continues through bounded failures and deletes the launcher last
       throw new Error("busy");
     }
   });
-  assert.deepEqual(calls, [join(process.cwd(), "program"), join(process.cwd(), "launcher")]);
+  assert.deepEqual(calls, [
+    join(process.cwd(), "program"),
+    join(process.cwd(), "cache"),
+    join(process.cwd(), "state"),
+    join(process.cwd(), "launcher"),
+  ]);
   assert.equal(result.failed.length, 1);
-  assert.equal(result.removed.length, 1);
+  assert.equal(result.removed.length, 3);
 });

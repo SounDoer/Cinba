@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
 import { installReleaseBundle } from "./bundle-installation.ts";
+import { waitForInstallationIdle } from "./installation-lock.ts";
 import { type InstallationTransaction, readCurrentRelease } from "./installation-store.ts";
 import type { ProductPaths } from "./paths.ts";
 import type { ProductTarget } from "./platform.ts";
@@ -92,6 +93,8 @@ export async function installProductBundle(options: {
   transactionId?: string;
   verify?: typeof verifyInstalledProductRelease;
 }): Promise<InstallationTransaction> {
+  // A detached uninstall helper keeps the installation lock until it has removed the program.
+  await waitForInstallationIdle(options.paths);
   const mode = stableFileInstallMode({
     bundleDirectory: options.bundleDirectory,
     paths: options.paths,

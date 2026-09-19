@@ -161,15 +161,11 @@ export async function executeUninstallPlan(
 ): Promise<UninstallResult> {
   const result: UninstallResult = { removed: [], failed: [] };
   // The launcher is last so a platform-specific helper can keep managing the rest of the plan.
-  const targets = plan.targets.toSorted((left, right) => {
-    if (left.kind === "launcher") {
-      return 1;
-    }
-    if (right.kind === "launcher") {
-      return -1;
-    }
-    return 0;
-  });
+  // Runtime state holds the installation lock, so it goes just before the launcher: an installer
+  // waiting on that lock must not start while program files are still being removed.
+  const lastKinds: UninstallTargetKind[] = ["runtime-state", "launcher"];
+  const order = (target: UninstallTarget): number => lastKinds.indexOf(target.kind);
+  const targets = plan.targets.toSorted((left, right) => order(left) - order(right));
   for (const target of targets) {
     try {
       await remove(validateNativePath(target.path, `uninstall target ${target.kind}`), {
