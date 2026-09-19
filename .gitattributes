@@ -1,0 +1,2 @@
+scripts/acceptance/*.sh text eol=lf
+scripts/acceptance/*.Dockerfile text eol=lf
