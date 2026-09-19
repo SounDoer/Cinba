@@ -59,7 +59,20 @@ function componentDiagnostic(
     };
   }
   if (status.state === "background" && (!status.registered || !status.running)) {
-    return { level: "fail", label: name, detail: "Background is configured but not running" };
+    return {
+      level: "fail",
+      label: name,
+      detail: status.backgroundUnavailable
+        ? `Background is configured but unavailable: ${status.backgroundUnavailable}`
+        : "Background is configured but not running",
+    };
+  }
+  if (status.backgroundUnavailable && status.healthy !== false) {
+    return {
+      level: "info",
+      label: name,
+      detail: `mode is ${status.state}; Background unavailable: ${status.backgroundUnavailable}`,
+    };
   }
   if (status.healthy === false) {
     return { level: "fail", label: name, detail: `${status.state}; health check failed` };

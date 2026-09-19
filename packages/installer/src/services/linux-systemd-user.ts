@@ -15,10 +15,31 @@ export type LinuxBackgroundSupport = {
   systemdUser: boolean;
   linger: boolean;
   authorizationRequired: boolean;
+  /** Why systemd user services cannot run here, or null when they can. */
+  unavailableReason: string | null;
 };
 
 export class LinuxLingerRequiredError extends Error {
   override readonly name = "LinuxLingerRequiredError";
+}
+
+export class LinuxBackgroundUnavailableError extends Error {
+  override readonly name = "LinuxBackgroundUnavailableError";
+}
+
+function lingerRequiredMessage(userName: string): string {
+  return (
+    `Background needs linger for user ${userName} so Cinba keeps running after logout and restarts. ` +
+    `Run 'sudo loginctl enable-linger ${userName}' (or ask an administrator to), then retry. ` +
+    "Cinba stays on-demand until then."
+  );
+}
+
+function backgroundUnavailableMessage(reason: string, userName: string): string {
+  return (
+    `Background is unavailable because ${reason}; Cinba stays on-demand. ` +
+    `On a systemd host, sign in through a regular login session or run 'sudo loginctl enable-linger ${userName}', then retry.`
+  );
 }
 
 function defaultRunCommand(
@@ -42,6 +63,18 @@ function defaultRunCommand(
     });
     child.once("error", reject);
     child.once("close", (code) => resolvePromise({ exitCode: code ?? -1, stdout, stderr }));
+  });
+}
+
+/** Runs a command on the caller's terminal so polkit or sudo can ask for authorization. */
+function defaultRunInteractiveCommand(
+  command: string,
+  arguments_: readonly string[],
+): Promise<ServiceCommandResult> {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(command, [...arguments_], { stdio: "inherit" });
+    child.once("error", reject);
+    child.once("close", (code) => resolvePromise({ exitCode: code ?? -1, stdout: "", stderr: "" }));
   });
 }
 
@@ -99,18 +132,55 @@ export async function inspectLinuxBackgroundSupport(options: {
   runCommand?: RunServiceCommand;
 }): Promise<LinuxBackgroundSupport> {
   const runCommand = options.runCommand ?? defaultRunCommand;
-  const systemd = await runCommand("systemctl", ["--user", "show-environment"]);
-  if (systemd.exitCode !== 0) {
-    return { systemdUser: false, linger: false, authorizationRequired: false };
+  const unavailableReason = await probeSystemdUser(runCommand);
+  if (unavailableReason) {
+    return { systemdUser: false, linger: false, authorizationRequired: false, unavailableReason };
   }
-  const linger = await runCommand("loginctl", [
-    "show-user",
-    options.userName,
-    "--property=Linger",
-    "--value",
-  ]);
-  const enabled = linger.exitCode === 0 && linger.stdout.trim() === "yes";
-  return { systemdUser: true, linger: enabled, authorizationRequired: !enabled };
+  const enabled = await lingerEnabled(runCommand, options.userName);
+  return {
+    systemdUser: true,
+    linger: enabled,
+    authorizationRequired: !enabled,
+    unavailableReason: null,
+  };
+}
+
+function missingCommand(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException).code === "ENOENT";
+}
+
+async function probeSystemdUser(runCommand: RunServiceCommand): Promise<string | null> {
+  let result: ServiceCommandResult;
+  try {
+    result = await runCommand("systemctl", ["--user", "show-environment"]);
+  } catch (error) {
+    if (missingCommand(error)) {
+      return "this host does not run systemd (systemctl was not found)";
+    }
+    throw error;
+  }
+  if (result.exitCode === 0) {
+    return null;
+  }
+  const detail = result.stderr.trim().split("\n")[0]?.trim();
+  return `the systemd user manager is not running for this user${detail ? ` (${detail})` : ""}`;
+}
+
+async function lingerEnabled(runCommand: RunServiceCommand, userName: string): Promise<boolean> {
+  try {
+    const result = await runCommand("loginctl", [
+      "show-user",
+      userName,
+      "--property=Linger",
+      "--value",
+    ]);
+    return result.exitCode === 0 && result.stdout.trim() === "yes";
+  } catch (error) {
+    if (missingCommand(error)) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 export async function enableLinuxLinger(options: {
@@ -131,11 +201,39 @@ export function createLinuxSystemdUserAdapter(options: {
   userName: string;
   userUnitDirectory: string;
   runCommand?: RunServiceCommand;
+  /**
+   * Asks the user whether Cinba may enable linger for them. Only an interactive caller that
+   * explicitly requested Background provides this; without it, missing linger is reported.
+   */
+  authorizeLinger?: (userName: string) => Promise<boolean>;
+  runInteractiveCommand?: RunServiceCommand;
 }): PlatformServiceAdapter {
   if (!isAbsolute(options.userUnitDirectory)) {
     throw new Error("systemd userUnitDirectory must be absolute");
   }
   const runCommand = options.runCommand ?? defaultRunCommand;
+  // Once the user manager answered it stays available; only a missing one is probed again.
+  let systemdUserAvailable = false;
+  const unavailableReason = async (): Promise<string | null> => {
+    if (systemdUserAvailable) {
+      return null;
+    }
+    const reason = await probeSystemdUser(runCommand);
+    systemdUserAvailable = reason === null;
+    return reason;
+  };
+  const requireBackgroundSupport = async () => {
+    const support = await inspectLinuxBackgroundSupport({
+      userName: options.userName,
+      runCommand,
+    });
+    if (support.unavailableReason) {
+      throw new LinuxBackgroundUnavailableError(
+        backgroundUnavailableMessage(support.unavailableReason, options.userName),
+      );
+    }
+    return support;
+  };
   const unitPath = (definition: ManagedServiceDefinition) =>
     join(options.userUnitDirectory, definition.registrationId);
   const property = async (definition: ManagedServiceDefinition, name: string) => {
@@ -150,22 +248,43 @@ export function createLinuxSystemdUserAdapter(options: {
   };
   return {
     async inspect(definition): Promise<PlatformServiceSnapshot> {
+      // Without a user manager nothing can be registered, so there is nothing to inspect.
+      const reason = await unavailableReason();
+      if (reason) {
+        return { registered: false, running: false, backgroundUnavailable: reason };
+      }
       const loadState = await property(definition, "LoadState");
       const activeState = await property(definition, "ActiveState");
       return { registered: loadState === "loaded", running: activeState === "active" };
     },
-    async install(definition) {
-      const support = await inspectLinuxBackgroundSupport({
-        userName: options.userName,
-        runCommand,
-      });
-      if (!support.systemdUser) {
-        throw new Error("systemd user services are not available");
+    async prepareBackground() {
+      const support = await requireBackgroundSupport();
+      if (support.linger) {
+        return;
       }
-      if (!support.linger) {
+      if (!options.authorizeLinger || !(await options.authorizeLinger(options.userName))) {
+        throw new LinuxLingerRequiredError(lingerRequiredMessage(options.userName));
+      }
+      try {
+        await enableLinuxLinger({
+          userName: options.userName,
+          authorization: { kind: "explicit-background-consent" },
+          runCommand: options.runInteractiveCommand ?? defaultRunInteractiveCommand,
+        });
+      } catch (error) {
         throw new LinuxLingerRequiredError(
-          "Background requires linger so Cinba can survive logout and restart",
+          `Enabling linger was not authorized. ${lingerRequiredMessage(options.userName)}`,
+          { cause: error },
         );
+      }
+      if (!(await lingerEnabled(runCommand, options.userName))) {
+        throw new LinuxLingerRequiredError(lingerRequiredMessage(options.userName));
+      }
+    },
+    async install(definition) {
+      const support = await requireBackgroundSupport();
+      if (!support.linger) {
+        throw new LinuxLingerRequiredError(lingerRequiredMessage(options.userName));
       }
       const path = unitPath(definition);
       const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;

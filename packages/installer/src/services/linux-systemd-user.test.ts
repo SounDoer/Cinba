@@ -38,6 +38,7 @@ test("Linux Background reports linger as an explicit authorization prerequisite"
     systemdUser: true,
     linger: false,
     authorizationRequired: true,
+    unavailableReason: null,
   });
   await enableLinuxLinger({
     userName: "cinba",
@@ -96,4 +97,133 @@ test("the adapter installs, enables, starts, stops, and removes one user unit", 
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+function missingSystemctl(): RunServiceCommand {
+  return async (command) => {
+    throw Object.assign(new Error(`spawn ${command} ENOENT`), { code: "ENOENT" });
+  };
+}
+
+test("a host without systemd reports Background unavailable instead of failing", async () => {
+  const adapter = createLinuxSystemdUserAdapter({
+    userName: "cinba",
+    userUnitDirectory: "/home/cinba/.config/systemd/user",
+    runCommand: missingSystemctl(),
+  });
+  const snapshot = await adapter.inspect(core);
+  assert.equal(snapshot.registered, false);
+  assert.equal(snapshot.running, false);
+  assert.match(snapshot.backgroundUnavailable ?? "", /does not run systemd/);
+  await assert.rejects(adapter.prepareBackground?.(core) ?? Promise.resolve(), (error: Error) => {
+    assert.equal(error.name, "LinuxBackgroundUnavailableError");
+    assert.match(error.message, /Background is unavailable because this host does not run systemd/);
+    assert.match(error.message, /stays on-demand/);
+    return true;
+  });
+  await assert.rejects(adapter.install(core), { name: "LinuxBackgroundUnavailableError" });
+});
+
+test("a missing user manager names the systemd error", async () => {
+  const support = await inspectLinuxBackgroundSupport({
+    userName: "cinba",
+    runCommand: async () => ({
+      exitCode: 1,
+      stdout: "",
+      stderr: "Failed to connect to bus: No medium found\n",
+    }),
+  });
+  assert.equal(support.systemdUser, false);
+  assert.equal(
+    support.unavailableReason,
+    "the systemd user manager is not running for this user (Failed to connect to bus: No medium found)",
+  );
+});
+
+function systemdWithoutLinger(commands: string[][]): RunServiceCommand {
+  let linger = false;
+  return async (command, arguments_) => {
+    commands.push([command, ...arguments_]);
+    if (command === "loginctl" && arguments_[0] === "enable-linger") {
+      linger = true;
+    }
+    if (command === "loginctl" && arguments_[0] === "show-user") {
+      return { exitCode: 0, stdout: linger ? "yes\n" : "no\n", stderr: "" };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+}
+
+test("Background without linger names the cause and the fix", async () => {
+  const commands: string[][] = [];
+  const adapter = createLinuxSystemdUserAdapter({
+    userName: "cinba",
+    userUnitDirectory: "/home/cinba/.config/systemd/user",
+    runCommand: systemdWithoutLinger(commands),
+  });
+  for (const attempt of [adapter.prepareBackground?.(core), adapter.install(core)]) {
+    await assert.rejects(attempt ?? Promise.resolve(), (error: Error) => {
+      assert.equal(error.name, "LinuxLingerRequiredError");
+      assert.match(error.message, /needs linger for user cinba/);
+      assert.match(error.message, /sudo loginctl enable-linger cinba/);
+      return true;
+    });
+  }
+  assert.equal(
+    commands.some(([command, action]) => command === "loginctl" && action === "enable-linger"),
+    false,
+  );
+});
+
+test("Background enables linger only after the user consents", async () => {
+  const commands: string[][] = [];
+  const runCommand = systemdWithoutLinger(commands);
+  const declined = createLinuxSystemdUserAdapter({
+    userName: "cinba",
+    userUnitDirectory: "/home/cinba/.config/systemd/user",
+    runCommand,
+    runInteractiveCommand: runCommand,
+    authorizeLinger: async () => false,
+  });
+  await assert.rejects(declined.prepareBackground?.(core) ?? Promise.resolve(), {
+    name: "LinuxLingerRequiredError",
+  });
+  assert.equal(
+    commands.some(([, action]) => action === "enable-linger"),
+    false,
+  );
+
+  const asked: string[] = [];
+  const accepted = createLinuxSystemdUserAdapter({
+    userName: "cinba",
+    userUnitDirectory: "/home/cinba/.config/systemd/user",
+    runCommand,
+    runInteractiveCommand: runCommand,
+    authorizeLinger: async (userName) => {
+      asked.push(userName);
+      return true;
+    },
+  });
+  await accepted.prepareBackground?.(core);
+  assert.deepEqual(asked, ["cinba"]);
+  assert.deepEqual(
+    commands.filter(([, action]) => action === "enable-linger"),
+    [["loginctl", "enable-linger", "cinba"]],
+  );
+});
+
+test("a refused linger authorization keeps the fix in the error", async () => {
+  const adapter = createLinuxSystemdUserAdapter({
+    userName: "cinba",
+    userUnitDirectory: "/home/cinba/.config/systemd/user",
+    runCommand: systemdWithoutLinger([]),
+    runInteractiveCommand: async () => ({ exitCode: 1, stdout: "", stderr: "" }),
+    authorizeLinger: async () => true,
+  });
+  await assert.rejects(adapter.prepareBackground?.(core) ?? Promise.resolve(), (error: Error) => {
+    assert.equal(error.name, "LinuxLingerRequiredError");
+    assert.match(error.message, /not authorized/);
+    assert.match(error.message, /sudo loginctl enable-linger cinba/);
+    return true;
+  });
 });

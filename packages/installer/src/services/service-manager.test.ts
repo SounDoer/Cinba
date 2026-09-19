@@ -6,7 +6,11 @@ import test from "node:test";
 import type { InstallationLayout } from "../installation-store.ts";
 import { resolveProductPaths } from "../paths.ts";
 import { createManagedServiceDefinitions } from "./definitions.ts";
-import { type PlatformServiceAdapter, setManagedServiceMode } from "./service-manager.ts";
+import {
+  type PlatformServiceAdapter,
+  inspectManagedService,
+  setManagedServiceMode,
+} from "./service-manager.ts";
 import { readServiceState } from "./service-state.ts";
 
 function layout(root: string): InstallationLayout {
@@ -144,7 +148,7 @@ test("a failed Background start compensates to the old mode", async () => {
         },
         "background",
       ),
-      /could not set Cinba Core to background/,
+      /could not set Cinba Core to background: platform start failed/,
     );
     assert.equal(adapter.registered, false);
     const state = await readServiceState(context.stateDirectory);
@@ -278,6 +282,48 @@ test("Core cannot be disabled and uncreated Sync cannot be configured", async ()
       ),
       /has not been created/,
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an unavailable Background stays on-demand and refuses before recording an attempt", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-service-unavailable-"));
+  const context = setup(root);
+  const events: string[] = [];
+  const adapter = fakeAdapter(events);
+  adapter.inspect = async () => {
+    events.push("inspect");
+    return { registered: false, running: false, backgroundUnavailable: "no service manager" };
+  };
+  adapter.prepareBackground = async () => {
+    events.push("prepare");
+    throw new Error("Background is unavailable because no service manager");
+  };
+  const options = {
+    layout: context.layout,
+    serviceStateDirectory: context.stateDirectory,
+    definition: context.services.core,
+    adapter,
+    availability: { productInstalled: true, componentCreated: true },
+    verifyHealth: async () => undefined,
+  };
+  try {
+    const onDemand = await setManagedServiceMode(options, "on-demand");
+    assert.equal(onDemand.state, "on-demand");
+    assert.equal(
+      "backgroundUnavailable" in onDemand && onDemand.backgroundUnavailable,
+      "no service manager",
+    );
+    const before = await readServiceState(context.stateDirectory);
+    await assert.rejects(setManagedServiceMode(options, "background"), {
+      message: "Background is unavailable because no service manager",
+    });
+    assert.deepEqual(await readServiceState(context.stateDirectory), before);
+    assert.equal(events.includes("install"), false);
+    const status = await inspectManagedService(options);
+    assert.equal(status.state, "on-demand");
+    assert.equal("phase" in status && status.phase, "stable");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -138,6 +138,7 @@ export {
   setManagedServiceMode,
 } from "./services/service-manager.ts";
 export {
+  LinuxBackgroundUnavailableError,
   LinuxLingerRequiredError,
   createLinuxSystemdUserAdapter,
   enableLinuxLinger,

@@ -11,10 +11,17 @@ import {
   writeServiceState,
 } from "./service-state.ts";
 
-export type PlatformServiceSnapshot = { registered: boolean; running: boolean };
+export type PlatformServiceSnapshot = {
+  registered: boolean;
+  running: boolean;
+  /** Why this host cannot run Background at all; nothing can be registered then. */
+  backgroundUnavailable?: string;
+};
 
 export type PlatformServiceAdapter = {
   inspect(definition: ManagedServiceDefinition): Promise<PlatformServiceSnapshot>;
+  /** Checks, and where the user consents, satisfies Background prerequisites before any change. */
+  prepareBackground?(definition: ManagedServiceDefinition): Promise<void>;
   install(definition: ManagedServiceDefinition): Promise<void>;
   remove(definition: ManagedServiceDefinition): Promise<void>;
   start(definition: ManagedServiceDefinition): Promise<void>;
@@ -33,6 +40,7 @@ export type ManagedServiceStatus =
       registered: boolean;
       running: boolean;
       healthy: boolean | null;
+      backgroundUnavailable?: string;
     };
 
 export type ServiceAvailability = { productInstalled: boolean; componentCreated: boolean };
@@ -218,6 +226,9 @@ export async function inspectManagedService(
     registered: platform.registered,
     running: platform.running,
     healthy,
+    ...(platform.backgroundUnavailable
+      ? { backgroundUnavailable: platform.backgroundUnavailable }
+      : {}),
   };
 }
 
@@ -250,6 +261,10 @@ export async function setManagedServiceMode(
       (await platformMatches(desiredMode, platform, options.definition, verifyHealth))
     ) {
       return await inspectManagedService(options);
+    }
+    // A missing prerequisite refuses the change before any state records an attempt.
+    if (desiredMode === "background") {
+      await options.adapter.prepareBackground?.(options.definition);
     }
 
     state = replaceRecord(
@@ -307,9 +322,11 @@ export async function setManagedServiceMode(
         ),
       );
       await writeServiceState(options.serviceStateDirectory, state);
-      throw new Error(`could not set ${options.definition.displayName} to ${desiredMode}`, {
-        cause: applyError,
-      });
+      const reason = applyError instanceof Error ? applyError.message : String(applyError);
+      throw new Error(
+        `could not set ${options.definition.displayName} to ${desiredMode}: ${reason}`,
+        { cause: applyError },
+      );
     }
   } finally {
     await unlock();

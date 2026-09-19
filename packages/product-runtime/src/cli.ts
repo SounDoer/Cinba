@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, posix, resolve, win32 } from "node:path";
+import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import {
   type LocalCoreConfig,
@@ -465,6 +466,9 @@ export async function runProductCli(
     const status = command.mode
       ? await setProductComponentMode(command.component, command.mode, {
           localCore: { config },
+          ...(process.stdin.isTTY && process.stdout.isTTY
+            ? { authorizeLinger: askLingerConsent }
+            : {}),
         })
       : await inspectProductComponentMode(command.component);
     console.log(formatProductComponentMode(status));
@@ -493,6 +497,22 @@ export async function runProductCli(
   if (command.type === "sync") {
     await runProductService(createProductServiceProcess(payload.root, release, "sync"));
     return;
+  }
+}
+
+async function askLingerConsent(userName: string): Promise<boolean> {
+  const prompt = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    console.log(
+      `Background needs linger for user ${userName} so Cinba keeps running after logout and restarts.`,
+    );
+    console.log(
+      `Cinba can run 'loginctl enable-linger ${userName}' now; the system may ask for an administrator password.`,
+    );
+    const answer = await prompt.question("Enable linger? [y/N] ");
+    return /^y(es)?$/i.test(answer.trim());
+  } finally {
+    prompt.close();
   }
 }
 

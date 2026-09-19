@@ -7,6 +7,7 @@ import type { LocalCoreControlStatus } from "@cinba/core-client";
 import type { LocalCoreConfig } from "@cinba/core-manager";
 import {
   type PlatformServiceAdapter,
+  createLinuxSystemdUserAdapter,
   readServiceState,
   resolveProductPaths,
 } from "@cinba/installer";
@@ -257,6 +258,52 @@ test("a Background service that exits is not verified by another Core on its por
     assert.equal(state?.core.mode, "on-demand");
     assert.equal(state?.core.failure, "health-failed");
     assert.equal(adapter.registered, false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a host without systemd keeps Core on-demand and can still leave Background", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-product-no-systemd-"));
+  const base = nativeOptions(root);
+  const config = await onDemandCore(root);
+  const port = sharedCorePort({ safeToStop: true });
+  const adapter = createLinuxSystemdUserAdapter({
+    userName: "cinba",
+    userUnitDirectory: join(root, "systemd", "user"),
+    runCommand: async (command) => {
+      throw Object.assign(new Error(`spawn ${command} ENOENT`), { code: "ENOENT" });
+    },
+  });
+  const options = { ...base, adapter, verifyHealth: async () => undefined };
+  try {
+    const status = await inspectProductComponentMode("core", options);
+    assert.equal(status.state, "on-demand");
+    assert.match(
+      formatProductComponentMode(status),
+      /Background: unavailable \(this host does not run systemd/,
+    );
+    await assert.rejects(
+      setProductComponentMode("core", "background", {
+        ...options,
+        localCore: {
+          config,
+          probe: port.probe,
+          requestStatus: port.requestStatus,
+          requestStop: port.requestStop,
+        },
+      }),
+      /Background is unavailable because this host does not run systemd/,
+    );
+    assert.equal(port.stopRequests, 0, "a refused Background must not stop the on-demand Core");
+    assert.equal((await inspectProductComponentMode("core", options)).state, "on-demand");
+    // Uninstall's path: every mode change away from Background succeeds with nothing to remove.
+    assert.equal((await setProductComponentMode("core", "on-demand", options)).state, "on-demand");
+    const sync = await setProductComponentMode("sync", "disabled", {
+      ...options,
+      componentCreated: true,
+    });
+    assert.equal(sync.state, "disabled");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

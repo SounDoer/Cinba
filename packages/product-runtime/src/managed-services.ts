@@ -41,6 +41,8 @@ export type ProductManagedServiceOptions = {
   verifyHealth?: (definition: ManagedServiceDefinition) => Promise<void>;
   /** The caller already holds the installation lock; see ServiceManagerOptions. */
   installationLockHeld?: boolean;
+  /** Linux: asks whether Cinba may enable linger when the user explicitly chose Background. */
+  authorizeLinger?: (userName: string) => Promise<boolean>;
   /** The on-demand Core that Background must take over from. */
   localCore?: {
     config: LocalCoreConfig;
@@ -72,6 +74,7 @@ function createPlatformAdapter(options: {
   environment: NodeJS.ProcessEnv;
   userName?: string;
   userId?: number;
+  authorizeLinger?: (userName: string) => Promise<boolean>;
 }): PlatformServiceAdapter {
   if (options.platform === "win32") {
     return createWindowsScheduledTaskAdapter({
@@ -96,6 +99,7 @@ function createPlatformAdapter(options: {
   return createLinuxSystemdUserAdapter({
     userName: options.userName?.trim() || userInfo().username,
     userUnitDirectory: posix.join(configHome, "systemd", "user"),
+    ...(options.authorizeLinger ? { authorizeLinger: options.authorizeLinger } : {}),
   });
 }
 
@@ -149,6 +153,7 @@ async function serviceManagerOptions(
         environment,
         ...(options.userName ? { userName: options.userName } : {}),
         ...(options.userId === undefined ? {} : { userId: options.userId }),
+        ...(options.authorizeLinger ? { authorizeLinger: options.authorizeLinger } : {}),
       }),
     availability: { productInstalled: true, componentCreated },
     ...(verifyHealth ? { verifyHealth } : {}),
@@ -212,6 +217,8 @@ export async function setProductComponentMode(
   // between the handoff and the service binding the port.
   const release = await acquireStartLock(options.localCore.config.startLockPath);
   try {
+    // Refuse before the handoff so an unusable Background never stops the running on-demand Core.
+    await managerOptions.adapter.prepareBackground?.(managerOptions.definition);
     await handOffOnDemandCore(options.localCore, async () => {
       try {
         await managerOptions.verifyHealth?.(managerOptions.definition);
@@ -252,6 +259,9 @@ export function formatProductComponentMode(status: ManagedServiceStatus): string
   }
   if (status.failure) {
     lines.push(`  Failure: ${status.failure}`);
+  }
+  if (status.backgroundUnavailable) {
+    lines.push(`  Background: unavailable (${status.backgroundUnavailable})`);
   }
   return lines.join("\n");
 }
