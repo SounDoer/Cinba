@@ -12,6 +12,9 @@ export type RunPathPowerShell = (
   environment: NodeJS.ProcessEnv,
 ) => Promise<PowerShellPathResult>;
 
+// SetEnvironmentVariable for the User target already broadcasts WM_SETTINGCHANGE, so new
+// terminals see the change. A second broadcast, with a 5-second timeout per window, took about
+// 11 seconds on a Windows 11 test machine.
 const USER_PATH_SCRIPT = String.raw`
 $ErrorActionPreference = 'Stop'
 $directory = $env:CINBA_PATH_DIRECTORY
@@ -33,19 +36,6 @@ if ($action -eq 'add') {
 } else {
   throw 'unsupported Cinba PATH action'
 }
-Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-public static class CinbaEnvironmentBroadcast {
-  [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-  public static extern IntPtr SendMessageTimeout(
-    IntPtr hWnd, uint message, UIntPtr wParam, string lParam,
-    uint flags, uint timeout, out UIntPtr result);
-}
-'@
-$result = [UIntPtr]::Zero
-[void][CinbaEnvironmentBroadcast]::SendMessageTimeout(
-  [IntPtr]0xffff, 0x001A, [UIntPtr]::Zero, 'Environment', 2, 5000, [ref]$result)
 `;
 
 async function runPowerShell(
