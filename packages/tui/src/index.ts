@@ -65,7 +65,11 @@ import {
   denyTuiProjectTrustDuringHandoff,
   launchTuiUpdateHandoff,
 } from "./tui-update.ts";
-import { createTuiUninstall, launchTuiUninstallHandoff } from "./tui-uninstall.ts";
+import {
+  createTuiUninstall,
+  handleTuiCoreLoss,
+  launchTuiUninstallHandoff,
+} from "./tui-uninstall.ts";
 import { TextInput } from "./settings-components.ts";
 
 /**
@@ -589,17 +593,21 @@ const coreClient = new CoreClient(SERVER_URL, {
 
     // Exit rather than wait and reconnect. Reliable reconnect needs command
     // deduplication before it can safely retry anything sent near a disconnect.
-    tui.stop();
-    console.error("The Cinba service went away.");
-    process.exit(1);
+    handleTuiCoreLoss(updateHandoffController, () => {
+      tui.stop();
+      console.error("The Cinba service went away.");
+      process.exit(1);
+    });
   },
   onError: () => {
     // Nothing is started here on purpose. Whoever owns that process should own
     // its lifetime and its log.
-    tui.stop();
-    console.error(`Cannot reach the Cinba service at ${SERVER_URL}.`);
-    console.error("Start it with the cinba command or cinba-web.cmd.");
-    process.exit(1);
+    handleTuiCoreLoss(updateHandoffController, () => {
+      tui.stop();
+      console.error(`Cannot reach the Cinba service at ${SERVER_URL}.`);
+      console.error("Start it with the cinba command or cinba-web.cmd.");
+      process.exit(1);
+    });
   },
   onSnapshot: (state) => {
     mirror = createSession(state.snapshot);
@@ -780,6 +788,7 @@ const uninstallProduct = createTuiUninstall({
   handoffController: updateHandoffController,
   stopObserver: stopProductUpdateObservation,
   restartObserver: startProductUpdateObservation,
+  isCoreConnected: () => coreClient.connectionState === "connected",
   signal: updateInstallAbort.signal,
   launch: (executable, arguments_, signal) =>
     launchTuiUninstallHandoff(executable, arguments_, { signal }),

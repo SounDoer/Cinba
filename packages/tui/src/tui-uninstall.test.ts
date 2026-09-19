@@ -7,6 +7,7 @@ import {
   TUI_PURGE_CONFIRMATION,
   TuiUninstallHandoffTimeoutError,
   createTuiUninstall,
+  handleTuiCoreLoss,
   launchTuiUninstallHandoff,
 } from "./tui-uninstall.ts";
 
@@ -38,6 +39,7 @@ function fixture(
     handoffController,
     stopObserver: () => calls.push(["stop-observer"]),
     restartObserver: () => calls.push(["restart-observer"]),
+    isCoreConnected: () => true,
     launch: async (executable, arguments_) => {
       calls.push(["launch", executable, arguments_, handoffController.inProgress]);
     },
@@ -128,6 +130,73 @@ test("a refused handoff keeps the TUI running and reports the reason", async () 
   ]);
 });
 
+test("the TUI survives the launcher stopping Core and exits once the launcher returns", async () => {
+  const lost: string[] = [];
+  let finishLaunch = (): void => {};
+  const { calls, handoffController, uninstall } = fixture(
+    { choice: "normal", confirmed: true },
+    {
+      launch: async () => {
+        // The launcher stops Core while the TUI waits: the socket errors, then closes.
+        handleTuiCoreLoss(handoffController, () => lost.push("error"));
+        handleTuiCoreLoss(handoffController, () => lost.push("disconnected"));
+        await new Promise<void>((release) => {
+          finishLaunch = release;
+        });
+      },
+    },
+  );
+  const pending = uninstall();
+  await new Promise((settle) => setImmediate(settle));
+  assert.equal(lost.length, 0);
+  assert.equal(
+    calls.some((call) => (call as unknown[])[0] === "exit"),
+    false,
+  );
+  finishLaunch();
+  await pending;
+  assert.deepEqual(calls.at(-1), ["exit"]);
+
+  // Outside the uninstall handoff a lost Core still ends the TUI.
+  handleTuiCoreLoss(handoffController, () => lost.push("after"));
+  assert.deepEqual(lost, ["after"]);
+});
+
+test("a lost Core ends the TUI during an update handoff", () => {
+  const controller = new TuiUpdateHandoffController();
+  const handoff = controller.begin("update");
+  let failed = false;
+  handleTuiCoreLoss(controller, () => {
+    failed = true;
+  });
+  assert.equal(failed, true);
+  handoff.finish();
+});
+
+test("a handoff that fails after Core stopped exits instead of resuming", async () => {
+  const { calls, uninstall } = fixture(
+    { choice: "normal", confirmed: true },
+    {
+      isCoreConnected: () => false,
+      launch: async () => {
+        throw new Error("the Cinba uninstall helper did not start");
+      },
+    },
+  );
+  await uninstall();
+  assert.equal(
+    calls.some((call) => (call as unknown[])[0] === "restart-observer"),
+    false,
+  );
+  assert.deepEqual(calls.slice(-2), [
+    [
+      "notice",
+      "Cinba TUI lost its Core connection and will exit: the Cinba uninstall helper did not start",
+    ],
+    ["exit"],
+  ]);
+});
+
 test("an uncertain handoff exits instead of accepting more Core work", async () => {
   const { calls, uninstall } = fixture(
     { choice: "normal", confirmed: true },
@@ -172,7 +241,7 @@ test("handoff runner reports the launcher's stderr reason", async () => {
   assert.deepEqual(received, [
     "cinba",
     ["__begin-uninstall", "tui", "123", "normal"],
-    { shell: false, stdio: ["ignore", "ignore", "pipe"], windowsHide: true },
+    { shell: false, stdio: ["ignore", "ignore", "pipe"], windowsHide: true, detached: true },
   ]);
   child.stderr.emit(
     "data",

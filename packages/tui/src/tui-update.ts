@@ -16,6 +16,8 @@ export type TuiUpdateChildOptions = {
   signal?: AbortSignal;
   timeoutMilliseconds?: number;
   terminationGraceMilliseconds?: number;
+  /** The child outlives this TUI, which on Windows otherwise kills it on exit. */
+  detached?: boolean;
 };
 
 type TuiUpdateChildResult = {
@@ -46,6 +48,7 @@ export function runTuiUpdateChild(
       shell: false,
       stdio,
       windowsHide: true,
+      ...(options.detached ? { detached: true } : {}),
     });
     const capture = (
       current: string,

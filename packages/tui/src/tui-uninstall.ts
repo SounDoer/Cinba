@@ -30,6 +30,17 @@ const CHOICES: Choice[] = [
   },
 ];
 
+/**
+ * The uninstall launcher stops the local Core while this TUI waits for it, so losing the Core then
+ * is expected; the TUI must outlive the launcher. Any other Core loss ends the TUI through `fail`.
+ */
+export function handleTuiCoreLoss(controller: TuiUpdateHandoffController, fail: () => void): void {
+  if (controller.inProgress && controller.purpose === "uninstall") {
+    return;
+  }
+  fail();
+}
+
 export function launchTuiUninstallHandoff(
   executable: string,
   arguments_: readonly string[],
@@ -46,7 +57,8 @@ export function launchTuiUninstallHandoff(
       new TuiUninstallHandoffTimeoutError(
         `Cinba uninstall handoff timed out after ${String(milliseconds)}ms`,
       ),
-    options,
+    // Detached, the launcher still finishes the handoff if this TUI is closed while it runs.
+    { ...options, detached: true },
     spawnProcess,
   ).then(({ code, signal, stderr }) => {
     if (code !== 0) {
@@ -78,6 +90,7 @@ export function createTuiUninstall(options: {
   handoffController: TuiUpdateHandoffController;
   stopObserver: () => void;
   restartObserver: () => void;
+  isCoreConnected: () => boolean;
   signal?: AbortSignal;
   launch: (executable: string, arguments_: readonly string[], signal: AbortSignal) => Promise<void>;
   exit: () => void;
@@ -164,8 +177,15 @@ export function createTuiUninstall(options: {
           options.exit();
           return;
         }
+        const reason = error instanceof Error ? error.message : String(error);
+        if (!options.isCoreConnected()) {
+          // The launcher failed after it stopped the Core, so this TUI cannot keep working.
+          options.showNotice(`Cinba TUI lost its Core connection and will exit: ${reason}`);
+          options.exit();
+          return;
+        }
         options.restartObserver();
-        options.showNotice(error instanceof Error ? error.message : String(error));
+        options.showNotice(reason);
         return;
       } finally {
         handoff.finish();
