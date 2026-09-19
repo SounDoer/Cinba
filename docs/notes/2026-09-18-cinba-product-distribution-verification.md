@@ -4,8 +4,9 @@
 
 最后更新：2026-09-19
 
-状态：Draft 已从 `338a730` 重建；Windows 复测发现 Desktop/TUI 发起的卸载因安装锁自冲突而不生效，
-阻断发布；macOS 需用新 Draft 重测，其余平台、干净账号和正式发布待验收
+状态：Draft 已从 `44e0eae` 重建；Windows 复测中 TUI 卸载因 Core 停止后 TUI 退出而中断、Desktop
+卸载因短暂文件占用留下半卸载状态，阻断发布；macOS 需用新 Draft 重测，其余平台、干净账号和正式
+发布待验收
 
 对应规格：`docs/specs/2026-09-17-cinba-product-distribution-design.md`
 
@@ -175,6 +176,24 @@ manifest、`SHA256SUMS` 与 Windows attestation 校验一致。复测结果：
   同一把安装锁，锁持有者（helper 自身）存活，于是抛出 “another Cinba installation transaction is
   active”。用占位进程模拟界面可稳定复现；未预持锁时手动运行 helper 则成功。TUI `/uninstall` 与
   Desktop purge 走同一路径，未单独实测。已由 `26bc5cb` 修复，待重建 Draft 后复测。
+
+从 `44e0eaec9258d6ed533b298b658cd77f081f5710` 重建 Draft
+（[Prepare product release](https://github.com/SounDoer/Cinba/actions/runs/35431722516)）后复测，
+安装锁自冲突已消除，但界面发起的卸载仍未完成，继续阻断发布：
+
+- TUI（在常驻 `cmd.exe` 中运行）`/uninstall`：选择列表默认保留数据、确认默认 Cancel；确认后
+  `__begin-uninstall` 停止 Core，TUI 随即报告无法连接 Core 并以退出码 1 退出，仍在复制 helper
+  的 launcher 被一并终止，`cinba-helper.exe` 为 0 字节，未删除任何内容；
+- Desktop 托盘普通卸载：Desktop 退出，helper 移除注册、开始菜单、PATH、`bin`、`releases` 和
+  State，数据哈希不变；但删除 `desktop\` 时因 Desktop 退出后的短暂文件占用失败，
+  `uninstall-helper.log` 记录 “could not remove: program”，留下 75 个文件的半卸载状态；helper
+  从启动到删除耗时约 68 秒；
+- 失败日志按设计写入 `Logs/uninstall-helper.log`；各次卸载后 `%TEMP%` 均无 helper 残留。
+
+已由 `27f83c5`（交接期间 TUI 忽略 Core 断开、launcher 改为 detached）、`cc7b5bf`（helper 不再继承
+Desktop 程序目录作为工作目录，停止 Desktop 目录下全部进程，程序目录退避重试并在失败时改名交给
+cmd.exe 延迟删除）和 `4db4f92`（去掉 PATH 变更后多余的 WM_SETTINGCHANGE 广播）修复，待重建
+Draft 后复测。
 
 未覆盖：干净账号、SmartScreen、TUI 交互、On-demand 空闲停止、注销或重启后 Background 恢复、
 离线安装，以及 Cinba Dev 与正式 Sync 同时运行的实测。下方 Windows 验收项仍保持未勾选。
