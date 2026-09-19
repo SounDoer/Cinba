@@ -4,7 +4,8 @@
 
 最后更新：2026-09-19
 
-状态：Draft Release 与 macOS 当前用户探针完成；其余平台、破坏性边界和正式发布待验收
+状态：Draft Release 与 macOS、Windows 当前用户探针完成；Windows 探针发现的缺陷已修复，
+Draft 待从新提交重建并复测；其余平台、破坏性边界和正式发布待验收
 
 对应规格：`docs/specs/2026-09-17-cinba-product-distribution-design.md`
 
@@ -81,6 +82,58 @@ GitHub Actions 已从提交 `8eec5f15e0dd66e17804c65ed4aedc37bdd0743e` 成功完
 这台机器装有开发工具，且尚未执行 Gatekeeper 阻止场景、purge 和干净账号重装，因此下方完整
 macOS 验收项仍保持未勾选。
 
+## 当前 Windows 安装探针
+
+2026-09-19 在 Windows 11 Pro 22631 x64 的当前**非管理员**用户上，用 `gh` 下载 Draft 中的
+`Cinba-0.1.0-windows-x64.exe`，SHA-256 `2ada34c2…d794` 与 `SHA256SUMS`、GitHub asset digest
+和 manifest 大小一致。安装向导通过 UI Automation 驱动真实 GUI。该账号装有 Node、Git、全局 Pi
+和旧 `npm link`，不是干净账号；文件经 `gh` 下载、无 Zone.Identifier，因此未观察 SmartScreen。
+
+符合规格的部分：
+
+- 无 UAC、无目录或组件选择，直接进入安装；结束页 `Launch Cinba` 默认勾选并启动 Desktop；
+- 程序位于 `%LOCALAPPDATA%\Programs\Cinba`，数据位于 `%LOCALAPPDATA%\Cinba\Data`；HKCU 注册
+  `Cinba 0.1.0 / SounDoer`，开始菜单有 `Cinba.lnk`，无桌面快捷方式，系统 PATH 未改动，用户
+  PATH 追加 `...\Programs\Cinba\bin`；
+- 正式 launcher 的 `version`、`doctor`（内置 Node 24.20.0、payload、activation、Core）通过；
+- Core 端口空闲时切换 Background 注册 `\Cinba\Core`（当前用户、Interactive、Limited、登录触发、
+  指向稳定 launcher）；Desktop 从开始菜单打开后连接该服务，关闭 Desktop 后 Core 继续运行；
+  切回 On-demand 后任务删除、Core 停止；
+- Desktop 关闭时的普通卸载约 10 秒完成，移除程序、注册、PATH、快捷方式、State 和 Logs，
+  `Data` 哈希不变；同一 `.exe` 重装后数据恢复、版本与 doctor 正常；
+- 非交互 purge 缺少 `--delete-all-cinba-data` 时拒绝；交互 purge 输入非确认短语时不删除任何内容；
+- 探针结束后程序、数据、注册、快捷方式、计划任务全部清除，用户 PATH 与基线逐字一致。
+
+发现的问题：
+
+1. **Desktop 运行时卸载会挂起并与重装竞争。** `cinba uninstall` 不关闭 Desktop；helper 在
+   Desktop 退出前一直不结束（复现 2 分钟以上），期间 `desktop\` 与数据都未删除，Desktop 退出后
+   才完成。若此时重跑安装器，安装进程无界面消失，留下 `phase: "staging"` 的事务；此后每次安装
+   都只弹出 “Cinba installation failed with exit code 1”，内部错误为
+   `installation transaction … is still staging`，重跑安装器无法修复。
+2. **Core 被 On-demand 实例占用时切换 Background 误报成功。** Desktop 持有 4517 时执行
+   `cinba core mode background` 输出 `Service: running / Health: healthy`，但计划任务以退出码 1
+   结束，健康检查命中的是原 On-demand Core；之后 `cinba core mode` 显示 `Service: stopped`。
+   规格要求的交接没有发生。
+3. **Cinba Dev 与正式版未完全隔离。** Dev Core 使用 `127.0.0.1:4518`，正式 Sync 服务也使用
+   4518；`cinba-dev doctor` 调用 `inspectLocalCore()` 时未传 Dev 配置，回落到旧默认
+   `4517` / `~/.cinba`，实际报告了正式 Core 的 revision。
+4. 正式 launcher 追加在用户 PATH 末尾；本机旧 `npm link` 残留的全局 `cinba` 优先解析，新 shell
+   中的 `cinba` 不是正式版。干净账号不受影响，但开发机需要提示或文档说明。
+5. 次要：`doctor` 未显示解析后的数据路径；Background 服务在 `core status` 中显示为
+   `Lifecycle: external`；purge 后残留空的 `%LOCALAPPDATA%\Cinba`；`update.json` 在仅有 Draft
+   时记录 `discovery-failed`。
+6. 待调查：一次 Desktop 运行中的 purge 与重装竞争后，`Data` 中 1:00 以后写入的文件消失，其余
+   文件内容和时间戳回到 12:59:30 的状态，未找到快照残留，来源未确认。
+
+问题 1—3 已分别由 `a74a5ab`（卸载先关闭 Desktop，helper 持有安装锁，安装器等待并回收失效事务、
+失败弹窗显示真实错误）、`149bfc5`（Background 先交接空闲 On-demand Core，健康检查核对服务 PID
+与控制 token）和 `2e4ae1e`（Cinba Dev 改用 4527/4528，`cinba-dev doctor` 检查 Dev Core）修复，
+`npm run check` 通过。旧 Draft 由 `8eec5f1` 构建、包含这些缺陷，需从新提交重建后在 Windows 上复测。
+
+未覆盖：干净账号、SmartScreen、TUI 交互、On-demand 空闲停止、注销或重启后 Background 恢复、
+离线安装，以及 Cinba Dev 与正式 Sync 同时运行的实测。下方 Windows 验收项仍保持未勾选。
+
 ## 正式发版前置检查
 
 - [x] 当前提交已推送到公开仓库的 `master`；
@@ -92,7 +145,7 @@ macOS 验收项仍保持未勾选。
 - [x] artifact 名、manifest revision、版本、大小和 SHA-256 一致；
 - [x] GitHub artifact attestations 可查询；
 - [x] Release notes 包含准确的中英双语三平台安装说明、SmartScreen/Gatekeeper 说明和 `xattr`
-  命令；
+      命令；
 - [ ] 人工复核完整集合后才发布 draft；
 - [ ] 发布后 GitHub 将 Release 标记为 Immutable，updater 能发现它且忽略 draft/prerelease。
 
