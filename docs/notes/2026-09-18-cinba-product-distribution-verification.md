@@ -4,8 +4,8 @@
 
 最后更新：2026-09-19
 
-状态：Draft 已从 `6665331` 重建；macOS 当前用户探针与 Windows 当前用户探针及修复后复测完成；
-Desktop/TUI 卸载入口缺失，其余平台、干净账号和正式发布待验收
+状态：Draft 已从 `338a730` 重建；Windows 复测发现 Desktop/TUI 发起的卸载因安装锁自冲突而不生效，
+阻断发布；macOS 需用新 Draft 重测，其余平台、干净账号和正式发布待验收
 
 对应规格：`docs/specs/2026-09-17-cinba-product-distribution-design.md`
 
@@ -158,6 +158,23 @@ macOS 验收项仍保持未勾选。
   Windows“已安装的应用”或 Shell CLI 卸载；
 - Windows helper 的延迟清理未生效，每次卸载在 `%TEMP%\cinba-uninstall-*` 残留约 94 MB 的
   `cinba-helper.exe`。
+
+### 卸载入口复测
+
+2026-09-19 从 `338a730ada099bbef450495e0b5d4b7c5e73428f` 重建 Draft
+（[Prepare product release](https://github.com/SounDoer/Cinba/actions/runs/35429369928)），资产、
+manifest、`SHA256SUMS` 与 Windows attestation 校验一致。复测结果：
+
+- Desktop 托盘出现 Uninstall 子菜单（“Uninstall Cinba…” / “Uninstall and Delete All Data…”）；
+  普通卸载对话框说明保留的数据，键盘焦点默认在 Cancel；
+- helper 临时目录清理修复生效：CLI 卸载、purge 和失败的界面卸载之后均无
+  `%TEMP%\cinba-uninstall-*` 残留；
+- **阻断发布：从 Desktop 发起的卸载不删除任何内容。** 确认后 Desktop 退出，helper 数秒内结束，
+  程序与注册保持原样且无任何提示。原因是 launcher 以 helper PID 持有安装锁，界面发起时 helper
+  在等待界面退出后再次调用 `stopProductForUninstall()`，其中 `setProductComponentMode` 申请
+  同一把安装锁，锁持有者（helper 自身）存活，于是抛出 “another Cinba installation transaction is
+  active”。用占位进程模拟界面可稳定复现；未预持锁时手动运行 helper 则成功。TUI `/uninstall` 与
+  Desktop purge 走同一路径，未单独实测。已由 `26bc5cb` 修复，待重建 Draft 后复测。
 
 未覆盖：干净账号、SmartScreen、TUI 交互、On-demand 空闲停止、注销或重启后 Background 恢复、
 离线安装，以及 Cinba Dev 与正式 Sync 同时运行的实测。下方 Windows 验收项仍保持未勾选。
