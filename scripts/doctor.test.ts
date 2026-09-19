@@ -38,6 +38,23 @@ test("a stopped local Core is informational because clients start it on demand",
   assert.match(formatDoctorReport(report), /Result: ready$/);
 });
 
+test("without CINBA_SERVER the Dev Core is inspected, never the installed Cinba Core", async () => {
+  const requested: string[] = [];
+  const report = await runDoctor({
+    projectDirectory: "project",
+    nodeVersion: "v24.1.0",
+    repositoryRoot: "repository",
+    pathKind: (path) => (path === resolve("project") ? "directory" : "file"),
+    probeCore: async (baseUrl) => {
+      requested.push(baseUrl);
+      return undefined;
+    },
+  });
+
+  assert.deepEqual(requested, ["http://127.0.0.1:4527/"]);
+  assert.equal(report.diagnostics.at(-1)?.level, "info");
+});
+
 test("an invalid project and unreachable configured Core make diagnosis fail", async () => {
   const requested: string[] = [];
   const report = await runDoctor({

@@ -12,7 +12,7 @@ test("Cinba Dev uses its own native Core data, runtime, logs, Pi, name, and port
     environment: ENVIRONMENT,
     machineName: "workstation",
   });
-  assert.equal(config.baseUrl, "http://127.0.0.1:4518/");
+  assert.equal(config.baseUrl, "http://127.0.0.1:4527/");
   assert.equal(config.stateDirectory, "C:\\Users\\Ada\\AppData\\Local\\Cinba Dev\\Data\\Core");
   assert.equal(config.piAgentDirectory, "C:\\Users\\Ada\\AppData\\Local\\Cinba Dev\\Data\\Pi");
   assert.equal(
@@ -29,7 +29,8 @@ test("Cinba Dev Sync shares the Dev identity but keeps its own authority subtree
     homeDirectory: HOME,
     environment: ENVIRONMENT,
   });
-  assert.equal(environment.CINBA_SYNC_PORT, "4519");
+  assert.equal(environment.CINBA_SYNC_PORT, "4528");
+  assert.equal(environment.CINBA_SYNC_PUBLIC_ORIGIN, "http://127.0.0.1:4528");
   assert.equal(
     environment.CINBA_SYNC_STATE_DIR,
     "C:\\Users\\Ada\\AppData\\Local\\Cinba Dev\\Data\\Sync",

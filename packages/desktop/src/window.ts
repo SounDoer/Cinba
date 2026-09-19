@@ -75,7 +75,7 @@ export type DesktopWindowController = {
 /** Own the native shell and its isolated Core content view. */
 export function createDesktopWindowController(
   profiles: CoreProfileStore,
-  localConfig?: LocalCoreConfig,
+  localConfig: LocalCoreConfig,
   options: {
     productName?: "Cinba" | "Cinba Dev";
     expectedRevision?: string;
@@ -92,14 +92,10 @@ export function createDesktopWindowController(
 
   const navigator = createCoreNavigator({
     ensureLocal: async () => {
-      await ensureLocalCore(
-        localConfig
-          ? {
-              config: localConfig,
-              ...(options.expectedRevision ? { expectedRevision: options.expectedRevision } : {}),
-            }
-          : undefined,
-      );
+      await ensureLocalCore({
+        config: localConfig,
+        ...(options.expectedRevision ? { expectedRevision: options.expectedRevision } : {}),
+      });
     },
     probe: async (baseUrl) => Boolean(await probeCore(baseUrl)),
     load: async (baseUrl) => {

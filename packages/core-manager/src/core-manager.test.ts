@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { test } from "node:test";
 import type { ChildProcess } from "node:child_process";
 import type { CoreHealth } from "@cinba/core-client";
-import { createLocalCoreConfig } from "./config.ts";
+import type { LocalCoreConfig } from "./config.ts";
 import {
   createCoreProcessEnvironment,
   ensureLocalCore,
@@ -18,6 +18,22 @@ import {
 const REVISION = "abcdef1234567890abcdef1234567890abcdef12";
 const OLD_REVISION = "1234567890abcdef1234567890abcdef12345678";
 const HEALTH: CoreHealth = { status: "ok", revision: REVISION, safeToRestart: true };
+
+function createTestCoreConfig(homeDirectory: string): LocalCoreConfig {
+  const repositoryRoot = resolve(import.meta.dirname, "..", "..", "..");
+  const stateDirectory = join(homeDirectory, "state");
+  return {
+    baseUrl: "http://127.0.0.1:4517/",
+    repositoryRoot,
+    serverEntry: join(repositoryRoot, "packages", "server", "src", "index.ts"),
+    stateDirectory,
+    piAgentDirectory: join(homeDirectory, "pi"),
+    startLockPath: join(stateDirectory, "core-start.lock"),
+    runtimePath: join(stateDirectory, "core-runtime.json"),
+    controlPath: join(stateDirectory, "core-control.json"),
+    logPath: join(stateDirectory, "core.log"),
+  };
+}
 
 function fakeChild(pid: number): ChildProcess {
   const child = new EventEmitter() as ChildProcess;
@@ -31,7 +47,7 @@ function fakeChild(pid: number): ChildProcess {
 
 test("a local Core spawned by Electron runs as the current on-demand revision", () => {
   const home = join(tmpdir(), "cinba-manager-home");
-  const config = createLocalCoreConfig({ homeDirectory: home });
+  const config = createTestCoreConfig(home);
   const environment = createCoreProcessEnvironment(
     "secret",
     {
@@ -57,18 +73,18 @@ test("a local Core spawned by Electron runs as the current on-demand revision", 
 
 test("an isolated development Core keeps its explicit port and product name", () => {
   const config = {
-    ...createLocalCoreConfig({ homeDirectory: join(tmpdir(), "cinba-manager-dev-home") }),
-    baseUrl: "http://127.0.0.1:4518/",
+    ...createTestCoreConfig(join(tmpdir(), "cinba-manager-dev-home")),
+    baseUrl: "http://127.0.0.1:4527/",
     defaultCoreName: "workstation Dev",
   };
   const environment = createCoreProcessEnvironment("secret", {}, config, REVISION);
-  assert.equal(environment.CINBA_PORT, "4518");
+  assert.equal(environment.CINBA_PORT, "4527");
   assert.equal(environment.CINBA_DEFAULT_CORE_NAME, "workstation Dev");
 });
 
 test("reuses a Core that is already healthy", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
-  const config = createLocalCoreConfig({ homeDirectory: home });
+  const config = createTestCoreConfig(home);
   let spawns = 0;
   let locks = 0;
   try {
@@ -97,7 +113,7 @@ test("reuses a Core that is already healthy", async () => {
 
 test("starts one managed Core and records its runtime", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
-  const config = createLocalCoreConfig({ homeDirectory: home });
+  const config = createTestCoreConfig(home);
   let probes = 0;
   let releases = 0;
   try {
@@ -133,7 +149,7 @@ test("starts one managed Core and records its runtime", async () => {
 
 test("an existing managed persistent Core is returned to on-demand", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
-  const config = createLocalCoreConfig({ homeDirectory: home });
+  const config = createTestCoreConfig(home);
   let running = false;
   let requestedLifetime: string | undefined;
   try {
@@ -187,7 +203,7 @@ test("the local revision is the normalized checkout commit", () => {
 
 test("normalizing lifetime never starts a stopped Core", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
-  const config = createLocalCoreConfig({ homeDirectory: home });
+  const config = createTestCoreConfig(home);
   try {
     assert.deepEqual(await normalizeLocalCoreLifetime({ config, probe: async () => undefined }), {
       state: "stopped",
@@ -201,7 +217,7 @@ test("normalizing lifetime never starts a stopped Core", async () => {
 
 test("a safe managed Core from an old revision is restarted", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
-  const config = createLocalCoreConfig({ homeDirectory: home });
+  const config = createTestCoreConfig(home);
   let running = false;
   let revision = OLD_REVISION;
   let stopRequests = 0;
@@ -254,7 +270,7 @@ test("a safe managed Core from an old revision is restarted", async () => {
 
 test("a busy managed Core from an old revision is not stopped", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
-  const config = createLocalCoreConfig({ homeDirectory: home });
+  const config = createTestCoreConfig(home);
   let running = false;
   let stopRequests = 0;
   let requestedLifetime: string | undefined;
@@ -304,7 +320,7 @@ test("a busy managed Core from an old revision is not stopped", async () => {
 
 test("an external Core from another revision is never stopped or replaced", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
-  const config = createLocalCoreConfig({ homeDirectory: home });
+  const config = createTestCoreConfig(home);
   let stops = 0;
   let spawns = 0;
   try {
@@ -332,7 +348,7 @@ test("an external Core from another revision is never stopped or replaced", asyn
 
 test("a draining managed Core finishes before one replacement is started", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
-  const config = createLocalCoreConfig({ homeDirectory: home });
+  const config = createTestCoreConfig(home);
   let running = false;
   let draining = false;
   let spawns = 0;
@@ -383,7 +399,7 @@ test("a draining managed Core finishes before one replacement is started", async
 
 test("rechecks health after taking the lock", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
-  const config = createLocalCoreConfig({ homeDirectory: home });
+  const config = createTestCoreConfig(home);
   let probes = 0;
   let spawns = 0;
   try {
@@ -410,7 +426,7 @@ test("rechecks health after taking the lock", async () => {
 
 test("reuses an on-demand Core discovered after taking the start lock", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
-  const config = createLocalCoreConfig({ homeDirectory: home });
+  const config = createTestCoreConfig(home);
   try {
     let running = false;
     await ensureLocalCore({
@@ -458,7 +474,7 @@ test("reuses an on-demand Core discovered after taking the start lock", async ()
 
 test("concurrent callers produce only one Core process", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
-  const config = createLocalCoreConfig({ homeDirectory: home });
+  const config = createTestCoreConfig(home);
   let healthy = false;
   let spawns = 0;
   const options = {
@@ -486,7 +502,7 @@ test("concurrent callers produce only one Core process", async () => {
 
 test("a managed Core is asked to stop gracefully", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
-  const config = createLocalCoreConfig({ homeDirectory: home });
+  const config = createTestCoreConfig(home);
   let running = false;
   let stopRequests = 0;
   try {
@@ -529,7 +545,7 @@ test("a managed Core is asked to stop gracefully", async () => {
 
 test("an external Core cannot be stopped through stale or missing local records", async () => {
   const home = mkdtempSync(join(tmpdir(), "cinba-manager-"));
-  const config = createLocalCoreConfig({ homeDirectory: home });
+  const config = createTestCoreConfig(home);
   try {
     await assert.rejects(stopLocalCore({ config, probe: async () => HEALTH }), {
       message: "The running Cinba Core is external and cannot be stopped by this manager",

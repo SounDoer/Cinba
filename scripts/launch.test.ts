@@ -29,7 +29,7 @@ test("the Dev Core receives an isolated port, state directory, and Pi agent dire
   const paths = developmentPaths(home);
   const environment = createDevelopmentEnvironment(home, "workstation", { PATH: "/usr/bin" });
 
-  assert.equal(environment.CINBA_PORT, "4518");
+  assert.equal(environment.CINBA_PORT, "4527");
   assert.equal(environment.CINBA_CORE_LIFETIME, "persistent");
   assert.equal(environment.CINBA_DEFAULT_CORE_NAME, "workstation Dev");
   assert.equal(environment.CINBA_STATE_DIR, join(paths.dataDirectory, "Core"));
@@ -56,8 +56,8 @@ test("Dev Sync uses a state directory and port isolated from stable Sync and Dev
   const paths = developmentPaths(home);
   const environment = createSyncDevelopmentEnvironment(home, { PATH: "/usr/bin" });
   assert.equal(environment.CINBA_SYNC_STATE_DIR, paths.syncDataDirectory);
-  assert.equal(environment.CINBA_SYNC_PORT, "4519");
-  assert.equal(environment.CINBA_SYNC_PUBLIC_ORIGIN, "http://127.0.0.1:4519");
+  assert.equal(environment.CINBA_SYNC_PORT, "4528");
+  assert.equal(environment.CINBA_SYNC_PUBLIC_ORIGIN, "http://127.0.0.1:4528");
   assert.equal(environment.PATH, "/usr/bin");
 });
 

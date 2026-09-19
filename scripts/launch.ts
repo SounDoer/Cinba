@@ -13,6 +13,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureLocalCore } from "@cinba/core-manager";
 import {
+  DEVELOPMENT_CORE_PORT,
+  DEVELOPMENT_SYNC_PORT,
   createDevelopmentCoreConfig,
   createDevelopmentSyncEnvironment,
 } from "@cinba/product-runtime";
@@ -26,9 +28,9 @@ const SYNC_ENTRY = join(REPOSITORY_ROOT, "packages", "sync-server", "src", "serv
 const VITE_ENTRY = join(REPOSITORY_ROOT, "node_modules", "vite", "bin", "vite.js");
 const ELECTRON_CLI = join(REPOSITORY_ROOT, "node_modules", "electron", "cli.js");
 
-const DEV_CORE_PORT = 4518;
+const DEV_CORE_PORT = DEVELOPMENT_CORE_PORT;
 const WEB_PORT = 5173;
-const DEV_SYNC_PORT = 4519;
+const DEV_SYNC_PORT = DEVELOPMENT_SYNC_PORT;
 const DEV_CORE_URL = `http://127.0.0.1:${DEV_CORE_PORT}/`;
 const DEV_URL = `http://127.0.0.1:${WEB_PORT}/`;
 const READY_TIMEOUT_MS = 30_000;
@@ -308,7 +310,7 @@ export async function launchTui(workingDirectory: string | undefined): Promise<v
       run([TUI_ENTRY], {
         cwd,
         managed: false,
-        env: { ...process.env, CINBA_SERVER: server ?? "ws://127.0.0.1:4518/ws" },
+        env: { ...process.env, CINBA_SERVER: server ?? `ws://127.0.0.1:${DEV_CORE_PORT}/ws` },
       }),
     );
     if (code !== 0) {

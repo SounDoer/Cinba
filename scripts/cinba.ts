@@ -18,6 +18,7 @@ import {
   runSyncServer,
 } from "@cinba/sync-server";
 import {
+  DEVELOPMENT_SYNC_PORT,
   createDevelopmentCoreConfig,
   createDevelopmentSyncEnvironment,
 } from "@cinba/product-runtime";
@@ -145,7 +146,7 @@ export async function runSyncCommand(
   const directory = defaultSyncStateDirectory(environment);
   if (command.action === "serve") {
     const host = environment.CINBA_SYNC_HOST?.trim() || "127.0.0.1";
-    const port = Number(environment.CINBA_SYNC_PORT ?? "4518");
+    const port = Number(environment.CINBA_SYNC_PORT ?? DEVELOPMENT_SYNC_PORT);
     if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
       throw new Error("CINBA_SYNC_PORT must be an integer from 1 to 65535");
     }
@@ -220,10 +221,6 @@ export async function runCoreCommand(
     inspect: () => Promise<LocalCoreStatus>;
     ensure: () => Promise<LocalCoreStatus>;
     stop: () => Promise<LocalCoreStatus>;
-  } = {
-    inspect: () => inspectLocalCore(),
-    ensure: () => ensureLocalCore(),
-    stop: () => stopLocalCore(),
   },
 ): Promise<string> {
   if (action === "status") {

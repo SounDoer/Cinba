@@ -1,4 +1,3 @@
-export { createLocalCoreConfig } from "./config.ts";
 export {
   ensureLocalCore,
   inspectLocalCore,

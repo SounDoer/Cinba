@@ -38,7 +38,8 @@ design or a bug.
 | `npm test` | Unit tests, `node --test`, single run. |
 | `npm run test:e2e` | End-to-end tests against real processes; slower than the unit run. |
 
-`scripts/launch.ts` owns every launcher; core is fixed to 4517 and the web dev server to 5173.
+`scripts/launch.ts` owns every launcher; the Dev Core is fixed to 4527, Dev Sync to 4528 and the web
+dev server to 5173. The installed Cinba keeps 4517 (Core) and 4518 (Sync), so both can run at once.
 Start processes through it, not around it. The `*.cmd` files at the root are double-click wrappers
 over the same scripts.
 

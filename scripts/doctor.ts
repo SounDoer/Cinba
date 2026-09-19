@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type CoreHealth, probeCoreHealth } from "@cinba/core-client";
 import { type LocalCoreStatus, inspectLocalCore } from "@cinba/core-manager";
+import { createDevelopmentCoreConfig } from "@cinba/product-runtime";
 
 const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const MINIMUM_NODE_MAJOR = 24;
@@ -148,8 +149,15 @@ async function diagnoseCore(options: DoctorOptions): Promise<Diagnostic> {
         };
   }
 
+  const inspectCore =
+    options.inspectCore ??
+    (() =>
+      inspectLocalCore(
+        createDevelopmentCoreConfig(options.repositoryRoot ?? REPOSITORY_ROOT),
+        options.probeCore ?? probeCoreHealth,
+      ));
   try {
-    return localCoreDiagnostic(await (options.inspectCore ?? inspectLocalCore)());
+    return localCoreDiagnostic(await inspectCore());
   } catch (error) {
     return {
       level: "fail",

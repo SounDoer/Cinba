@@ -42,7 +42,12 @@ export type {
   InstalledDoctorEvidence,
   InstalledDoctorReport,
 } from "./doctor.ts";
-export { createDevelopmentCoreConfig, createDevelopmentSyncEnvironment } from "./development.ts";
+export {
+  DEVELOPMENT_CORE_PORT,
+  DEVELOPMENT_SYNC_PORT,
+  createDevelopmentCoreConfig,
+  createDevelopmentSyncEnvironment,
+} from "./development.ts";
 export { parseProductRelease, readProductRelease } from "./release.ts";
 export type { ProductRelease } from "./release.ts";
 export {

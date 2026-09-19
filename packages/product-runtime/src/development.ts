@@ -3,6 +3,10 @@ import { posix, win32 } from "node:path";
 import type { LocalCoreConfig } from "@cinba/core-manager";
 import { resolveProductPaths } from "@cinba/installer";
 
+// Offset from the product Core (4517) and Sync (4518) so Cinba and Cinba Dev can run side by side.
+export const DEVELOPMENT_CORE_PORT = 4527;
+export const DEVELOPMENT_SYNC_PORT = 4528;
+
 export function createDevelopmentCoreConfig(
   repositoryRoot: string,
   options: {
@@ -26,7 +30,7 @@ export function createDevelopmentCoreConfig(
   const pathImplementation = platform === "win32" ? win32 : posix;
   const root = pathImplementation.resolve(repositoryRoot);
   return {
-    baseUrl: "http://127.0.0.1:4518/",
+    baseUrl: `http://127.0.0.1:${DEVELOPMENT_CORE_PORT}/`,
     repositoryRoot: root,
     serverEntry: pathImplementation.join(root, "packages", "server", "src", "index.ts"),
     stateDirectory: pathImplementation.join(paths.dataDirectory, "Core"),
@@ -64,8 +68,8 @@ export function createDevelopmentSyncEnvironment(
   return {
     ...environment,
     CINBA_SYNC_HOST: "127.0.0.1",
-    CINBA_SYNC_PORT: "4519",
-    CINBA_SYNC_PUBLIC_ORIGIN: "http://127.0.0.1:4519",
+    CINBA_SYNC_PORT: String(DEVELOPMENT_SYNC_PORT),
+    CINBA_SYNC_PUBLIC_ORIGIN: `http://127.0.0.1:${DEVELOPMENT_SYNC_PORT}`,
     CINBA_SYNC_STATE_DIR: paths.syncDataDirectory,
   };
 }

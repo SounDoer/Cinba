@@ -83,7 +83,8 @@ removes an independently owned Pi installation.
 
 `Cinba` is an installed release. `Cinba Dev` is a local source checkout. They use separate native
 data, state, cache, log, credentials, Pi, and session directories, so development cannot silently
-modify a formal installation.
+modify a formal installation. They also use separate loopback ports: Cinba Core and Sync listen on
+`127.0.0.1:4517` and `4518`, Cinba Dev Core and Sync on `4527` and `4528`.
 
 To work on Cinba Dev, install Node.js 24, npm, and Git, then:
 

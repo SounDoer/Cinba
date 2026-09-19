@@ -18,7 +18,7 @@ import {
   requestLocalCoreStatus,
   requestLocalCoreStop,
 } from "@cinba/core-client";
-import { type LocalCoreConfig, createLocalCoreConfig } from "./config.ts";
+import type { LocalCoreConfig } from "./config.ts";
 import { acquireStartLock } from "./start-lock.ts";
 
 type RuntimeRecord = {
@@ -45,7 +45,7 @@ export type LocalCoreStatus = {
 };
 
 export type EnsureLocalCoreOptions = {
-  config?: LocalCoreConfig;
+  config: LocalCoreConfig;
   expectedRevision?: string;
   readyTimeoutMs?: number;
   pollIntervalMs?: number;
@@ -63,7 +63,7 @@ export type EnsureLocalCoreOptions = {
 };
 
 export type StopLocalCoreOptions = {
-  config?: LocalCoreConfig;
+  config: LocalCoreConfig;
   waitTimeoutMs?: number;
   pollIntervalMs?: number;
   probe?: (baseUrl: string) => Promise<CoreHealth | undefined>;
@@ -82,8 +82,8 @@ const DEFAULT_POLL_INTERVAL_MS = 100;
 
 export function createCoreProcessEnvironment(
   controlToken: string,
-  environment: NodeJS.ProcessEnv = process.env,
-  config = createLocalCoreConfig(),
+  environment: NodeJS.ProcessEnv,
+  config: LocalCoreConfig,
   revision = resolveLocalCoreRevision(config.repositoryRoot),
 ): NodeJS.ProcessEnv {
   const stableEnvironment = { ...environment };
@@ -228,7 +228,7 @@ function defaultSpawnCore(
 }
 
 export async function inspectLocalCore(
-  config = createLocalCoreConfig(),
+  config: LocalCoreConfig,
   probe: (baseUrl: string) => Promise<CoreHealth | undefined> = probeCoreHealth,
   requestStatus: (
     baseUrl: string,
@@ -286,9 +286,9 @@ async function ensureOnDemandLifetime(
 
 /** Return a running manager-owned local Core to on-demand without starting one. */
 export async function normalizeLocalCoreLifetime(
-  options: NormalizeLocalCoreOptions = {},
+  options: NormalizeLocalCoreOptions,
 ): Promise<LocalCoreStatus> {
-  const config = options.config ?? createLocalCoreConfig();
+  const { config } = options;
   const status = await inspectLocalCore(
     config,
     options.probe ?? probeCoreHealth,
@@ -302,10 +302,8 @@ export async function normalizeLocalCoreLifetime(
 }
 
 /** Ensure the one shared local Core is healthy, starting it in the background when absent. */
-export async function ensureLocalCore(
-  options: EnsureLocalCoreOptions = {},
-): Promise<LocalCoreStatus> {
-  const config = options.config ?? createLocalCoreConfig();
+export async function ensureLocalCore(options: EnsureLocalCoreOptions): Promise<LocalCoreStatus> {
+  const { config } = options;
   const probe = options.probe ?? probeCoreHealth;
   const statusRequest = options.requestStatus ?? requestLocalCoreStatus;
   const lifetimeRequest = options.requestLifetime ?? requestLocalCoreLifetime;
@@ -428,8 +426,8 @@ export async function ensureLocalCore(
 }
 
 /** Ask a manager-owned Core to drain, waiting briefly for an immediately safe stop. */
-export async function stopLocalCore(options: StopLocalCoreOptions = {}): Promise<LocalCoreStatus> {
-  const config = options.config ?? createLocalCoreConfig();
+export async function stopLocalCore(options: StopLocalCoreOptions): Promise<LocalCoreStatus> {
+  const { config } = options;
   const probe = options.probe ?? probeCoreHealth;
   const statusRequest = options.requestStatus ?? requestLocalCoreStatus;
   const current = await inspectLocalCore(config, probe, statusRequest);

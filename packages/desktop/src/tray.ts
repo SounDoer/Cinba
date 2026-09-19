@@ -202,7 +202,7 @@ export async function createSystemTrayController(options: {
   openManager: () => Promise<void>;
   profiles: CoreProfileStore;
   currentProfileId: () => string;
-  localConfig?: LocalCoreConfig;
+  localConfig: LocalCoreConfig;
   expectedRevision?: string;
   productName?: "Cinba" | "Cinba Dev";
   installReadyUpdate: () => Promise<void>;
@@ -281,9 +281,7 @@ export async function createSystemTrayController(options: {
     }
     refreshInFlight = true;
     try {
-      status = await normalizeLocalCoreLifetime(
-        options.localConfig ? { config: options.localConfig } : undefined,
-      );
+      status = await normalizeLocalCoreLifetime({ config: options.localConfig });
       recentError = undefined;
     } catch (error) {
       recentError = errorMessage(error);
@@ -315,28 +313,19 @@ export async function createSystemTrayController(options: {
 
   async function startCore(): Promise<void> {
     await runOperation("starting", () =>
-      ensureLocalCore(
-        options.localConfig
-          ? {
-              config: options.localConfig,
-              ...(options.expectedRevision ? { expectedRevision: options.expectedRevision } : {}),
-            }
-          : undefined,
-      ),
+      ensureLocalCore({
+        config: options.localConfig,
+        ...(options.expectedRevision ? { expectedRevision: options.expectedRevision } : {}),
+      }),
     );
   }
 
   async function stopCore(): Promise<void> {
-    await runOperation("stopping", () =>
-      stopLocalCore(options.localConfig ? { config: options.localConfig } : undefined),
-    );
+    await runOperation("stopping", () => stopLocalCore({ config: options.localConfig }));
   }
 
   async function openCoreLog(): Promise<void> {
     try {
-      if (!options.localConfig) {
-        throw new Error("Local Core configuration is unavailable");
-      }
       const result = await shell.openPath(options.localConfig.logPath);
       if (result) {
         recentError = result;
