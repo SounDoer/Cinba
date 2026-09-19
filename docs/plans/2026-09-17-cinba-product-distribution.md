@@ -4,7 +4,8 @@
 
 最后更新：2026-09-19
 
-状态：代码实施与首个 Draft Release 已完成；macOS 当前用户探针通过，等待其余实机验收与正式发布
+状态：代码实施完成，Draft Release 已从 `f4025b4` 重建；Windows 当前用户与 Linux 容器探针完成，
+Linux 无 systemd/linger 处理待修复；等待 macOS 重测、干净环境验收与正式发布
 
 对应规格：`docs/specs/2026-09-17-cinba-product-distribution-design.md`
 
@@ -21,12 +22,16 @@
 - **Prepare product release** 已从锁定 revision 在三平台完成检查、构建、attestation 和 Draft Release；
 - artifact、manifest、校验值、双语说明和六个 Release asset 已完成复核；
 - Apple Silicon macOS 当前用户已完成安装、同版本修复、On-demand/Background 往返、普通卸载和
-  保留数据重装。
+  保留数据重装（基于首个 Draft，需用重建后的 Draft 重测）；
+- Windows 当前用户探针发现的 Background 交接、卸载与重装竞争、Dev 隔离、Desktop/TUI 卸载入口等
+  问题已修复并在重建后的 Draft 上复测通过；
+- Linux 容器探针完成离线安装、On-demand、Background、重启恢复、卸载与 purge 的验证，发现无
+  systemd 时无法卸载、无 linger 时诊断不足两项待修复。
 
 仍未完成的是必须依赖真实目标系统或后续版本的验收，不把局部探针误记成完整通过：
 
 - 在 Windows 干净普通用户、macOS 干净账号、Ubuntu 22.04/24.04 与清空后的 VPS 上完成从零安装；
-- 完成 Gatekeeper、离线安装、Background 重启恢复、purge 和真实更新失败恢复；
+- 完成 SmartScreen、Gatekeeper、真实 SSH 与主机重启恢复和真实更新失败恢复；
 - 首个后续版本存在后，执行真实 `N-1 → N` 更新与双向连接兼容矩阵；
 - 人工复核剩余实机结果后正式发布 `v0.1.0`，确认 immutable 状态和 updater 发现行为；
 - 正式发布并完成新链验收后，再删除远端 `prod` 分支。

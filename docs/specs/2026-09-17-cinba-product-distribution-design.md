@@ -4,8 +4,8 @@
 
 最后更新：2026-09-19
 
-状态：产品规格与代码纵向路径已完成，首个 Draft Release 和 macOS 当前用户探针通过；等待其余实机
-验收与正式发布
+状态：产品规格与代码纵向路径已完成，Draft Release 已从 `f4025b4` 重建；Windows 当前用户与 Linux
+容器探针完成；等待 macOS 重测、干净环境验收与正式发布
 
 相关下游设计：`docs/specs/2026-09-17-cinba-sync-product-experience.md`
 

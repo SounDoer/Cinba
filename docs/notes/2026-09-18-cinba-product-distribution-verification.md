@@ -214,6 +214,50 @@ manifest、`SHA256SUMS` 与 Windows attestation 校验一致。在同一当前�
 未覆盖：干净账号、SmartScreen、TUI 交互、On-demand 空闲停止、注销或重启后 Background 恢复、
 离线安装，以及 Cinba Dev 与正式 Sync 同时运行的实测。下方 Windows 验收项仍保持未勾选。
 
+### Windows 补充探针
+
+同一 `f4025b4` Draft、同一当前用户：
+
+- 安装过程中安装器与 Cinba 进程没有任何外部 TCP 连接；Desktop 首次启动 60 秒内仅有一次到 GitHub
+  （`20.205.243.168:443`）的连接，对应自动更新检查，因仅有 Draft 而记录 `discovery-failed`；
+- 给安装包加上 Internet 区域的 Zone.Identifier 后通过资源管理器启动，SmartScreen 弹出拦截
+  提示，经“更多信息”→“仍要运行”放行后安装继续，与 release notes 说明一致；
+- 无客户端的 On-demand Core 在 10.1 分钟后自动停止（“no clients remain; stopping the idle
+  on-demand Core”）；
+- TUI purge：确认默认 Cancel；键入错误短语时提示 “Cinba purge cancelled; nothing was removed.”
+  且不删除任何内容；键入 `DELETE ALL CINBA DATA` 后约 14 秒删除程序与全部数据，仍留下空的
+  `%LOCALAPPDATA%\Cinba`；
+- 为干净账号编写的分阶段验收脚本在本机试运行：`installed` 阶段正确识别旧 `npm link` 抢占 PATH，
+  `background` 阶段各项通过。
+
+## Linux 容器探针
+
+2026-09-19 在本机 Docker 中用 `f4025b4` Draft 的 `Cinba-0.1.0-linux-x64-gnu.tar.gz`（`SHA256SUMS`
+校验通过）测试。所有容器均以 `--network none` 运行，无 Node、npm、Git、Pi 和 curl；普通用户
+`tester` 以 bash 登录 shell 执行包内 `install.sh`。容器不能代表真实 VPS 的 SSH、内核与重启，
+bootstrap 一行命令需正式发布后才能从公开 URL 测试。
+
+普通 Ubuntu 22.04 / 24.04 容器（无 systemd）：
+
+- root 执行 `install.sh` 被拒绝；普通用户离线安装成功，未访问网络；
+- 安装结束未启动任何 Cinba 进程；除用户 home 外没有写入任何文件；不涉及 Tailscale、Caddy；
+- `.bashrc` 写入 `# >>> Cinba CLI >>>` 标记块，新 login shell 解析 `~/.local/bin/cinba`；`version`、
+  `help`、默认 TUI 正常，On-demand Core 可启动和停止；
+- **缺陷：没有 `systemctl` 时 `doctor` 的 Core 检查、`core mode` 查询与切换、普通卸载和 purge
+  全部以 `spawn systemctl ENOENT` 失败，产品无法卸载**（数据未受影响）；
+- 非交互 purge 缺少 `--delete-all-cinba-data` 时拒绝；离线 `cinba update` 只输出 `fetch failed`。
+
+带 systemd 的 Ubuntu 24.04 特权容器（systemd 为 PID 1，断网）：
+
+- 离线安装后 `doctor` 全部通过，默认 On-demand；
+- 未启用 linger 时切换 Background 失败且未误报成功，但诊断只有 “could not set Cinba Core to
+  background / registration-failed”，没有说明 linger 与修复方法；
+- 管理员 `loginctl enable-linger` 后切换 Background 成功，`cinba-core.service` 以 user unit 运行，
+  登录会话结束后继续运行；重启容器后按 Background 自动恢复；切回 On-demand 删除 unit；
+- 普通卸载移除 launcher、`lib`、`state`、`.bashrc` 标记块和 user unit，数据哈希不变，linger
+  保持不变；重装恢复数据；purge 删除全部内容，但留下空的 `~/.local/share/cinba`（Windows 上同样
+  留下空的 `%LOCALAPPDATA%\Cinba`）。
+
 ## 正式发版前置检查
 
 - [x] 当前提交已推送到公开仓库的 `master`；
