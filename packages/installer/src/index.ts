@@ -194,7 +194,11 @@ export type {
   InstallationTransaction,
   InstalledRelease,
 } from "./installation-store.ts";
-export { acquireInstallationLock, waitForInstallationIdle } from "./installation-lock.ts";
+export {
+  acquireInstallationLock,
+  installationLockHeldBy,
+  waitForInstallationIdle,
+} from "./installation-lock.ts";
 export { installReleaseBundle } from "./bundle-installation.ts";
 export type { InstallReleaseBundleOptions, PreparedStableFiles } from "./bundle-installation.ts";
 export { prepareStableProductFiles, recoverStableProductFiles } from "./stable-files.ts";

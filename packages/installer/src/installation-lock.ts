@@ -126,6 +126,14 @@ export async function acquireInstallationLock(
   };
 }
 
+/** Whether the installation lock is currently recorded as owned by `processId`. */
+export async function installationLockHeldBy(
+  layout: InstallationLayout,
+  processId: number,
+): Promise<boolean> {
+  return (await readLock(lockPath(layout)))?.pid === processId;
+}
+
 export async function waitForInstallationIdle(
   layout: InstallationLayout,
   options: { timeoutMs?: number; pollMs?: number } = {},

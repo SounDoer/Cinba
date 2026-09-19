@@ -48,6 +48,8 @@ export type ServiceManagerOptions = {
   availability: ServiceAvailability;
   verifyHealth?: (definition: ManagedServiceDefinition) => Promise<void>;
   now?: () => Date;
+  /** The caller already holds the installation lock (the uninstall helper), so do not take it. */
+  installationLockHeld?: boolean;
 };
 
 async function waitForPlatform(
@@ -232,7 +234,9 @@ export async function setManagedServiceMode(
   if (!options.definition.allowedModes.includes(desiredMode)) {
     throw new Error(`${options.definition.displayName} does not support ${desiredMode}`);
   }
-  const unlock = await acquireInstallationLock(options.layout);
+  const unlock = options.installationLockHeld
+    ? async () => undefined
+    : await acquireInstallationLock(options.layout);
   const now = options.now ?? (() => new Date());
   const verifyHealth = options.verifyHealth ?? defaultVerifyHealth;
   try {

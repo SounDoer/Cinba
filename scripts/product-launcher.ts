@@ -24,6 +24,7 @@ import {
   beginForegroundUninstall,
   confirmPurge,
   launchUninstallHelper,
+  reportPreviousUninstallFailure,
   runUninstallHelper,
   stopProductForUninstall,
 } from "./product-uninstall.ts";
@@ -208,6 +209,10 @@ async function run(): Promise<void> {
       openMacosApplication(paths.desktopApplicationPath);
     }
     return;
+  }
+  // A surface-initiated uninstall runs without output; tell the person here if it failed.
+  if (process.stderr.isTTY) {
+    await reportPreviousUninstallFailure(paths);
   }
   const command = await resolveInstalledProductCommand({
     layout: paths,

@@ -39,6 +39,8 @@ export type ProductManagedServiceOptions = {
   adapter?: PlatformServiceAdapter;
   componentCreated?: boolean;
   verifyHealth?: (definition: ManagedServiceDefinition) => Promise<void>;
+  /** The caller already holds the installation lock; see ServiceManagerOptions. */
+  installationLockHeld?: boolean;
   /** The on-demand Core that Background must take over from. */
   localCore?: {
     config: LocalCoreConfig;
@@ -150,6 +152,7 @@ async function serviceManagerOptions(
       }),
     availability: { productInstalled: true, componentCreated },
     ...(verifyHealth ? { verifyHealth } : {}),
+    ...(options.installationLockHeld ? { installationLockHeld: true } : {}),
   };
 }
 
