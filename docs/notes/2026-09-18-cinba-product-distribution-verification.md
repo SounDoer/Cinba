@@ -258,6 +258,24 @@ bootstrap 一行命令需正式发布后才能从公开 URL 测试。
   保持不变；重装恢复数据；purge 删除全部内容，但留下空的 `~/.local/share/cinba`（Windows 上同样
   留下空的 `%LOCALAPPDATA%\Cinba`）。
 
+### Linux 修复后复测
+
+`9625bcc`（无 systemd / 无 linger 处理）、`be1680e`（purge 删除空数据根目录）和 `c696983`（更新网络
+错误说明）合入后，从 `c696983cd0e66e0898ab14a61220787382898331` 重建 Draft
+（[Prepare product release](https://github.com/SounDoer/Cinba/actions/runs/35442241729)），资产、
+manifest、`SHA256SUMS` 与 Windows、Linux attestation 校验一致。同样的容器复测全部通过：
+
+- 无 systemd（22.04 / 24.04）：`doctor` 以 INFO 报告 “Background unavailable: this host does not
+  run systemd”，结论 ready；`core mode` 显示不可用原因；切换 Background 被拒绝并说明原因，保持
+  On-demand；普通卸载成功且数据不变；purge 成功且不留 `~/.local/share/cinba`；离线
+  `cinba update` 报告 “could not reach GitHub Releases … (getaddrinfo EAI_AGAIN api.github.com)”；
+- systemd 无 linger：非交互时说明需要 linger 并给出 `sudo loginctl enable-linger tester`，保持
+  On-demand、无 unit；交互终端询问 “Enable linger? [y/N]”，拒绝后同样保持 On-demand；
+- systemd + linger：Background、登出后继续运行、重启恢复、切回 On-demand、卸载保留数据与
+  linger、重装恢复、purge 全部删除，均与之前一致；
+- Windows：purge 后不再留下 `%LOCALAPPDATA%\Cinba`；仅有 Draft 时 `cinba update` 报告
+  “GitHub latest release request failed with HTTP 404”，正式发布后不再出现。
+
 ## 正式发版前置检查
 
 - [x] 当前提交已推送到公开仓库的 `master`；
