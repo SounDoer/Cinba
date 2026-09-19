@@ -4,8 +4,8 @@
 
 最后更新：2026-09-19
 
-状态：Draft 已从 `f4025b4` 重建；Windows 当前用户探针与各轮复测完成，Desktop/TUI 卸载入口通过；
-macOS 需用新 Draft 重测，其余平台、干净账号和正式发布待验收
+状态：候选 Draft 已从 `e8a6ca1` 重建；Windows 当前用户与 Linux 容器验收通过；macOS 需用该 Draft
+重测，干净账号、真实 Linux 主机和正式发布待验收
 
 对应规格：`docs/specs/2026-09-17-cinba-product-distribution-design.md`
 
@@ -275,6 +275,20 @@ manifest、`SHA256SUMS` 与 Windows、Linux attestation 校验一致。同样的
   linger、重装恢复、purge 全部删除，均与之前一致；
 - Windows：purge 后不再留下 `%LOCALAPPDATA%\Cinba`；仅有 Draft 时 `cinba update` 报告
   “GitHub latest release request failed with HTTP 404”，正式发布后不再出现。
+
+### 候选 Draft
+
+`cbdc4d8` 补充 Release notes（macOS 在 DMG 中被 Gatekeeper 阻止时先复制到 `~/Applications`、
+Linux 重新加载 shell 与 Background 的 systemd / linger 要求、各平台卸载入口与 purge、Windows 版本
+写法），`e8a6ca1` 加入 `scripts/acceptance/` 验收脚本。二者都不进入产品 payload，因此
+`c696983` 上的 Windows 与 Linux 实测结论仍然适用。
+
+从 `e8a6ca1771c72d04dc036ea5c8f9ba021e68fdc5` 重建 Draft
+（[Prepare product release](https://github.com/SounDoer/Cinba/actions/runs/35444030619)）：六个资产
+与 `SHA256SUMS`、GitHub asset digest 一致；manifest revision 为 `e8a6ca1`；六个资产的 attestation
+均可验证；`install.sh` 内嵌的 archive 哈希与 Linux archive 一致；Draft 正文与本地
+`scripts/release-notes.ts` 渲染结果逐字一致。macOS DMG 的 SHA-256 为
+`888b5a25e0ed613dbd762b8cbf4334053c4e216d82989a8a30367823062b747c`。
 
 ## 正式发版前置检查
 
