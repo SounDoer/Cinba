@@ -2,7 +2,9 @@
 
 日期：2026-09-17
 
-状态：代码实施完成，等待正式 Release 与三平台实机验收
+最后更新：2026-09-19
+
+状态：代码实施与首个 Draft Release 已完成；macOS 当前用户探针通过，等待其余实机验收与正式发布
 
 对应规格：`docs/specs/2026-09-17-cinba-product-distribution-design.md`
 
@@ -10,15 +12,23 @@
 
 阶段 0—10 的仓库内代码已经完成：统一 payload、事务安装、后台服务、CLI、Desktop/Headless artifact、
 更新协调、正式 Release workflow、协议兼容和旧部署链退役均已落地。根产品版本已进入 `0.1.0`，
-`npm run check` 在本地通过。
+`npm run check` 在本地通过。面向 `master` 的 push 和 pull request 现由 Windows、macOS、Linux
+三平台日常 CI 自动执行同一 merge gate，首次运行已通过。
 
-尚未完成的是必须依赖 GitHub 和真实目标系统的发布验收，不把它们误记成自动化已经证明的事实：
+发布基础和首轮外部验证已经完成：
 
-- 推送当前 `master`，启用 GitHub Immutable Releases，并实际运行 **Prepare product release** workflow；
-- 复核 workflow 产出的三平台 artifact、attestation、manifest、校验值、双语说明和 draft Release；
-- 在 Windows、Apple Silicon macOS、Ubuntu 22.04/24.04 与清空后的 VPS 上执行从零安装；
-- 完成离线安装、Background 重启恢复、普通卸载、purge、重装和真实更新失败恢复；
+- GitHub Immutable Releases 已启用；
+- **Prepare product release** 已从锁定 revision 在三平台完成检查、构建、attestation 和 Draft Release；
+- artifact、manifest、校验值、双语说明和六个 Release asset 已完成复核；
+- Apple Silicon macOS 当前用户已完成安装、同版本修复、On-demand/Background 往返、普通卸载和
+  保留数据重装。
+
+仍未完成的是必须依赖真实目标系统或后续版本的验收，不把局部探针误记成完整通过：
+
+- 在 Windows 干净普通用户、macOS 干净账号、Ubuntu 22.04/24.04 与清空后的 VPS 上完成从零安装；
+- 完成 Gatekeeper、离线安装、Background 重启恢复、purge 和真实更新失败恢复；
 - 首个后续版本存在后，执行真实 `N-1 → N` 更新与双向连接兼容矩阵；
+- 人工复核剩余实机结果后正式发布 `v0.1.0`，确认 immutable 状态和 updater 发现行为；
 - 正式发布并完成新链验收后，再删除远端 `prod` 分支。
 
 逐项记录见 `docs/notes/2026-09-18-cinba-product-distribution-verification.md`。

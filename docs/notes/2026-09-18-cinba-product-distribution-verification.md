@@ -2,7 +2,9 @@
 
 日期：2026-09-18
 
-状态：仓库内实现完成；正式 Release 与真实平台验收待执行
+最后更新：2026-09-19
+
+状态：Draft Release 与 macOS 当前用户探针完成；其余平台、破坏性边界和正式发布待验收
 
 对应规格：`docs/specs/2026-09-17-cinba-product-distribution-design.md`
 
@@ -25,8 +27,10 @@
 - 旧 `packages/deploy`、`/deployment-status`、旧 systemd/Caddy 文件、promotion 脚本和 `cinba-prod`
   skill 已从仓库删除；
 - README 已改为正式安装优先，源码入口只描述 Cinba Dev；
-- 本轮最终 `npm run check` 通过：952 个单元测试（2 个平台限定跳过）、11 个端到端测试和 Web、
-  Desktop、Sync Web 构建全部成功。
+- 面向 `master` 的 push 和 pull request 已启用 Windows、macOS、Linux 三平台日常 CI；首次
+  [CI 运行](https://github.com/SounDoer/Cinba/actions/runs/35372354729) 全部通过；
+- 本轮最终 `npm run check` 通过：953 个单元测试（951 个通过、2 个平台限定跳过）、11 个端到端测试
+  和 Web、Desktop、Sync Web 构建全部成功。
 
 ## 当前 Windows 构建探针
 
