@@ -4,8 +4,8 @@
 
 最后更新：2026-09-19
 
-状态：Draft Release 与 macOS、Windows 当前用户探针完成；Windows 探针发现的缺陷已修复，
-Draft 待从新提交重建并复测；其余平台、破坏性边界和正式发布待验收
+状态：Draft 已从 `6665331` 重建；macOS 当前用户探针与 Windows 当前用户探针及修复后复测完成；
+Desktop/TUI 卸载入口缺失，其余平台、干净账号和正式发布待验收
 
 对应规格：`docs/specs/2026-09-17-cinba-product-distribution-design.md`
 
@@ -123,13 +123,41 @@ macOS 验收项仍保持未勾选。
 5. 次要：`doctor` 未显示解析后的数据路径；Background 服务在 `core status` 中显示为
    `Lifecycle: external`；purge 后残留空的 `%LOCALAPPDATA%\Cinba`；`update.json` 在仅有 Draft
    时记录 `discovery-failed`。
-6. 待调查：一次 Desktop 运行中的 purge 与重装竞争后，`Data` 中 1:00 以后写入的文件消失，其余
-   文件内容和时间戳回到 12:59:30 的状态，未找到快照残留，来源未确认。
+6. 已确认不是产品缺陷：purge 后 `Data` “回到旧状态”是测试环境造成的。探针命令运行在 Claude
+   桌面应用的 MSIX 容器内，新建的 `%LOCALAPPDATA%\Cinba` 被重定向到
+   `%LOCALAPPDATA%\Packages\Claude_…\LocalCache\Local\Cinba`；由 Task Scheduler 在容器外启动的
+   Background Core 则写入真实路径。容器内 purge 删除重定向副本后，真实路径中 Background 写入的
+   旧数据透出。已有的 `%LOCALAPPDATA%\Programs` 不受重定向。以后在此类环境探针时，涉及 Data
+   的结论需从容器外（例如一次性计划任务）核对真实路径。
 
 问题 1—3 已分别由 `a74a5ab`（卸载先关闭 Desktop，helper 持有安装锁，安装器等待并回收失效事务、
 失败弹窗显示真实错误）、`149bfc5`（Background 先交接空闲 On-demand Core，健康检查核对服务 PID
 与控制 token）和 `2e4ae1e`（Cinba Dev 改用 4527/4528，`cinba-dev doctor` 检查 Dev Core）修复，
-`npm run check` 通过。旧 Draft 由 `8eec5f1` 构建、包含这些缺陷，需从新提交重建后在 Windows 上复测。
+`npm run check` 通过。
+
+### 修复后复测
+
+2026-09-19 从 `666533154632ec55008609da0f9695d7d422c1ca` 重建 Draft
+（[Prepare product release](https://github.com/SounDoer/Cinba/actions/runs/35426240854)），六个资产
+齐全，manifest 大小和 SHA-256 与 GitHub asset digest 一致，Windows 安装包 attestation 校验通过。
+在同一当前用户上用新 `.exe` 复测：
+
+- Desktop 持有 On-demand Core 时 `cinba core mode background` 完成交接：4517 改由服务的
+  `node.exe` 持有，计划任务保持 Running，Desktop 重新连接；关闭 Desktop 后服务继续运行，切回
+  On-demand 后任务删除、Core 停止；
+- Desktop 运行时普通卸载先输出 “Cinba Desktop was closed.”，helper 约 30 秒完成；卸载期间
+  立即启动的安装器提示等待卸载结束，随后正常完成安装；除 Desktop 重新启动写入的
+  `lastSessionId` 外数据哈希不变；
+- Desktop 运行时非交互 purge 先关闭 Desktop，约 9 秒完成；
+- 正式 Core 使用 4517、Cinba Dev Core 使用 4527，`cinba-dev doctor` 报告 Dev 自身的 managed
+  Core，Dev 不注册计划任务。
+
+复测新发现：
+
+- Desktop 与 TUI 均没有规格 §19 要求的“卸载 Cinba”和“卸载并删除所有数据”入口，只能通过
+  Windows“已安装的应用”或 Shell CLI 卸载；
+- Windows helper 的延迟清理未生效，每次卸载在 `%TEMP%\cinba-uninstall-*` 残留约 94 MB 的
+  `cinba-helper.exe`。
 
 未覆盖：干净账号、SmartScreen、TUI 交互、On-demand 空闲停止、注销或重启后 Background 恢复、
 离线安装，以及 Cinba Dev 与正式 Sync 同时运行的实测。下方 Windows 验收项仍保持未勾选。
