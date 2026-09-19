@@ -1,6 +1,13 @@
 import { lstat } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import { posix } from "node:path";
+import type { CoreHealth } from "@cinba/core-client";
+import {
+  type LocalCoreConfig,
+  acquireStartLock,
+  inspectLocalCore,
+  stopLocalCore,
+} from "@cinba/core-manager";
 import {
   type ManagedServiceDefinition,
   type ManagedServiceStatus,
@@ -15,6 +22,11 @@ import {
   resolveProductPaths,
   setManagedServiceMode,
 } from "@cinba/installer";
+import {
+  type CoreServiceStatusRequest,
+  createCoreServiceControlConfig,
+  verifyCoreServiceIdentity,
+} from "./core-service-control.ts";
 
 type SupportedPlatform = "win32" | "darwin" | "linux";
 
@@ -27,6 +39,13 @@ export type ProductManagedServiceOptions = {
   adapter?: PlatformServiceAdapter;
   componentCreated?: boolean;
   verifyHealth?: (definition: ManagedServiceDefinition) => Promise<void>;
+  /** The on-demand Core that Background must take over from. */
+  localCore?: {
+    config: LocalCoreConfig;
+    probe?: (baseUrl: string) => Promise<CoreHealth | undefined>;
+    requestStatus?: CoreServiceStatusRequest;
+    requestStop?: (baseUrl: string, token: string) => Promise<boolean>;
+  };
 };
 
 function supportedPlatform(platform: NodeJS.Platform): SupportedPlatform {
@@ -99,6 +118,16 @@ async function serviceManagerOptions(
   const environment = options.environment ?? process.env;
   const paths = resolveProductPaths({ platform, homeDirectory, environment });
   const definitions = createManagedServiceDefinitions(paths, platform);
+  // Core health must come from the Background service itself, not whichever Core holds the port.
+  const verifyHealth =
+    options.verifyHealth ??
+    (component === "core"
+      ? async () =>
+          await verifyCoreServiceIdentity(
+            createCoreServiceControlConfig(paths.stateDirectory),
+            options.localCore?.requestStatus,
+          )
+      : undefined);
   const componentCreated =
     options.componentCreated ??
     (component === "core" ? true : await pathExists(paths.syncDataDirectory));
@@ -120,8 +149,44 @@ async function serviceManagerOptions(
         ...(options.userId === undefined ? {} : { userId: options.userId }),
       }),
     availability: { productInstalled: true, componentCreated },
-    ...(options.verifyHealth ? { verifyHealth: options.verifyHealth } : {}),
+    ...(verifyHealth ? { verifyHealth } : {}),
   };
+}
+
+/** Stop an idle on-demand Core so the Background service can bind the shared Core address. */
+async function handOffOnDemandCore(
+  localCore: NonNullable<ProductManagedServiceOptions["localCore"]>,
+  isBackgroundService: () => Promise<boolean>,
+): Promise<void> {
+  const { config, probe, requestStatus, requestStop } = localCore;
+  const current = await inspectLocalCore(config, probe, requestStatus);
+  if (!current.running) {
+    return;
+  }
+  if (!current.managed) {
+    if (await isBackgroundService()) {
+      return;
+    }
+    throw new Error(
+      "another Cinba Core is using 127.0.0.1:4517 and cannot be stopped by Cinba; stop it before switching to background",
+    );
+  }
+  if (current.state === "draining" || current.safeToStop === false) {
+    throw new Error(
+      "the on-demand Cinba Core has active work; retry 'cinba core mode background' after it finishes",
+    );
+  }
+  const stopped = await stopLocalCore({
+    config,
+    ...(probe ? { probe } : {}),
+    ...(requestStatus ? { requestStatus } : {}),
+    ...(requestStop ? { requestStop } : {}),
+  });
+  if (stopped.running) {
+    throw new Error(
+      "the on-demand Cinba Core is still finishing its work; retry 'cinba core mode background' after it stops",
+    );
+  }
 }
 
 export async function inspectProductComponentMode(
@@ -136,7 +201,26 @@ export async function setProductComponentMode(
   mode: ServiceMode,
   options: ProductManagedServiceOptions = {},
 ): Promise<ManagedServiceStatus> {
-  return await setManagedServiceMode(await serviceManagerOptions(component, options), mode);
+  const managerOptions = await serviceManagerOptions(component, options);
+  if (component !== "core" || mode !== "background" || !options.localCore) {
+    return await setManagedServiceMode(managerOptions, mode);
+  }
+  // Holding the start lock keeps Desktop and the TUI from spawning a new on-demand Core
+  // between the handoff and the service binding the port.
+  const release = await acquireStartLock(options.localCore.config.startLockPath);
+  try {
+    await handOffOnDemandCore(options.localCore, async () => {
+      try {
+        await managerOptions.verifyHealth?.(managerOptions.definition);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    return await setManagedServiceMode(managerOptions, mode);
+  } finally {
+    release();
+  }
 }
 
 export function formatProductComponentMode(status: ManagedServiceStatus): string {

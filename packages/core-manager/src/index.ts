@@ -6,6 +6,7 @@ export {
   resolveLocalCoreRevision,
   stopLocalCore,
 } from "./core-manager.ts";
+export { acquireStartLock } from "./start-lock.ts";
 export type { LocalCoreConfig } from "./config.ts";
 export type {
   EnsureLocalCoreOptions,

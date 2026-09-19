@@ -157,6 +157,53 @@ test("a failed Background start compensates to the old mode", async () => {
   }
 });
 
+test("a briefly running service is not committed when another process answers health", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-service-impostor-"));
+  const context = setup(root);
+  const events: string[] = [];
+  const adapter = fakeAdapter(events);
+  let inspectsAfterStart = 0;
+  adapter.inspect = async function () {
+    events.push("inspect");
+    // Like a Windows task that reaches Running, then exits because the port is taken.
+    if (this.running) {
+      inspectsAfterStart += 1;
+      if (inspectsAfterStart > 1) {
+        this.running = false;
+      }
+    }
+    return { registered: this.registered, running: this.running };
+  };
+  let healthChecks = 0;
+  try {
+    await assert.rejects(
+      setManagedServiceMode(
+        {
+          layout: context.layout,
+          serviceStateDirectory: context.stateDirectory,
+          definition: context.services.core,
+          adapter,
+          availability: { productInstalled: true, componentCreated: true },
+          verifyHealth: async () => {
+            healthChecks += 1;
+            throw new Error("the Core answering health is not the Background service");
+          },
+        },
+        "background",
+      ),
+      /could not set Cinba Core to background/,
+    );
+    assert.equal(healthChecks > 1, true);
+    assert.equal(adapter.registered, false);
+    const state = await readServiceState(context.stateDirectory);
+    assert.equal(state?.core.mode, "on-demand");
+    assert.equal(state?.core.phase, "failed");
+    assert.equal(state?.core.failure, "health-failed");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("Background waits for an asynchronously starting platform service", async () => {
   const root = await mkdtemp(join(tmpdir(), "cinba-service-settle-"));
   const context = setup(root);

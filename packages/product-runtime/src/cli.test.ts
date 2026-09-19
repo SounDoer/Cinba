@@ -104,6 +104,21 @@ test("the internal Core service is persistent and uses only stable product data"
   assert.equal(service.environment.CINBA_LOCAL_CONTROL_TOKEN, undefined);
 });
 
+test("only the managed Core service records an identity for mode verification", () => {
+  const options = { platform: "linux" as const, homeDirectory: "/home/ada", environment: {} };
+  assert.equal(
+    createProductServiceProcess(resolve("payload"), release, "core", options).controlStateDirectory,
+    undefined,
+  );
+  assert.equal(
+    createProductServiceProcess(resolve("payload"), release, "core", {
+      ...options,
+      managedService: true,
+    }).controlStateDirectory,
+    "/home/ada/.local/state/cinba",
+  );
+});
+
 test("the internal Sync service is loopback-only and isolated from Core data", () => {
   const payload = resolve("payload");
   const service = createProductServiceProcess(

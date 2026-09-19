@@ -14,6 +14,7 @@ import {
   CINBA_UPDATE_STATE_DIRECTORY_ENV,
   checkForProductUpdatesAutomatically,
 } from "./automatic-update.ts";
+import { createCoreServiceControlConfig } from "./core-service-control.ts";
 import { resolveProductPayloadLayout } from "./layout.ts";
 import { formatInstalledDoctorReport, runInstalledDoctor } from "./doctor.ts";
 import {
@@ -213,6 +214,7 @@ export function createProductServiceProcess(
         CINBA_EXTENSION_ROOT: payload.extensionRoot,
         CINBA_WEB_ROOT: payload.webRoot,
       },
+      ...(options.managedService ? { controlStateDirectory: paths.stateDirectory } : {}),
     };
   }
   delete environment.CINBA_LOCAL_SYNC_CONTROL_TOKEN;
@@ -322,34 +324,39 @@ function waitForServiceExit(child: ChildProcess): Promise<number> {
 }
 
 async function runProductService(service: ProductServiceProcess): Promise<void> {
-  const syncControl =
-    service.component === "sync" && service.controlStateDirectory
-      ? {
-          config: createManagedSyncControlConfig(service.controlStateDirectory),
-          token: randomUUID(),
-        }
-      : undefined;
+  // A managed service records its PID and control token so mode changes can prove identity.
+  const serviceControl = service.controlStateDirectory
+    ? {
+        config:
+          service.component === "sync"
+            ? createManagedSyncControlConfig(service.controlStateDirectory)
+            : createCoreServiceControlConfig(service.controlStateDirectory),
+        token: randomUUID(),
+      }
+    : undefined;
+  const tokenVariable =
+    service.component === "sync" ? "CINBA_LOCAL_SYNC_CONTROL_TOKEN" : "CINBA_LOCAL_CONTROL_TOKEN";
   const child = spawn(process.execPath, [service.entry], {
     cwd: service.workingDirectory,
     stdio: "inherit",
     windowsHide: true,
     env: {
       ...service.environment,
-      ...(syncControl ? { CINBA_LOCAL_SYNC_CONTROL_TOKEN: syncControl.token } : {}),
+      ...(serviceControl ? { [tokenVariable]: serviceControl.token } : {}),
     },
   });
   const exit = waitForServiceExit(child);
-  if (syncControl) {
+  if (serviceControl) {
     if (!child.pid) {
       child.kill();
       await exit.catch(() => undefined);
-      throw new Error("Cinba Sync did not report a PID");
+      throw new Error(`Cinba ${service.component} did not report a PID`);
     }
     try {
       await createManagedSyncControl({
-        config: syncControl.config,
+        config: serviceControl.config,
         pid: child.pid,
-        token: syncControl.token,
+        token: serviceControl.token,
       });
     } catch (error) {
       child.kill();
@@ -361,8 +368,8 @@ async function runProductService(service: ProductServiceProcess): Promise<void> 
   try {
     code = await exit;
   } finally {
-    if (syncControl && child.pid) {
-      await removeManagedSyncControl(syncControl.config, child.pid);
+    if (serviceControl && child.pid) {
+      await removeManagedSyncControl(serviceControl.config, child.pid);
     }
   }
   if (code !== 0) {
@@ -456,7 +463,9 @@ export async function runProductCli(
   const config = createProductCoreConfig(payload.root, { release });
   if (command.type === "component-mode") {
     const status = command.mode
-      ? await setProductComponentMode(command.component, command.mode)
+      ? await setProductComponentMode(command.component, command.mode, {
+          localCore: { config },
+        })
       : await inspectProductComponentMode(command.component);
     console.log(formatProductComponentMode(status));
     return;
