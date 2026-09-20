@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, request as httpRequest } from "node:http";
 import { createServer as createHttpsServer, request as httpsRequest } from "node:https";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -18,6 +17,7 @@ import {
   enrollmentAuthorization,
   managementAuthorization,
 } from "@cinba/sync-client";
+import { temporaryDirectory } from "@cinba/test-support";
 import { backupSyncState, restoreSyncState } from "./services/backup-service.ts";
 import { resolveEffectiveSettings } from "../../server/src/effective-settings.ts";
 import { createSnapshotCache } from "../../server/src/sync/snapshot-cache.ts";
@@ -109,8 +109,8 @@ async function stop(child: ChildProcess): Promise<void> {
   await exited;
 }
 
-test("real Sync process preserves multi-Core policy, offline data, revocation, and migration", async () => {
-  const root = mkdtempSync(join(tmpdir(), "cinba-sync-e2e-"));
+test("real Sync process preserves multi-Core policy, offline data, revocation, and migration", async (t) => {
+  const root = temporaryDirectory("cinba-sync-e2e-", t);
   const sourceState = join(root, "source");
   const restoredState = join(root, "restored");
   const webRoot = join(root, "web");

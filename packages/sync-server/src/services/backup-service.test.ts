@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import { SyncMaintenanceError, createSyncStore } from "../store/sync-store.ts";
 import { backupSyncState, inspectSyncState, restoreSyncState } from "./backup-service.ts";
 
@@ -36,8 +36,8 @@ async function populatedState(root: string) {
   return { store, coreCredential: approved.coreCredential };
 }
 
-test("an encrypted backup restores identity, authentication, revisions, and credentials", async () => {
-  const root = mkdtempSync(join(tmpdir(), "cinba-sync-backup-"));
+test("an encrypted backup restores identity, authentication, revisions, and credentials", async (t) => {
+  const root = temporaryDirectory("cinba-sync-backup-", t);
   const source = join(root, "source");
   const target = join(root, "target");
   const archive = join(root, "sync.backup");
@@ -69,8 +69,8 @@ test("an encrypted backup restores identity, authentication, revisions, and cred
   );
 });
 
-test("restore rejects bad passwords, damaged archives, unsupported versions, and nonempty targets", async () => {
-  const root = mkdtempSync(join(tmpdir(), "cinba-sync-restore-"));
+test("restore rejects bad passwords, damaged archives, unsupported versions, and nonempty targets", async (t) => {
+  const root = temporaryDirectory("cinba-sync-restore-", t);
   const source = join(root, "source");
   const archive = join(root, "sync.backup");
   await populatedState(source);
@@ -105,8 +105,8 @@ test("restore rejects bad passwords, damaged archives, unsupported versions, and
   assert.throws(() => restoreSyncState(target, archive, PASSWORD), /not empty/);
 });
 
-test("forced restore preserves the previous target and maintenance rejects mutations", async () => {
-  const root = mkdtempSync(join(tmpdir(), "cinba-sync-force-"));
+test("forced restore preserves the previous target and maintenance rejects mutations", async (t) => {
+  const root = temporaryDirectory("cinba-sync-force-", t);
   const source = join(root, "source");
   const target = join(root, "target");
   const archive = join(root, "sync.backup");
@@ -126,8 +126,8 @@ test("forced restore preserves the previous target and maintenance rejects mutat
   await store.setCredential("allowed", "secret");
 });
 
-test("status reveals a Setup Code only before administrator setup", async () => {
-  const root = mkdtempSync(join(tmpdir(), "cinba-sync-status-"));
+test("status reveals a Setup Code only before administrator setup", async (t) => {
+  const root = temporaryDirectory("cinba-sync-status-", t);
   assert.deepEqual(inspectSyncState(join(root, "missing")), { state: "absent" });
   const directory = join(root, "state");
   const store = createSyncStore(directory);

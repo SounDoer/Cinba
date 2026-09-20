@@ -1,16 +1,14 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer } from "node:http";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import { createAdministratorAuthHandler } from "./administrator-auth-routes.ts";
 import { AdministratorAuthService } from "../services/administrator-auth.ts";
 import { createSyncStore } from "../store/sync-store.ts";
 
-test("administrator HTTP routes distinguish setup, authenticated, logout, and replay", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "cinba-admin-routes-"));
+test("administrator HTTP routes distinguish setup, authenticated, logout, and replay", async (t) => {
+  const directory = temporaryDirectory("cinba-admin-routes-", t);
   const store = createSyncStore(directory);
   let handler!: ReturnType<typeof createAdministratorAuthHandler>;
   const server = createServer((request, response) => {
@@ -108,12 +106,11 @@ test("administrator HTTP routes distinguish setup, authenticated, logout, and re
   } finally {
     server.close();
     await once(server, "close");
-    rmSync(directory, { recursive: true, force: true });
   }
 });
 
-test("administrator HTTP routes reject malformed and extra secret fields", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "cinba-admin-routes-"));
+test("administrator HTTP routes reject malformed and extra secret fields", async (t) => {
+  const directory = temporaryDirectory("cinba-admin-routes-", t);
   const store = createSyncStore(directory);
   const service = new AdministratorAuthService({
     store,
@@ -145,6 +142,5 @@ test("administrator HTTP routes reject malformed and extra secret fields", async
   } finally {
     server.close();
     await once(server, "close");
-    rmSync(directory, { recursive: true, force: true });
   }
 });

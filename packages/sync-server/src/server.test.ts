@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdirSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { type ServerResponse, createServer, request as httpRequest } from "node:http";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import {
   assertLoopbackSyncHost,
   closeSyncServer,
@@ -13,8 +13,8 @@ import {
 } from "./server.ts";
 import { syncMaintenancePath } from "./services/backup-service.ts";
 
-test("the standalone Sync server serves health, API, and the same-origin web application", async () => {
-  const root = mkdtempSync(join(tmpdir(), "cinba-sync-server-"));
+test("the standalone Sync server serves health, API, and the same-origin web application", async (t) => {
+  const root = temporaryDirectory("cinba-sync-server-", t);
   const webRoot = join(root, "web");
   const stateDirectory = join(root, "state");
   mkdirSync(webRoot);
@@ -58,9 +58,9 @@ test("the standalone Sync server serves health, API, and the same-origin web app
   }
 });
 
-test("Sync refuses public binds and HTTPS mode requires the expected proxy headers", async () => {
+test("Sync refuses public binds and HTTPS mode requires the expected proxy headers", async (t) => {
   assert.throws(() => assertLoopbackSyncHost("0.0.0.0"), /loopback/);
-  const root = mkdtempSync(join(tmpdir(), "cinba-sync-proxy-"));
+  const root = temporaryDirectory("cinba-sync-proxy-", t);
   const webRoot = join(root, "web");
   mkdirSync(webRoot);
   writeFileSync(join(webRoot, "index.html"), "Sync");
@@ -95,8 +95,8 @@ test("Sync refuses public binds and HTTPS mode requires the expected proxy heade
   }
 });
 
-test("the persistent service starts without a TTY and closes on a lifecycle signal", async () => {
-  const root = mkdtempSync(join(tmpdir(), "cinba-sync-lifecycle-"));
+test("the persistent service starts without a TTY and closes on a lifecycle signal", async (t) => {
+  const root = temporaryDirectory("cinba-sync-lifecycle-", t);
   const webRoot = join(root, "web");
   mkdirSync(webRoot);
   writeFileSync(join(webRoot, "index.html"), "Sync");
@@ -169,8 +169,8 @@ test("graceful Sync close waits for an active request to finish", async () => {
   assert.equal(closed, true);
 });
 
-test("an accepted local stop rejects new business requests while draining", async () => {
-  const root = mkdtempSync(join(tmpdir(), "cinba-sync-draining-"));
+test("an accepted local stop rejects new business requests while draining", async (t) => {
+  const root = temporaryDirectory("cinba-sync-draining-", t);
   const webRoot = join(root, "web");
   mkdirSync(webRoot);
   writeFileSync(join(webRoot, "index.html"), "Sync");
@@ -202,8 +202,8 @@ test("an accepted local stop rejects new business requests while draining", asyn
   }
 });
 
-test("Sync control observes an active business request and refuses to drain", async () => {
-  const root = mkdtempSync(join(tmpdir(), "cinba-sync-active-"));
+test("Sync control observes an active business request and refuses to drain", async (t) => {
+  const root = temporaryDirectory("cinba-sync-active-", t);
   const webRoot = join(root, "web");
   mkdirSync(webRoot);
   writeFileSync(join(webRoot, "index.html"), "Sync");

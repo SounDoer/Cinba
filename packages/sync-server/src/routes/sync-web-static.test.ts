@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import { createSyncWebStaticHandler } from "./sync-web-static.ts";
 
 test("serves the Sync SPA with safe cache behavior and never captures API routes", async (context) => {
-  const root = mkdtempSync(join(tmpdir(), "cinba-sync-web-"));
+  const root = temporaryDirectory("cinba-sync-web-", context);
   mkdirSync(join(root, "assets"));
   writeFileSync(join(root, "index.html"), "<!doctype html><title>Sync</title>");
   writeFileSync(join(root, "assets", "app-abc.js"), "export {};");

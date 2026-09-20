@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer } from "node:http";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import {
   CoreSyncClient,
@@ -15,12 +12,13 @@ import {
   enrollmentAuthorization,
   managementAuthorization,
 } from "@cinba/sync-client";
+import { temporaryDirectory } from "@cinba/test-support";
 import { AdministratorAuthService } from "../services/administrator-auth.ts";
 import { createSyncStore } from "../store/sync-store.ts";
 import { type SyncAccessLog, createSyncApiHandler } from "./sync-api-routes.ts";
 
-test("typed clients complete enrollment, configuration, synchronization, and revocation", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "cinba-sync-api-"));
+test("typed clients complete enrollment, configuration, synchronization, and revocation", async (t) => {
+  const directory = temporaryDirectory("cinba-sync-api-", t);
   const store = createSyncStore(directory);
   const setupCode = store.localSetupCode()!;
   const administratorPassword = "integration-password";
@@ -308,6 +306,5 @@ test("typed clients complete enrollment, configuration, synchronization, and rev
   } finally {
     server.close();
     await once(server, "close");
-    rmSync(directory, { recursive: true, force: true });
   }
 });
