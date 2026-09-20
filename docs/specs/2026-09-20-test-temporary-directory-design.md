@@ -2,7 +2,7 @@
 
 日期：2026-09-20
 
-状态：设计已确认，待实施
+状态：实施中
 
 ## 1. 背景
 
@@ -31,44 +31,55 @@ const root = mkdtempSync(join(tmpdir(), "cinba-x-"));
 
 B 和 C 是泄漏的主要来源。
 
-## 2. Windows 上的第二个问题：junction 造成不可删除的目录
+## 2. Windows 上的第二个问题：悬空 junction 无法删除
 
 `%TEMP%` 中有两个目录在任何情况下都删不掉：`cinba-update-handoff-link-50Bjae` 和
 `cinba-update-handoff-link-qjXZix`，时间戳均为 2026-09-18 20:06。它们来自
 `packages/installer/src/update-handoff.test.ts` 中「handoff storage refuses a symbolic-link
-directory」这条测试——它在临时目录里建一个 Windows junction。
+directory」这条测试——它在临时目录里建一个 Windows junction，并让 junction 指向同一棵树里的
+另一个目录。
 
-根因已经稳定复现：**递归删除一个内含 junction 的目录，在本机必然失败并留下损坏的目录项。**
+根因已经逐步复现清楚，而且比「递归删除会失败」更具体：
 
-```
-rm(root, { recursive: true, force: true })   // root 内有 junction
-  → ENOTEMPTY: directory not empty, rmdir '...'
-```
+**本机上，一个目标已不存在的 junction（悬空 junction）无法被任何工具删除。**
 
-失败后留下的那个 junction 条目处于 NTFS 目录索引与文件记录不一致的状态：
+在一个全新建立的悬空 junction 上（`mklink /J link 一个不存在的路径`）实测：
 
 | 操作 | 结果 |
 | --- | --- |
-| `readdir(root, { withFileTypes: true })` | 列出该项，`Directory, ReparsePoint`，target 为空 |
-| `lstat(link)` / `rmdir(link)` | `ENOENT` |
-| `fsutil reparsepoint query/delete` | 找不到文件 |
-| `cmd rd` / `Remove-Item` / `robocopy /MIR` | 找不到文件 |
+| `readdir(root, { withFileTypes: true })` | 列出该项，`isSymbolicLink() === true` |
+| `lstat(link)` | `ENOENT` |
+| `fs.rm(link, { force: true })` | 报告成功，但条目仍在 |
+| `fs.rmdir(link)` / `fs.unlink(link)` | `ENOENT` |
+| `cmd rmdir` / `rd /s /q` / `Remove-Item` / `robocopy /MIR` | 找不到文件 |
+| `fsutil reparsepoint query` / `delete`（含 `\\?\` 前缀） | 找不到文件 |
 | `mklink /J` 覆盖同名 | 文件已存在 |
 | `CreateFileW` + `FILE_FLAG_OPEN_REPARSE_POINT` | `ERROR_FILE_NOT_FOUND` |
 
-即目录索引里记着这一项，但它指向的文件记录已不存在。用户态没有任何办法修复，只能由管理员权限
-下的 `chkdsk C: /f` 处理（C 盘是系统盘，会安排到下次重启执行）。
+父目录从此永远 `ENOTEMPTY`。
 
-反过来，**先单独删掉 junction、再删父目录**这条路径是干净的，已验证：
+于是问题变成：**junction 是怎么变悬空的。** 答案是 `fs.rm(root, { recursive: true, force: true })`
+在一棵同时含有 junction 和它的目标的树上，**按它自己的顺序删除，不保证先删 junction**。一旦它先
+删掉目标，junction 当场悬空，接下来就再也删不掉了，整个父目录一起卡死。
 
-```ts
-await rm(linkPath, { force: true });          // 非递归，单独处理 junction
-await rm(root, { recursive: true, force: true });   // 此时 root 内已无 reparse point
+这个顺序是**竞态**的，不是固定的——同样的 fixture 反复实测，有时成功有时卡住。这正好解释了为什么
+`update-handoff.test.ts` 跑了几百次，只留下 2 个残留。
+
+结论对应到设计上只有一句话：**删除任何东西之前，先把整棵树里的 link 全部摘掉。**
+
+### 2.1 已卡死目录的清理办法
+
+不需要 `chkdsk`，也不需要提权或重启。既然问题是目标不存在，**把目标重建出来**，junction 就恢复
+可达，随即可以正常删除：
+
+```powershell
+# junction 位于 <root>\update-handoff，原本指向 <root>\outside
+New-Item -ItemType Directory -Path "<root>\outside"
+cmd /c "rmdir `"<root>\update-handoff`""
+cmd /c "rd /s /q `"<root>`""
 ```
 
-`update-handoff.test.ts` 在 commit `b97fdf3`（test(installer): remove handoff junction
-explicitly）已经改成了这个写法，所以它现在不再产生新的损坏目录；但共享 helper 必须把这条规则
-固化下来，否则任何新测试都可能再踩一次。
+本机的 2 个残留目录已按此清理完毕。
 
 ## 3. 设计
 
@@ -100,7 +111,7 @@ packages/test-support/
  * 建一个临时目录，并登记「测试结束后无论成败都删」。
  * 省略 context 时改用 node:test 的文件级 after()。
  */
-export function temporaryDirectory(prefix: string, context?: TestContext): string;
+export function temporaryDirectory(prefix: string, context?: CleanupRegistry): string;
 
 /** Windows 安全的递归删除，供需要自行掌握时机的少数场景使用。 */
 export async function removeTemporaryDirectory(path: string): Promise<void>;
@@ -114,19 +125,31 @@ export async function removeTemporaryDirectory(path: string): Promise<void>;
 
 ### 3.3 删除算法
 
+分两趟，而不是边走边删：
+
 ```
-remove(path):
-  1. lstat(path)；ENOENT 直接返回
-  2. 是 symlink 或 junction → rm(path, { force: true })，不递归，返回
-  3. 是目录 → readdir(path, { withFileTypes: true })，对每个子项递归 remove
-  4. rm(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
-  5. 路径长度接近 260 时使用 \\?\ 前缀
-  6. 全程吞掉 ENOENT
+removeTemporaryDirectory(path):
+  1. removeLinksWithin(path)   // 先把整棵树里的 link 全部摘掉
+  2. rm(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+
+removeLinksWithin(path):
+  1. lstat(path)；ENOENT / ENOTDIR 直接返回
+  2. 是 link → rm(path, { force: true })，返回（不跟进去）
+  3. 不是目录 → 返回
+  4. readdir(path, { withFileTypes: true })
+     - 子项是 link → rm(子项, { force: true })
+     - 子项是目录 → 递归 removeLinksWithin
 ```
 
-第 2 步是整个设计的核心：靠 `dirent.isSymbolicLink()` 在递归**之前**识别出 reparse point 并单独
-删除，使 `rm(recursive)` 永远不会撞上 junction。第 4 步的 `maxRetries` 用于应对 Windows 上杀毒
-软件或索引服务短暂持有句柄。
+第 1 趟是整个设计的核心。它必须是**独立的一趟**：如果只在单趟遍历中「遇到 link 就先删」，仍然
+无法保证 link 排在它的目标之前——两者可能在树的不同分支里。先摘完所有 link，第 2 趟的
+`rm(recursive)` 就不可能再让任何 junction 悬空。
+
+其余细节：
+
+- 路径长度接近 260 时加 `\\?\` 前缀，绕开 Windows 的 MAX_PATH 限制
+- `maxRetries` / `retryDelay` 应对 Windows 上杀毒软件或索引服务短暂持有句柄
+- `ENOENT` / `ENOTDIR` 一律当作成功，使重复删除、并发删除都安全
 
 ## 4. 改造范围
 
@@ -145,16 +168,23 @@ remove(path):
 
 ## 5. 验证
 
-1. `temporary-directory.test.ts` 必须包含一条 junction 用例：在临时目录内建 junction，调用
-   `removeTemporaryDirectory`，断言父目录确实消失。这条测试在算法修复前会失败。
-2. 记录 `npm run check` 前后系统临时目录中 `cinba-*` 的数量，必须不增长。
-3. 收尾扫描：测试文件中 `mkdtemp` 归零，无残留的 `rmSync(..., { recursive: true })`。
+`temporary-directory.test.ts` 覆盖：
+
+1. 清理被登记成 `after` 钩子，而不是在测试体最后一行执行——这正是原来写法 B 泄漏的原因
+2. 含 link 的树（link 与目标同级、分处不同分支）能被完整删除
+3. link 只被摘掉，不会被跟进去删掉它指向的东西
+4. 重复删除不报错
+5. 深层嵌套长路径能删掉
+6. 收尾断言系统临时目录里没有 `cinba-test-support-*` 残留
+
+需要说明的是，第 2 条无法成为一条严格的回归测试：`rm(recursive)` 的删除顺序是竞态的，同一个
+fixture 在朴素实现下有时成功有时卡死。它验证的是结果正确，不是顺序。真正的顺序保证来自 3.3 的
+两趟结构本身。
+
+全量验证：
+
+1. 记录 `npm run check` 前后系统临时目录中 `cinba-*` 的数量，必须不增长
+2. 收尾扫描：测试文件中 `mkdtemp` 归零，无残留的 `rmSync(..., { recursive: true })`
 
 254 个调用点的机械改造，最可能出的错是多行替换只替掉一半——删了 `try {` 却漏了对应的 `}`，
 或反缩进漏行。`format:check` 与 `typecheck` 能拦住绝大部分，另需全量 grep 扫描确认。
-
-## 6. 遗留事项
-
-`%TEMP%` 中 4 个损坏目录（09-18 留下的 2 个，加上本次复现根因时产生的
-`repro-b-fMn735`、`repro-c-ZiX7k8`）需要管理员权限下执行 `chkdsk C: /f` 清理，会安排到下次重启。
-这不属于代码改动范围，由使用者自行决定何时执行。
