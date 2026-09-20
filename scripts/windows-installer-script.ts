@@ -40,6 +40,8 @@ Section "Install Cinba"
   DetailPrint "Installing Cinba. This usually takes a few minutes."
   nsExec::ExecToLog '"$PLUGINSDIR\\CinbaBundle\\launcher\\cinba.exe" install --consume-bundle --failure-log "$PLUGINSDIR\\install-failure.txt"'
   Pop $0
+  ; Setup cannot delete $PLUGINSDIR on exit while the bundle directory is its working directory.
+  SetOutPath "$TEMP"
   ${"$"}{If} $0 != 0
     StrCpy $1 "See the installation details for what failed."
     ClearErrors
