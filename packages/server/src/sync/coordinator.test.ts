@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { type SnapshotResult, SyncClientError } from "@cinba/sync-client";
 import type { SyncSnapshot } from "@cinba/sync-contract";
+import { temporaryDirectory } from "@cinba/test-support";
 import { createSyncConnectionStore } from "./connection-store.ts";
 import { createSyncCoordinator } from "./coordinator.ts";
 import { createSnapshotCache } from "./snapshot-cache.ts";
@@ -31,8 +31,7 @@ function connected(directory: string, credentialSource: "local" | "sync" = "loca
 }
 
 test("startup, manual sync, and jitter polling coalesce requests and skip unchanged broadcasts", async (context) => {
-  const directory = mkdtempSync(join(tmpdir(), "cinba-sync-coordinator-"));
-  context.after(() => rmSync(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory("cinba-sync-coordinator-", context);
   const store = connected(directory);
   const cache = createSnapshotCache(join(directory, "sync-snapshot.json"));
   let calls = 0;
@@ -80,8 +79,7 @@ test("startup, manual sync, and jitter polling coalesce requests and skip unchan
 });
 
 test("offline startup keeps last-known-good as stale and later success recovers", async (context) => {
-  const directory = mkdtempSync(join(tmpdir(), "cinba-sync-offline-"));
-  context.after(() => rmSync(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory("cinba-sync-offline-", context);
   const cachePath = join(directory, "sync-snapshot.json");
   createSnapshotCache(cachePath, { now: () => new Date("2026-09-16T09:00:00.000Z") }).commit(
     snapshot(4),
@@ -110,8 +108,7 @@ test("offline startup keeps last-known-good as stale and later success recovers"
 });
 
 test("invalid, downgraded, and source-mismatched Snapshots never replace good cache", async (context) => {
-  const directory = mkdtempSync(join(tmpdir(), "cinba-sync-invalid-"));
-  context.after(() => rmSync(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory("cinba-sync-invalid-", context);
   const cache = createSnapshotCache(join(directory, "sync-snapshot.json"));
   cache.commit(snapshot(3));
   let result: SnapshotResult = { status: "updated", snapshot: snapshot(2) };
@@ -136,8 +133,7 @@ test("invalid, downgraded, and source-mismatched Snapshots never replace good ca
 });
 
 test("write failure preserves old memory, revocation stops retries, and disconnect has exact scope", async (context) => {
-  const directory = mkdtempSync(join(tmpdir(), "cinba-sync-boundaries-"));
-  context.after(() => rmSync(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory("cinba-sync-boundaries-", context);
   const connection = connected(directory);
   const cachePath = join(directory, "sync-snapshot.json");
   const seed = createSnapshotCache(cachePath);
@@ -184,8 +180,7 @@ test("write failure preserves old memory, revocation stops retries, and disconne
 });
 
 test("Shared Credentials mode requires a credential-bearing Snapshot", async (context) => {
-  const directory = mkdtempSync(join(tmpdir(), "cinba-sync-shared-"));
-  context.after(() => rmSync(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory("cinba-sync-shared-", context);
   let result = snapshot(1);
   const coordinator = createSyncCoordinator({
     connection: connected(directory, "sync"),

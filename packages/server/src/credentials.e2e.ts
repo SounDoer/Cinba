@@ -18,9 +18,10 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { removeTemporaryDirectory } from "@cinba/test-support";
 import WebSocket from "ws";
 
 /** A port of its own, so a core the developer is already running is left alone. */
@@ -155,7 +156,9 @@ after(async () => {
   await sleep(1500);
   server?.kill("SIGKILL");
   try {
-    rmSync(home, { recursive: true, force: true });
+    // The server owns this directory until it is gone, so removal stays here
+    // rather than with the temporaryDirectory helper, whose hook would run first.
+    await removeTemporaryDirectory(home);
   } catch {
     // A file still held open on Windows is not worth failing the run over.
   }

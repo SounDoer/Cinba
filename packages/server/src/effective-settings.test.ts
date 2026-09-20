@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import {
   LOCAL_SOURCES,
   resolveEffectiveSettings,
@@ -46,57 +46,49 @@ test("explicit session model, override, and Local Settings have field-level prio
   });
 });
 
-test("resetting Override immediately follows Local Settings again", () => {
-  const root = mkdtempSync(join(tmpdir(), "cinba-effective-settings-"));
-  try {
-    const local = createLocalSettingsStore(join(root, "local-settings.json"));
-    const override = createInstanceOverrideStore(join(root, "instance-override.json"));
-    local.setDefaultModel({ provider: "deepseek", id: "shared-local" });
-    override.setDefaultModel({ provider: "openai", id: "only-here" });
+test("resetting Override immediately follows Local Settings again", (t) => {
+  const root = temporaryDirectory("cinba-effective-settings-", t);
+  const local = createLocalSettingsStore(join(root, "local-settings.json"));
+  const override = createInstanceOverrideStore(join(root, "instance-override.json"));
+  local.setDefaultModel({ provider: "deepseek", id: "shared-local" });
+  override.setDefaultModel({ provider: "openai", id: "only-here" });
 
-    assert.equal(
-      resolveEffectiveSettings({
-        sources: LOCAL_SOURCES,
-        local: local.get(),
-        override: override.get(),
-      }).defaultModel?.id,
-      "only-here",
-    );
-    override.reset();
-    assert.equal(
-      resolveEffectiveSettings({
-        sources: LOCAL_SOURCES,
-        local: local.get(),
-        override: override.get(),
-      }).defaultModel?.id,
-      "shared-local",
-    );
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("choosing an explicit session model does not write a Settings file", () => {
-  const root = mkdtempSync(join(tmpdir(), "cinba-effective-settings-"));
-  try {
-    const path = join(root, "local-settings.json");
-    const local = createLocalSettingsStore(path);
-    local.setDefaultModel({ provider: "deepseek", id: "local-default" });
-    const before = readFileSync(path, "utf8");
-    const effective = resolveEffectiveSettings({
+  assert.equal(
+    resolveEffectiveSettings({
       sources: LOCAL_SOURCES,
       local: local.get(),
-      override: {},
-    });
+      override: override.get(),
+    }).defaultModel?.id,
+    "only-here",
+  );
+  override.reset();
+  assert.equal(
+    resolveEffectiveSettings({
+      sources: LOCAL_SOURCES,
+      local: local.get(),
+      override: override.get(),
+    }).defaultModel?.id,
+    "shared-local",
+  );
+});
 
-    assert.equal(
-      resolveInitialModel({ provider: "openai", id: "one-session" }, effective)?.id,
-      "one-session",
-    );
-    assert.equal(readFileSync(path, "utf8"), before);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+test("choosing an explicit session model does not write a Settings file", (t) => {
+  const root = temporaryDirectory("cinba-effective-settings-", t);
+  const path = join(root, "local-settings.json");
+  const local = createLocalSettingsStore(path);
+  local.setDefaultModel({ provider: "deepseek", id: "local-default" });
+  const before = readFileSync(path, "utf8");
+  const effective = resolveEffectiveSettings({
+    sources: LOCAL_SOURCES,
+    local: local.get(),
+    override: {},
+  });
+
+  assert.equal(
+    resolveInitialModel({ provider: "openai", id: "one-session" }, effective)?.id,
+    "one-session",
+  );
+  assert.equal(readFileSync(path, "utf8"), before);
 });
 
 test("Local Settings with Shared Credentials is rejected", () => {

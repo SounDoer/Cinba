@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
+import { removeTemporaryDirectory } from "@cinba/test-support";
 import WebSocket from "ws";
 
 const PORT = "4601";
@@ -139,7 +140,9 @@ before(async () => {
 after(async () => {
   await stopCore();
   try {
-    rmSync(stateDirectory, { recursive: true, force: true });
+    // The Core owns this directory until it is gone, so removal stays here rather
+    // than with the temporaryDirectory helper, whose hook would run first.
+    await removeTemporaryDirectory(stateDirectory);
   } catch {
     // A Windows process may briefly retain a handle after termination.
   }

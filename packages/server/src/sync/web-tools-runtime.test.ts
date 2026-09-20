@@ -1,16 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import {
   resolveWebToolsRuntimeConfiguration,
   writeWebToolsRuntimeConfiguration,
 } from "./web-tools-runtime.ts";
 
 test("effective Web tools runtime config contains only resolved values and replaces atomically", (context) => {
-  const directory = mkdtempSync(join(tmpdir(), "cinba-web-runtime-"));
-  context.after(() => rmSync(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory("cinba-web-runtime-", context);
   const path = join(directory, "runtime.json");
   writeWebToolsRuntimeConfiguration(path, {
     version: 1,

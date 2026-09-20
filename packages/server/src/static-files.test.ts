@@ -1,16 +1,16 @@
-import { test } from "node:test";
+import { type TestContext, test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { temporaryDirectory } from "@cinba/test-support";
 import { createStaticFileHandler } from "./static-files.ts";
 
-async function startFixture(): Promise<{
+async function startFixture(t: TestContext): Promise<{
   origin: string;
   close: () => Promise<void>;
 }> {
-  const root = mkdtempSync(join(tmpdir(), "cinba-static-"));
+  const root = temporaryDirectory("cinba-static-", t);
   mkdirSync(join(root, "assets"));
   writeFileSync(join(root, "index.html"), "<h1>Cinba</h1>");
   writeFileSync(join(root, "assets", "app.js"), "console.log('ready');");
@@ -28,13 +28,12 @@ async function startFixture(): Promise<{
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
       });
-      rmSync(root, { recursive: true, force: true });
     },
   };
 }
 
-test("the root path serves index.html", async () => {
-  const fixture = await startFixture();
+test("the root path serves index.html", async (t) => {
+  const fixture = await startFixture(t);
   try {
     const response = await fetch(`${fixture.origin}/`);
 
@@ -46,8 +45,8 @@ test("the root path serves index.html", async () => {
   }
 });
 
-test("an asset is served with its MIME type", async () => {
-  const fixture = await startFixture();
+test("an asset is served with its MIME type", async (t) => {
+  const fixture = await startFixture(t);
   try {
     const response = await fetch(`${fixture.origin}/assets/app.js`);
 
@@ -59,8 +58,8 @@ test("an asset is served with its MIME type", async () => {
   }
 });
 
-test("a missing file explains how to build the UI", async () => {
-  const fixture = await startFixture();
+test("a missing file explains how to build the UI", async (t) => {
+  const fixture = await startFixture(t);
   try {
     const response = await fetch(`${fixture.origin}/missing.js`);
 

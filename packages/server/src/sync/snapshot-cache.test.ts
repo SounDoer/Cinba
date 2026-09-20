@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import type { SyncSnapshot } from "@cinba/sync-contract";
+import { temporaryDirectory } from "@cinba/test-support";
 import { writeAtomicJson } from "../atomic-json-store.ts";
 import { SnapshotCacheValidationError, createSnapshotCache } from "./snapshot-cache.ts";
 
@@ -17,8 +17,7 @@ function snapshot(revision: number): SyncSnapshot {
 }
 
 test("Snapshot cache persists a complete last-known-good and ignores an unchanged revision", (context) => {
-  const directory = mkdtempSync(join(tmpdir(), "cinba-sync-cache-"));
-  context.after(() => rmSync(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory("cinba-sync-cache-", context);
   const path = join(directory, "snapshot.json");
   let writes = 0;
   const cache = createSnapshotCache(path, {
@@ -39,8 +38,7 @@ test("Snapshot cache persists a complete last-known-good and ignores an unchange
 });
 
 test("a downgrade or failed atomic write leaves memory and disk on the old Snapshot", (context) => {
-  const directory = mkdtempSync(join(tmpdir(), "cinba-sync-cache-"));
-  context.after(() => rmSync(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory("cinba-sync-cache-", context);
   const path = join(directory, "snapshot.json");
   const initial = createSnapshotCache(path);
   initial.commit(snapshot(3));

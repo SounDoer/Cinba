@@ -1,27 +1,24 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, parse } from "node:path";
+import { temporaryDirectory } from "@cinba/test-support";
 import { listDirectories } from "./directory-browser.ts";
 
-test("a listing contains visible directories in alphabetical order", () => {
-  const root = mkdtempSync(join(tmpdir(), "cinba-dirs-"));
-  try {
-    mkdirSync(join(root, "zebra"));
-    mkdirSync(join(root, "alpha"));
-    mkdirSync(join(root, ".hidden"));
-    writeFileSync(join(root, "notes.txt"), "not a directory");
+test("a listing contains visible directories in alphabetical order", (t) => {
+  const root = temporaryDirectory("cinba-dirs-", t);
+  mkdirSync(join(root, "zebra"));
+  mkdirSync(join(root, "alpha"));
+  mkdirSync(join(root, ".hidden"));
+  writeFileSync(join(root, "notes.txt"), "not a directory");
 
-    assert.deepEqual(listDirectories(root), {
-      type: "dir_listing",
-      path: root,
-      parent: dirname(root),
-      dirs: ["alpha", "zebra"],
-    });
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  assert.deepEqual(listDirectories(root), {
+    type: "dir_listing",
+    path: root,
+    parent: dirname(root),
+    dirs: ["alpha", "zebra"],
+  });
 });
 
 test("an unreadable or missing path becomes an empty listing", () => {

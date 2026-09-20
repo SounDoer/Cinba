@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import { createSyncConnectionStore } from "./connection-store.ts";
 import { createEnrollmentCoordinator } from "./enrollment-coordinator.ts";
 
 test("enrollment persists pending state and an approval authenticates after restart", async (context) => {
-  const directory = mkdtempSync(join(tmpdir(), "cinba-sync-connection-"));
-  context.after(() => rmSync(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory("cinba-sync-connection-", context);
   const path = join(directory, "connection.json");
   const store = createSyncConnectionStore(path);
   let approved = false;
@@ -65,8 +64,7 @@ test("enrollment persists pending state and an approval authenticates after rest
 });
 
 test("rejection, cancellation, and disconnect delete only Sync connection state", async (context) => {
-  const directory = mkdtempSync(join(tmpdir(), "cinba-sync-disconnect-"));
-  context.after(() => rmSync(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory("cinba-sync-disconnect-", context);
   const path = join(directory, "connection.json");
   const localSettings = join(directory, "local-settings.json");
   const localCredentials = join(directory, "credentials.json");
@@ -109,8 +107,7 @@ test("rejection, cancellation, and disconnect delete only Sync connection state"
 });
 
 test("waiting polls until approval without creating overlapping enrollment state", async (context) => {
-  const directory = mkdtempSync(join(tmpdir(), "cinba-sync-wait-"));
-  context.after(() => rmSync(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory("cinba-sync-wait-", context);
   const store = createSyncConnectionStore(join(directory, "connection.json"));
   let polls = 0;
   const coordinator = createEnrollmentCoordinator({
@@ -152,8 +149,7 @@ test("waiting polls until approval without creating overlapping enrollment state
 });
 
 test("an invalid existing connection is preserved and makes the store read-only", (context) => {
-  const directory = mkdtempSync(join(tmpdir(), "cinba-sync-connection-"));
-  context.after(() => rmSync(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory("cinba-sync-connection-", context);
   const path = join(directory, "connection.json");
   writeFileSync(path, '{"version":2,"credential":"keep-me"}');
   const store = createSyncConnectionStore(path);

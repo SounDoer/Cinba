@@ -1,9 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { PiClient, type Transport } from "@cinba/agent";
+import { temporaryDirectory } from "@cinba/test-support";
 import { createSessionRegistry } from "./session-registry.ts";
 
 class FakeTransport implements Transport {
@@ -110,8 +108,8 @@ class FakeTransport implements Transport {
   }
 }
 
-test("open owns a live session and stop releases its Pi", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("open owns a live session and stop releases its Pi", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   const registry = createSessionRegistry({
     defaultModel: () => undefined,
@@ -136,13 +134,11 @@ test("open owns a live session and stop releases its Pi", async () => {
     assert.equal(transport.closed, true);
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
 test("credential rotation affects only subsequently launched Pi processes", async (context) => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
-  context.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const cwd = temporaryDirectory("cinba-registry-", context);
   const first = new FakeTransport();
   const second = new FakeTransport();
   second.sessionId = "session-2";
@@ -181,8 +177,8 @@ test("credential rotation affects only subsequently launched Pi processes", asyn
   assert.equal(first.closed, false);
 });
 
-test("open exposes Pi skills but not prompt or extension commands", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("open exposes Pi skills but not prompt or extension commands", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   transport.slashCommands = [
     {
@@ -227,12 +223,11 @@ test("open exposes Pi skills but not prompt or extension commands", async () => 
     ]);
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("an unexpectedly closed Pi is no longer returned as a live session", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("an unexpectedly closed Pi is no longer returned as a live session", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   const registry = createSessionRegistry({
     defaultModel: () => undefined,
@@ -254,12 +249,11 @@ test("an unexpectedly closed Pi is no longer returned as a live session", async 
     assert.equal(registry.size, 0);
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("an unexpectedly closed Pi reports the released session to its owner", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("an unexpectedly closed Pi reports the released session to its owner", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   const failures: Array<{ sessionId: string; message: string }> = [];
   const registry = createSessionRegistry({
@@ -285,12 +279,11 @@ test("an unexpectedly closed Pi reports the released session to its owner", asyn
     ]);
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("Pi events update the ledger and arrive as one batched notification", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("Pi events update the ledger and arrive as one batched notification", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   const batches: unknown[][] = [];
   const registry = createSessionRegistry({
@@ -321,12 +314,11 @@ test("Pi events update the ledger and arrive as one batched notification", async
     assert.equal(batches[0]?.length, 3);
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("settling replaces streaming message ids with Pi entry ids", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("settling replaces streaming message ids with Pi entry ids", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   const snapshots: unknown[] = [];
   const registry = createSessionRegistry({
@@ -369,12 +361,11 @@ test("settling replaces streaming message ids with Pi entry ids", async () => {
     assert.equal(snapshots.length, 1);
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("public session commands hide the Pi transport from callers", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("public session commands hide the Pi transport from callers", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   const registry = createSessionRegistry({
     defaultModel: () => undefined,
@@ -414,12 +405,11 @@ test("public session commands hide the Pi transport from callers", async () => {
     assert.equal(opened.model?.id, "model-2");
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("opening sets Cinba's compaction and retry defaults and manual compaction updates context", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("opening sets Cinba's compaction and retry defaults and manual compaction updates context", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   const registry = createSessionRegistry({
     defaultModel: () => undefined,
@@ -477,12 +467,11 @@ test("opening sets Cinba's compaction and retry defaults and manual compaction u
     assert.equal(opened.ledger.snapshot().compacting, false);
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("thinking controls use the levels supported by the current model", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("thinking controls use the levels supported by the current model", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   const registry = createSessionRegistry({
     defaultModel: () => undefined,
@@ -504,12 +493,11 @@ test("thinking controls use the levels supported by the current model", async ()
     assert.equal(opened.ledger.snapshot().thinking.level, "off");
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("a refused prompt explains the failure and clears busy", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("a refused prompt explains the failure and clears busy", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   transport.responses.set("prompt", { success: false, error: "No model configured" });
   const registry = createSessionRegistry({
@@ -535,12 +523,11 @@ test("a refused prompt explains the failure and clears busy", async () => {
     ]);
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("a rejected steering prompt keeps an already-running session busy", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("a rejected steering prompt keeps an already-running session busy", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   transport.responses.set("prompt", { success: false, error: "cannot queue command" });
   const registry = createSessionRegistry({
@@ -566,12 +553,11 @@ test("a rejected steering prompt keeps an already-running session busy", async (
     assert.equal(transport.commands[0]?.streamingBehavior, "steer");
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("a session without a model explains what is missing without becoming busy", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("a session without a model explains what is missing without becoming busy", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   transport.model = undefined;
   const registry = createSessionRegistry({
@@ -598,12 +584,11 @@ test("a session without a model explains what is missing without becoming busy",
     assert.deepEqual(transport.commands, []);
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("a successful abort clears busy even when Pi sends no settled event", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("a successful abort clears busy even when Pi sends no settled event", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   const registry = createSessionRegistry({
     defaultModel: () => undefined,
@@ -627,12 +612,11 @@ test("a successful abort clears busy even when Pi sends no settled event", async
     assert.deepEqual(snapshot.entries, [{ kind: "notice", text: "aborted" }]);
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("abort clears both queues before stopping and returns typed recovered drafts", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("abort clears both queues before stopping and returns typed recovered drafts", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   transport.queue = { steering: ["change direction"], followUp: ["then test"] };
   const registry = createSessionRegistry({
@@ -662,12 +646,11 @@ test("abort clears both queues before stopping and returns typed recovered draft
     ]);
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("stopping a retry preserves queued messages", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("stopping a retry preserves queued messages", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   transport.queue = { steering: ["change direction"], followUp: ["then test"] };
   const registry = createSessionRegistry({
@@ -707,12 +690,11 @@ test("stopping a retry preserves queued messages", async () => {
     });
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("abort still stops and reports when queue clearing fails", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("abort still stops and reports when queue clearing fails", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   transport.responses.set("clear_queue", { success: false, error: "queue unavailable" });
   const registry = createSessionRegistry({
@@ -742,12 +724,11 @@ test("abort still stops and reports when queue clearing fails", async () => {
     ]);
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("a confirmation is denied immediately when nobody is viewing the session", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("a confirmation is denied immediately when nobody is viewing the session", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   const registry = createSessionRegistry({
     defaultModel: () => undefined,
@@ -780,12 +761,11 @@ test("a confirmation is denied immediately when nobody is viewing the session", 
     assert.equal(opened.pendingConfirms.size, 0);
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("pending confirmations are denied when the last viewer leaves", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("pending confirmations are denied when the last viewer leaves", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   const registry = createSessionRegistry({
     defaultModel: () => undefined,
@@ -821,12 +801,11 @@ test("pending confirmations are denied when the last viewer leaves", async () =>
     });
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("a confirmation timeout denies the request and expires its tool card", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("a confirmation timeout denies the request and expires its tool card", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   const registry = createSessionRegistry({
     defaultModel: () => undefined,
@@ -878,12 +857,11 @@ test("a confirmation timeout denies the request and expires its tool card", asyn
     });
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("editing navigates in place before sending the replacement prompt", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "cinba-registry-"));
+test("editing navigates in place before sending the replacement prompt", async (t) => {
+  const cwd = temporaryDirectory("cinba-registry-", t);
   const transport = new FakeTransport();
   transport.entries = [
     {
@@ -928,6 +906,5 @@ test("editing navigates in place before sending the replacement prompt", async (
     assert.equal(registry.get("session-1"), opened, "the conversation id stays unchanged");
   } finally {
     registry.closeAll();
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
