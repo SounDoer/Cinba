@@ -2,10 +2,10 @@
 
 日期：2026-09-17
 
-最后更新：2026-09-19
+最后更新：2026-09-20
 
-状态：代码实施完成，Draft Release 已从 `f4025b4` 重建；Windows 当前用户与 Linux 容器探针完成，
-Linux 无 systemd/linger 处理待修复；等待 macOS 重测、干净环境验收与正式发布
+状态：`v0.1.0` 已从 `827153f` 正式发布；Windows 当前用户、Linux 容器与发布后 bootstrap、updater
+验收通过；等待 macOS 实测、干净环境验收与首个跨版本更新
 
 对应规格：`docs/specs/2026-09-17-cinba-product-distribution-design.md`
 
@@ -25,8 +25,10 @@ Linux 无 systemd/linger 处理待修复；等待 macOS 重测、干净环境验
   保留数据重装（基于首个 Draft，需用重建后的 Draft 重测）；
 - Windows 当前用户探针发现的 Background 交接、卸载与重装竞争、Dev 隔离、Desktop/TUI 卸载入口等
   问题已修复并在重建后的 Draft 上复测通过；
-- Linux 容器探针完成离线安装、On-demand、Background、重启恢复、卸载与 purge 的验证，发现无
-  systemd 时无法卸载、无 linger 时诊断不足两项待修复。
+- Linux 容器探针完成离线安装、On-demand、Background、重启恢复、卸载与 purge 的验证，发现的无
+  systemd 时无法卸载、无 linger 时诊断不足两项已修复并复测通过；
+- `v0.1.0` 已正式发布并标记 Immutable，release notes 精简为只服务于安装；发布后已验证不可变资产、
+  一行 bootstrap 在干净 Ubuntu 上完成安装，以及 updater 正确发现已发布版本。
 
 仍未完成的是必须依赖真实目标系统或后续版本的验收，不把局部探针误记成完整通过：
 

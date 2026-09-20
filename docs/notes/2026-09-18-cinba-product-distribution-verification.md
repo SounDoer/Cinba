@@ -2,10 +2,10 @@
 
 日期：2026-09-18
 
-最后更新：2026-09-19
+最后更新：2026-09-20
 
-状态：候选 Draft 已从 `304db9c` 重建；Windows 当前用户与 Linux 容器验收通过，Windows 安装耗时降至
-约 65 秒且不再残留临时目录；macOS 需用该 Draft 重测，干净账号、真实 Linux 主机和正式发布待验收
+状态：`v0.1.0` 已从 `827153f` 正式发布并标记 Immutable；发布后 bootstrap 与 updater 发现已验证；
+macOS 尚未在任何近期构建上实测，干净账号、真实 VPS 与跨版本更新待验收
 
 对应规格：`docs/specs/2026-09-17-cinba-product-distribution-design.md`
 
@@ -334,6 +334,28 @@ attestation 校验一致。复测结果：
 两条看似异常的观察均非缺陷：清除启动勾选的安装后数据目录尚未创建，符合“配置在首次进入产品后
 完成”的规格；PATH 基线记录时机器上已装有 Cinba，purge 后差异仅为该条目本身。
 
+## 正式发布 v0.1.0
+
+2026-09-20 将 `827153f1391406350bc0c2c89f98132a9fe68b7e` 的 Draft 正式发布为
+[v0.1.0](https://github.com/SounDoer/Cinba/releases/tag/v0.1.0)。发布前 release notes 已按“只服务于
+安装”精简（`827153f`）。发布时 macOS 仍未在 `8eec5f1` 之后的任何构建上实测，这一风险由发布决定
+承担：若 macOS 出现问题，按 `0.1.1` 补发。
+
+发布后立即验证：
+
+- Release 非 draft、非 prerelease，`isImmutable=true`，六个资产齐全；不可变 tag `v0.1.0` 指向
+  `827153f`；`releases/latest` 返回 `v0.1.0`；
+- 尝试替换已发布资产被拒绝（“Cannot delete asset from an immutable release”），未造成改动；
+- **release notes 的一行 bootstrap 在联网的干净 Ubuntu 24.04 容器上成功**：无 Node、npm、Git、Pi，
+  `curl -fsSL …/install.sh | sh` 下载 122 MB、校验通过并安装，显示 checking-package 到 verifying
+  的阶段进度；安装结束未启动任何进程；新 login shell 中 `cinba version` 与 `doctor` 通过；
+- **updater 能发现已发布版本**：容器中 `cinba update` 输出 “Cinba 0.1.0 is current.”；
+- Linux 普通卸载正常；Windows 安装正式包后 `version` 正确且无 `ns*.tmp` 残留。
+
+Windows 上的 `cinba update` 返回 `GitHub latest release request failed with HTTP 403`，经查为本机
+匿名 API 限流（`x-ratelimit-remaining: 0`，限额 60/小时，约 25 分钟后重置），同时刻容器中成功，
+非产品缺陷；提示未说明限流与重试时间，已记入待改进。
+
 ## 正式发版前置检查
 
 - [x] 当前提交已推送到公开仓库的 `master`；
@@ -346,8 +368,8 @@ attestation 校验一致。复测结果：
 - [x] GitHub artifact attestations 可查询；
 - [x] Release notes 包含准确的中英双语三平台安装说明、SmartScreen/Gatekeeper 说明和 `xattr`
       命令；
-- [ ] 人工复核完整集合后才发布 draft；
-- [ ] 发布后 GitHub 将 Release 标记为 Immutable，updater 能发现它且忽略 draft/prerelease。
+- [x] 人工复核完整集合后才发布 draft；
+- [x] 发布后 GitHub 将 Release 标记为 Immutable，updater 能发现它且忽略 draft/prerelease。
 
 ## Windows 10/11 x64
 
@@ -369,12 +391,12 @@ attestation 校验一致。复测结果：
 ## Ubuntu 22.04/24.04 x64 与干净 VPS
 
 - [ ] 同一条 release notes bootstrap 在普通机器和清空后的 VPS 上完成安装；
-- [ ] 安装结束不自动启动 TUI、Core、Sync 或 Background；
-- [ ] 手工复制 archive 的离线安装不访问 npm、Node 官网或 pi.dev；
+- [x] 安装结束不自动启动 TUI、Core、Sync 或 Background；
+- [x] 手工复制 archive 的离线安装不访问 npm、Node 官网或 pi.dev；
 - [ ] `cinba` 默认 TUI、诊断与更新命令可用；
 - [ ] Background Core/Sync 以普通用户运行，SSH 断开后继续，重启后按模式恢复；
-- [ ] 无 linger 时给出可理解的诊断和修复边界；
-- [ ] 不安装或配置 Tailscale、Caddy、TLS、域名和防火墙。
+- [x] 无 linger 时给出可理解的诊断和修复边界；
+- [x] 不安装或配置 Tailscale、Caddy、TLS、域名和防火墙。
 
 ## 更新、兼容与恢复
 
