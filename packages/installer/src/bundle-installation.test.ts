@@ -235,3 +235,37 @@ test("rerunning the installer repairs a staging transaction left by a dead insta
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("a disposable bundle gives up its payload instead of having it copied", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-bundle-install-consume-"));
+  const paths = layout(root);
+  try {
+    const bundle = await createBundle(root);
+    const transaction = await installReleaseBundle({
+      bundleDirectory: bundle,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId,
+      consumeBundle: true,
+      // Stable files come from the bundle's launcher and desktop directories, which a consumed
+      // payload leaves untouched.
+      prepareStableFiles: async (verified) => {
+        assert.equal(
+          await readFile(join(verified.rootDirectory, "launcher", "cinba.exe"), "utf8"),
+          "launcher",
+        );
+        return { commit: async () => {}, rollback: async () => {} };
+      },
+    });
+    assert.equal(transaction.phase, "committed");
+    assert.equal(
+      await readFile(join(paths.releasesDirectory, revision, "lib", "cli.mjs"), "utf8"),
+      "cli",
+    );
+    await assert.rejects(readFile(join(bundle, "payload", "release.json"), "utf8"), {
+      code: "ENOENT",
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

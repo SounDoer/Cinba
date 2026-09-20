@@ -165,6 +165,7 @@ async function run(): Promise<void> {
       paths,
       target,
       ...(expectedRelease ? { expectedRelease } : {}),
+      ...(launcherCommand.consumeBundle ? { consumeBundle: true } : {}),
       report: (progress) => console.log(INSTALL_PROGRESS_MESSAGES[progress]),
     });
     console.log(`Cinba ${transaction.candidate.version} installed successfully.`);

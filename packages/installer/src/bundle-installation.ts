@@ -34,6 +34,11 @@ export type InstallReleaseBundleOptions = {
   transactionId?: string;
   now?: () => Date;
   report?: (progress: ReleaseBundleProgress) => void;
+  /**
+   * Set only when the bundle directory is a throwaway extraction. Staging then moves the payload
+   * out of it instead of copying it, leaving the bundle without a payload afterwards.
+   */
+  consumeBundle?: boolean;
 };
 
 export async function installReleaseBundle(
@@ -65,6 +70,7 @@ export async function installReleaseBundle(
     expectedTarget: options.expectedTarget,
     transactionId: options.transactionId,
     now: options.now,
+    consumeSource: options.consumeBundle,
   });
 
   options.report?.("activating");

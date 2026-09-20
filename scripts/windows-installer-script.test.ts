@@ -11,7 +11,7 @@ test("the Windows setup delegates installation and offers to launch Cinba", () =
   assert.match(script, /RequestExecutionLevel user/);
   assert.match(
     script,
-    /nsExec::ExecToLog '"\$PLUGINSDIR\\CinbaBundle\\launcher\\cinba\.exe" install --failure-log "\$PLUGINSDIR\\install-failure\.txt"'/,
+    /nsExec::ExecToLog '"\$PLUGINSDIR\\CinbaBundle\\launcher\\cinba\.exe" install --consume-bundle --failure-log "\$PLUGINSDIR\\install-failure\.txt"'/,
   );
   assert.match(
     script,
@@ -48,4 +48,15 @@ test("NSIS paths cannot inject new directives", () => {
       }),
     /control characters/,
   );
+});
+
+test("the Windows setup lets the installer consume the bundle it extracted", () => {
+  const script = renderWindowsInstallerScript({
+    version: "0.1.0",
+    bundleDirectory: "C:\\build\\bundle",
+    outputPath: "C:\\build\\Cinba-0.1.0-windows-x64.exe",
+  });
+  // $PLUGINSDIR is deleted when setup exits, so moving the payload out of it is safe and skips
+  // copying 450 MiB a second time.
+  assert.match(script, /cinba\.exe" install --consume-bundle /);
 });

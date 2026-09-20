@@ -35,6 +35,14 @@ export type StageCandidateOptions = {
   expectedTarget: ProductTarget;
   transactionId?: string;
   now?: () => Date;
+  /**
+   * Set when the caller's payload directory is a throwaway extraction it will never read again,
+   * such as the bundle the Windows installer unpacks into $PLUGINSDIR. Staging then moves the
+   * payload instead of copying it, which no caller that keeps its bundle may allow.
+   */
+  consumeSource?: boolean;
+  /** Injected by tests: a real cross-volume move cannot be staged portably. */
+  rename?: typeof rename;
 };
 
 export type ActivateCandidateOptions = {
@@ -49,6 +57,10 @@ export type ActivateCandidateOptions = {
     }) => Promise<void>;
   };
   now?: () => Date;
+  /** Injected by tests: a real directory lock cannot be staged portably. */
+  rename?: typeof rename;
+  /** Injected by tests, to retry the switch without waiting for it. */
+  delay?: (milliseconds: number) => Promise<void>;
 };
 
 export type RecoverInstallationOptions = ActivateCandidateOptions;
@@ -171,6 +183,26 @@ async function verifyRelease(directory: string, release: InstalledRelease): Prom
   }
 }
 
+// Copying the payload is the slowest part of an installation: ~13,000 files and 450 MiB take
+// about 90 seconds on Windows. A caller whose bundle is disposable can have the payload moved
+// instead, which costs one directory rename. A move across volumes fails with EXDEV, and a
+// freshly extracted directory can be briefly locked, so a copy stays the fallback either way.
+async function placeCandidate(
+  source: string,
+  destination: string,
+  options: StageCandidateOptions,
+): Promise<void> {
+  if (options.consumeSource) {
+    try {
+      await (options.rename ?? rename)(source, destination);
+      return;
+    } catch {
+      // The payload is still where it was; fall through to the copy.
+    }
+  }
+  await cp(source, destination, { recursive: true, force: false, errorOnExist: true });
+}
+
 export async function stageCandidate(
   options: StageCandidateOptions,
 ): Promise<InstallationTransaction> {
@@ -247,7 +279,7 @@ export async function stageCandidate(
     };
     await writeInstallationTransaction(options.layout, transaction);
     await mkdir(options.layout.releasesDirectory, { recursive: true });
-    await cp(release, candidateDirectory, { recursive: true, force: false, errorOnExist: true });
+    await placeCandidate(release, candidateDirectory, options);
     await writeFile(
       join(candidateDirectory, "inventory.json"),
       `${JSON.stringify(inventory, null, 2)}\n`,
@@ -267,6 +299,36 @@ export async function stageCandidate(
     throw error;
   } finally {
     await unlock();
+  }
+}
+
+// A directory that staging has just written can be held for a moment by an antivirus scan or by
+// anything enumerating it, and Windows then fails the switch with EPERM. Waiting a few seconds
+// costs nothing next to rolling a whole installation back over a lock that was about to clear.
+const SWITCH_RETRY_WAIT_MS = 5_000;
+const SWITCH_RETRY_MAX_DELAY_MS = 1_000;
+
+async function switchDirectory(
+  source: string,
+  destination: string,
+  options: ActivateCandidateOptions,
+): Promise<void> {
+  const move = options.rename ?? rename;
+  const delay =
+    options.delay ??
+    ((milliseconds: number) => new Promise<void>((wake) => setTimeout(wake, milliseconds)));
+  let waited = 0;
+  for (let next = 50; ; next = Math.min(next * 2, SWITCH_RETRY_MAX_DELAY_MS)) {
+    try {
+      await move(source, destination);
+      return;
+    } catch (error) {
+      if (waited >= SWITCH_RETRY_WAIT_MS) {
+        throw error;
+      }
+    }
+    await delay(next);
+    waited += next;
   }
 }
 
@@ -315,10 +377,10 @@ export async function activateCandidate(
       if (await exists(replacedDirectory)) {
         throw new Error("replacement backup directory already exists");
       }
-      await rename(targetDirectory, replacedDirectory);
+      await switchDirectory(targetDirectory, replacedDirectory, options);
       replacedRelease = true;
     }
-    await rename(candidateDirectory, targetDirectory);
+    await switchDirectory(candidateDirectory, targetDirectory, options);
     targetInstalled = true;
     await writeCurrentRelease(options.layout, target);
 
@@ -373,7 +435,7 @@ export async function activateCandidate(
         await rm(targetDirectory, { recursive: true, force: true });
       }
       if (replacedRelease && replacedDirectory && (await exists(replacedDirectory))) {
-        await rename(replacedDirectory, targetDirectory);
+        await switchDirectory(replacedDirectory, targetDirectory, options);
       }
       if (await dataSnapshotExists(options.layout, transaction.id)) {
         if (!options.dataMigration) {

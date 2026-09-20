@@ -7,7 +7,12 @@ type ExpectedProductInstallRelease = {
 };
 
 export type StableLauncherCommand =
-  | { type: "install"; bundleDirectory: string; failureLogPath?: string }
+  | {
+      type: "install";
+      bundleDirectory: string;
+      failureLogPath?: string;
+      consumeBundle?: boolean;
+    }
   | { type: "update" }
   | {
       type: "begin-update-handoff";
@@ -46,22 +51,11 @@ export function parseStableLauncherCommand(
   arguments_: string[],
   executable: string,
 ): StableLauncherCommand {
-  if (arguments_.length === 1 && arguments_[0] === "install") {
-    return { type: "install", bundleDirectory: resolve(dirname(executable), "..") };
-  }
-  // A graphical installer streams this output into its own view, so it needs the final failure
-  // line in a file it can read back.
-  if (
-    arguments_.length === 3 &&
-    arguments_[0] === "install" &&
-    arguments_[1] === "--failure-log" &&
-    isAbsolute(arguments_[2]!)
-  ) {
-    return {
-      type: "install",
-      bundleDirectory: resolve(dirname(executable), ".."),
-      failureLogPath: arguments_[2]!,
-    };
+  if (arguments_[0] === "install") {
+    const install = parseInstallCommand(arguments_, resolve(dirname(executable), ".."));
+    if (install) {
+      return install;
+    }
   }
   if (arguments_.length === 1 && arguments_[0] === "update") {
     return { type: "update" };
@@ -170,6 +164,36 @@ export function parseStableLauncherCommand(
     throw new Error("invalid update readiness command");
   }
   return { type: "product", arguments: arguments_ };
+}
+
+// Anything the launcher does not recognize stays with the product CLI, so an unparsed install
+// command falls through instead of failing here.
+function parseInstallCommand(
+  arguments_: string[],
+  bundleDirectory: string,
+): StableLauncherCommand | undefined {
+  let failureLogPath: string | undefined;
+  let consumeBundle = false;
+  for (let index = 1; index < arguments_.length; index += 1) {
+    // A graphical installer streams this output into its own view, so it needs the final failure
+    // line in a file it can read back.
+    if (arguments_[index] === "--failure-log" && isAbsolute(arguments_[index + 1] ?? "")) {
+      failureLogPath = arguments_[index + 1]!;
+      index += 1;
+    } else if (arguments_[index] === "--consume-bundle") {
+      // Only an installer that deletes its own extraction may say this; staging then moves the
+      // payload out of the bundle instead of copying it.
+      consumeBundle = true;
+    } else {
+      return undefined;
+    }
+  }
+  return {
+    type: "install",
+    bundleDirectory,
+    ...(consumeBundle ? { consumeBundle: true } : {}),
+    ...(failureLogPath ? { failureLogPath } : {}),
+  };
 }
 
 function parseExpectedVersion(value: string): string {

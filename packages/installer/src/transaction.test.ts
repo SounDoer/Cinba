@@ -611,3 +611,154 @@ test("failed recovery verification restores the previous release", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("a disposable candidate moves into place instead of being copied", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-stage-move-"));
+  const paths = layout(root);
+  try {
+    const source = await artifact(root, "source", "1.0.0", OLD_REVISION);
+    const transaction = await stageCandidate({
+      sourceDirectory: source,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: FIRST_ID,
+      consumeSource: true,
+    });
+    assert.equal(transaction.phase, "ready");
+    assert.equal(
+      await readFile(join(releasePath(paths, transaction.candidate), "app.txt"), "utf8"),
+      "1.0.0",
+    );
+    await assert.rejects(readFile(join(source, "app.txt"), "utf8"), { code: "ENOENT" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a candidate that is not disposable is left where the caller put it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-stage-keep-"));
+  const paths = layout(root);
+  try {
+    const source = await artifact(root, "source", "1.0.0", OLD_REVISION);
+    const transaction = await stageCandidate({
+      sourceDirectory: source,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: FIRST_ID,
+    });
+    assert.equal(
+      await readFile(join(releasePath(paths, transaction.candidate), "app.txt"), "utf8"),
+      "1.0.0",
+    );
+    assert.equal(await readFile(join(source, "app.txt"), "utf8"), "1.0.0");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a disposable candidate on another volume falls back to a copy", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-stage-volume-"));
+  const paths = layout(root);
+  try {
+    const source = await artifact(root, "source", "1.0.0", OLD_REVISION);
+    const transaction = await stageCandidate({
+      sourceDirectory: source,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: FIRST_ID,
+      consumeSource: true,
+      rename: async () => {
+        throw Object.assign(new Error("cross-device link not permitted"), { code: "EXDEV" });
+      },
+    });
+    assert.equal(transaction.phase, "ready");
+    assert.equal(
+      await readFile(join(releasePath(paths, transaction.candidate), "app.txt"), "utf8"),
+      "1.0.0",
+    );
+    assert.equal(await readFile(join(source, "app.txt"), "utf8"), "1.0.0");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a release directory locked for a moment is still switched", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-switch-retry-"));
+  const paths = layout(root);
+  try {
+    const source = await artifact(root, "source", "1.0.0", OLD_REVISION);
+    await stageCandidate({
+      sourceDirectory: source,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: FIRST_ID,
+    });
+    let attempts = 0;
+    const delays: number[] = [];
+    const transaction = await activateCandidate({
+      layout: paths,
+      rename: async (from, to) => {
+        attempts += 1;
+        if (attempts < 3) {
+          throw Object.assign(new Error("operation not permitted"), { code: "EPERM" });
+        }
+        await rename(from, to);
+      },
+      delay: async (milliseconds) => void delays.push(milliseconds),
+    });
+    assert.equal(transaction.phase, "committed");
+    assert.deepEqual(delays, [50, 100]);
+    assert.equal(
+      await readFile(join(paths.releasesDirectory, OLD_REVISION, "app.txt"), "utf8"),
+      "1.0.0",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a release directory that stays locked fails and keeps the installed release", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-switch-locked-"));
+  const paths = layout(root);
+  try {
+    const oldSource = await artifact(root, "old", "1.0.0", OLD_REVISION);
+    await stageCandidate({
+      sourceDirectory: oldSource,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: FIRST_ID,
+    });
+    await activateCandidate({ layout: paths });
+
+    const newSource = await artifact(root, "new", "2.0.0", NEW_REVISION);
+    await stageCandidate({
+      sourceDirectory: newSource,
+      layout: paths,
+      expectedTarget: "windows-x64",
+      transactionId: SECOND_ID,
+    });
+    const delays: number[] = [];
+    await assert.rejects(
+      activateCandidate({
+        layout: paths,
+        rename: async () => {
+          throw Object.assign(new Error("operation not permitted"), { code: "EPERM" });
+        },
+        delay: async (milliseconds) => void delays.push(milliseconds),
+      }),
+      /operation not permitted/,
+    );
+    // A switch is retried with backoff for about five seconds before the transaction gives up.
+    assert.deepEqual(delays.slice(0, 6), [50, 100, 200, 400, 800, 1_000]);
+    const waited = delays.reduce((total, milliseconds) => total + milliseconds, 0);
+    assert.ok(waited >= 5_000 && waited < 7_000, `waited ${waited}ms`);
+    assert.equal((await readInstallationTransaction(paths))?.phase, "failed");
+    assert.equal((await readCurrentRelease(paths))?.revision, OLD_REVISION);
+    assert.equal(
+      await readFile(join(paths.releasesDirectory, OLD_REVISION, "app.txt"), "utf8"),
+      "1.0.0",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

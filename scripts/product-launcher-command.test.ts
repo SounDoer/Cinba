@@ -43,6 +43,32 @@ test("update is owned by the stable launcher", () => {
   });
 });
 
+test("a graphical installer can hand its extracted bundle over to be consumed", () => {
+  const executable = resolve("bundle", "launcher", "cinba");
+  const failureLogPath = resolve("temp", "install-failure.txt");
+  assert.deepEqual(parseStableLauncherCommand(["install", "--consume-bundle"], executable), {
+    type: "install",
+    bundleDirectory: resolve("bundle"),
+    consumeBundle: true,
+  });
+  assert.deepEqual(
+    parseStableLauncherCommand(
+      ["install", "--consume-bundle", "--failure-log", failureLogPath],
+      executable,
+    ),
+    {
+      type: "install",
+      bundleDirectory: resolve("bundle"),
+      consumeBundle: true,
+      failureLogPath,
+    },
+  );
+  assert.deepEqual(parseStableLauncherCommand(["install", "--consume"], executable), {
+    type: "product",
+    arguments: ["install", "--consume"],
+  });
+});
+
 test("uninstall has distinct normal, interactive purge, and automation authorization forms", () => {
   const executable = resolve("cinba");
   assert.deepEqual(parseStableLauncherCommand(["uninstall"], executable), {

@@ -94,6 +94,7 @@ export async function installProductBundle(options: {
     target: ProductTarget;
   };
   transactionId?: string;
+  consumeBundle?: boolean;
   verify?: typeof verifyInstalledProductRelease;
   report?: (progress: ProductInstallationProgress) => void;
 }): Promise<InstallationTransaction> {
@@ -114,6 +115,7 @@ export async function installProductBundle(options: {
     expectedTarget: options.target,
     ...(options.expectedRelease ? { expectedRelease: options.expectedRelease } : {}),
     ...(options.transactionId ? { transactionId: options.transactionId } : {}),
+    ...(options.consumeBundle ? { consumeBundle: true } : {}),
     ...(report ? { report } : {}),
     prepareStableFiles: async (bundle) =>
       await prepareStableProductFiles({ bundle, paths: options.paths, mode }),
