@@ -2,7 +2,7 @@
 
 日期：2026-09-20
 
-状态：实施中
+状态：已实施
 
 ## 1. 背景
 
@@ -153,10 +153,16 @@ removeLinksWithin(path):
 
 ## 4. 改造范围
 
-- 59 个 `*.test.ts` / `*.e2e.ts` 文件、254 个调用点全部改用 `temporaryDirectory(...)`
+- 59 个 `*.test.ts` / `*.e2e.ts` 文件、254 个调用点改用 `temporaryDirectory(...)`
 - 原有的 `try { ... } finally { rmSync(...) }` 整块移除，测试体反缩进
 - 测试签名按需由 `async () =>` 改为 `async (t) =>`
 - 因改造而不再使用的 `mkdtempSync` / `mkdtemp` / `rmSync` / `tmpdir` import 一并清除
+
+有两处**刻意保留**自己的生命周期：`packages/server/src/credentials.e2e.ts` 和
+`packages/server/src/web-tools.e2e.ts`。它们在 `before` 里建目录、在 `after` 里先杀掉 Core 进程
+再删目录，而 `node:test` 的钩子顺序是：**在 `before` 运行期间注册的 `after`，会排在加载期注册的
+`after` 之前**（已实测）。交给 helper 托管会导致目录在进程还活着时就被删。这两处保留
+`mkdtempSync` 创建，只把删除换成 `removeTemporaryDirectory`，拿到 Windows 安全的那部分。
 
 **生产代码不动**，这些临时目录有各自的生命周期：
 
@@ -188,3 +194,11 @@ fixture 在朴素实现下有时成功有时卡死。它验证的是结果正确
 
 254 个调用点的机械改造，最可能出的错是多行替换只替掉一半——删了 `try {` 却漏了对应的 `}`，
 或反缩进漏行。`format:check` 与 `typecheck` 能拦住绝大部分，另需全量 grep 扫描确认。
+
+## 6. 实施结果
+
+- `npm run check` 退出码 0，1033 + 11 条测试通过，0 失败
+- 系统临时目录中 `cinba-*` 数量：跑前 5、跑后 5，零增长（这 5 个是与测试无关的历史文件）
+- 测试侧 `mkdtemp` 仅剩上述两处 e2e，以及一条测试名里的字面词
+- 生产代码 5 个文件未改动
+- `%TEMP%` 中 4 个卡死目录（09-18 遗留 2 个 + 复现根因时产生 2 个）已按 2.1 的办法清理完毕

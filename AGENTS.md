@@ -80,5 +80,16 @@ and let the user decide — do not branch silently.
 
 ## Known pitfalls
 
-Nothing recorded yet. Add an entry here the first time a trap costs real time — see the admission
-test at the top of this file.
+**On Windows, a junction whose target is gone cannot be removed by anything.** `readdir` still
+lists it, while `lstat`, `rmdir`, `fsutil reparsepoint`, `rd` and even `CreateFileW` with
+`FILE_FLAG_OPEN_REPARSE_POINT` all report the file as missing. Its parent then stays `ENOTEMPTY`
+forever. A recursive `fs.rm` over a tree holding both a junction and its target creates exactly
+that, in whatever order it happens to reach them — which is why it only bit twice in hundreds of
+runs. Tests take their temporary directories from `temporaryDirectory()` in `@cinba/test-support`,
+which takes every link off the tree before removing anything. To recover one that is already
+stuck, recreate the missing target; the junction becomes reachable and deletes normally.
+
+**`after` hooks do not run in registration order across phases.** A hook registered while a
+`before` hook is running executes *before* one registered at load time. Two end-to-end files
+(`packages/server/src/*.e2e.ts`) therefore keep their own teardown instead of letting
+`temporaryDirectory()` own it: the state directory must outlive the process using it.
