@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import type { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { access, mkdir, mkdtemp, readFile, readdir, rm, utimes } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { access, mkdir, readFile, readdir, rm, utimes } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import {
@@ -10,6 +9,7 @@ import {
   acquireInstallationLock,
   resolveProductPaths,
 } from "@cinba/installer";
+import { temporaryDirectory } from "@cinba/test-support";
 import {
   type ProductManagedServiceOptions,
   setProductComponentMode,
@@ -65,8 +65,8 @@ function testProduct(root: string) {
   };
 }
 
-test("a surface-initiated helper changes service modes under the lock it was launched with", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-uninstall-helper-lock-"));
+test("a surface-initiated helper changes service modes under the lock it was launched with", async (t) => {
+  const root = temporaryDirectory("cinba-uninstall-helper-lock-", t);
   const { paths, adapter, serviceOptions } = testProduct(root);
   let helperDirectory: string | undefined;
   try {
@@ -119,45 +119,40 @@ test("a surface-initiated helper changes service modes under the lock it was lau
     if (helperDirectory) {
       await rm(helperDirectory, { recursive: true, force: true });
     }
-    await rm(root, { recursive: true, force: true });
   }
 });
 
-test("a failed helper leaves a log that the next launch reports once", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-uninstall-helper-failure-"));
+test("a failed helper leaves a log that the next launch reports once", async (t) => {
+  const root = temporaryDirectory("cinba-uninstall-helper-failure-", t);
   const { paths } = testProduct(root);
-  try {
-    // Without the lock from its launcher the helper must not touch services or files.
-    await assert.rejects(
-      runUninstallHelper(
-        { parentProcessId: exitedProcessId, purge: false, blockingProcessId: exitedProcessId },
-        {
-          paths,
-          stopProduct: async () => assert.fail("stopped without the installation lock"),
-          removeProduct: async () => assert.fail("removed without the installation lock"),
-        },
-      ),
-      /does not hold the installation lock/,
-    );
-    assert.match(
-      await readFile(join(paths.logDirectory, "uninstall-helper.log"), "utf8"),
-      /uninstall failed: Error: the Cinba uninstall helper does not hold the installation lock/,
-    );
-    // Each step's time since the helper started shows where a slow uninstall waited.
-    assert.match(
-      await readFile(join(paths.logDirectory, "uninstall-helper.log"), "utf8"),
-      /phases: launcher exited \d+ms, surface exited \d+ms, failed \d+ms/,
-    );
+  // Without the lock from its launcher the helper must not touch services or files.
+  await assert.rejects(
+    runUninstallHelper(
+      { parentProcessId: exitedProcessId, purge: false, blockingProcessId: exitedProcessId },
+      {
+        paths,
+        stopProduct: async () => assert.fail("stopped without the installation lock"),
+        removeProduct: async () => assert.fail("removed without the installation lock"),
+      },
+    ),
+    /does not hold the installation lock/,
+  );
+  assert.match(
+    await readFile(join(paths.logDirectory, "uninstall-helper.log"), "utf8"),
+    /uninstall failed: Error: the Cinba uninstall helper does not hold the installation lock/,
+  );
+  // Each step's time since the helper started shows where a slow uninstall waited.
+  assert.match(
+    await readFile(join(paths.logDirectory, "uninstall-helper.log"), "utf8"),
+    /phases: launcher exited \d+ms, surface exited \d+ms, failed \d+ms/,
+  );
 
-    const warnings: string[] = [];
-    await reportPreviousUninstallFailure(paths, (message) => warnings.push(message));
-    await reportPreviousUninstallFailure(paths, (message) => warnings.push(message));
-    assert.deepEqual(warnings, [
-      `[cinba] The last Cinba uninstall did not finish. Details: ${join(paths.logDirectory, "uninstall-helper.reported.log")}`,
-    ]);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  const warnings: string[] = [];
+  await reportPreviousUninstallFailure(paths, (message) => warnings.push(message));
+  await reportPreviousUninstallFailure(paths, (message) => warnings.push(message));
+  assert.deepEqual(warnings, [
+    `[cinba] The last Cinba uninstall did not finish. Details: ${join(paths.logDirectory, "uninstall-helper.reported.log")}`,
+  ]);
 });
 
 test("a locked Windows program directory is moved aside and removed in the background", async () => {
@@ -188,46 +183,42 @@ test("a locked Windows program directory is moved aside and removed in the backg
   ]);
 });
 
-test("starting a helper clears helper copies abandoned by a killed launcher", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-uninstall-abandoned-"));
-  const temporaryDirectory = join(root, "Temp");
+test("starting a helper clears helper copies abandoned by a killed launcher", async (t) => {
+  const root = temporaryDirectory("cinba-uninstall-abandoned-", t);
+  const productTemporary = join(root, "Temp");
   const { paths } = testProduct(root);
-  const abandoned = join(temporaryDirectory, "cinba-uninstall-abandoned");
-  const recent = join(temporaryDirectory, "cinba-uninstall-recent");
-  const unrelated = join(temporaryDirectory, "unrelated-old");
-  try {
-    for (const directory of [abandoned, recent, unrelated]) {
-      await mkdir(directory, { recursive: true });
-    }
-    const hourAgo = new Date(Date.now() - 60 * 60_000);
-    await utimes(abandoned, hourAgo, hourAgo);
-    await utimes(unrelated, hourAgo, hourAgo);
-
-    let helperOptions: { cwd?: unknown } | undefined;
-    const spawnHelper = ((_command: string, _arguments: string[], options: { cwd?: unknown }) => {
-      helperOptions = options;
-      const child = Object.assign(new EventEmitter(), {
-        pid: process.pid,
-        unref: () => undefined,
-        kill: () => true,
-      });
-      setImmediate(() => child.emit("spawn"));
-      return child;
-    }) as unknown as typeof spawn;
-    await launchUninstallHelper(
-      { purge: false, blockingProcessId: exitedProcessId },
-      { paths, spawnHelper, temporaryDirectory },
-    );
-    // Started from Desktop, the launcher works in Desktop's directory; the helper must not.
-    assert.equal(helperOptions?.cwd, temporaryDirectory);
-
-    const remaining = await readdir(temporaryDirectory);
-    assert.equal(remaining.includes("cinba-uninstall-abandoned"), false);
-    assert.equal(remaining.includes("cinba-uninstall-recent"), true);
-    assert.equal(remaining.includes("unrelated-old"), true);
-    // The new helper copy sits beside them.
-    assert.equal(remaining.filter((name) => name.startsWith("cinba-uninstall-")).length, 2);
-  } finally {
-    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  const abandoned = join(productTemporary, "cinba-uninstall-abandoned");
+  const recent = join(productTemporary, "cinba-uninstall-recent");
+  const unrelated = join(productTemporary, "unrelated-old");
+  for (const directory of [abandoned, recent, unrelated]) {
+    await mkdir(directory, { recursive: true });
   }
+  const hourAgo = new Date(Date.now() - 60 * 60_000);
+  await utimes(abandoned, hourAgo, hourAgo);
+  await utimes(unrelated, hourAgo, hourAgo);
+
+  let helperOptions: { cwd?: unknown } | undefined;
+  const spawnHelper = ((_command: string, _arguments: string[], options: { cwd?: unknown }) => {
+    helperOptions = options;
+    const child = Object.assign(new EventEmitter(), {
+      pid: process.pid,
+      unref: () => undefined,
+      kill: () => true,
+    });
+    setImmediate(() => child.emit("spawn"));
+    return child;
+  }) as unknown as typeof spawn;
+  await launchUninstallHelper(
+    { purge: false, blockingProcessId: exitedProcessId },
+    { paths, spawnHelper, temporaryDirectory: productTemporary },
+  );
+  // Started from Desktop, the launcher works in Desktop's directory; the helper must not.
+  assert.equal(helperOptions?.cwd, productTemporary);
+
+  const remaining = await readdir(productTemporary);
+  assert.equal(remaining.includes("cinba-uninstall-abandoned"), false);
+  assert.equal(remaining.includes("cinba-uninstall-recent"), true);
+  assert.equal(remaining.includes("unrelated-old"), true);
+  // The new helper copy sits beside them.
+  assert.equal(remaining.filter((name) => name.startsWith("cinba-uninstall-")).length, 2);
 });

@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { access, mkdir, symlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import type { ProductPaths, ProductUpdateLease, UpdateHandoff } from "@cinba/installer";
+import { removeTemporaryDirectory, temporaryDirectory } from "@cinba/test-support";
 import {
   beginForegroundUpdateHandoff,
   cleanupCopiedUpdateHelper,
@@ -272,8 +272,8 @@ test("failed transfer terminates helper and removes handoff, temp, and lease", a
   ]);
 });
 
-test("helper cleanup removes only an exact helper in a direct mkdtemp child", async () => {
-  const directory = await mkdtemp(join(resolve(tmpdir()), "cinba-update-"));
+test("helper cleanup removes only an exact helper in a direct mkdtemp child", async (t) => {
+  const directory = temporaryDirectory("cinba-update-", t);
   const helper = join(directory, "cinba-update-helper");
   await writeFile(helper, "helper");
   await cleanupCopiedUpdateHelper({
@@ -283,45 +283,41 @@ test("helper cleanup removes only an exact helper in a direct mkdtemp child", as
   await assert.rejects(() => access(directory), { code: "ENOENT" });
 });
 
-test("helper cleanup rejects exact-looking files in arbitrary directories", async () => {
-  const directory = await mkdtemp(join(resolve(tmpdir()), "not-cinba-"));
+test("helper cleanup rejects exact-looking files in arbitrary directories", async (t) => {
+  const directory = temporaryDirectory("not-cinba-", t);
   const helper = join(directory, "cinba-update-helper");
-  try {
-    await writeFile(helper, "helper");
-    await assert.rejects(
-      () =>
-        cleanupCopiedUpdateHelper({
-          platform: "linux",
-          helperPath: helper,
-        }),
-      /not a safe Cinba update helper/,
-    );
-    await access(helper);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
+  await writeFile(helper, "helper");
+  await assert.rejects(
+    () =>
+      cleanupCopiedUpdateHelper({
+        platform: "linux",
+        helperPath: helper,
+      }),
+    /not a safe Cinba update helper/,
+  );
+  await access(helper);
 });
 
-test("helper cleanup refuses a symlinked temp directory without following it", async () => {
-  const outside = await mkdtemp(join(resolve(tmpdir()), "cinba-outside-"));
-  const linked = await mkdtemp(join(resolve(tmpdir()), "cinba-update-"));
-  await rm(linked, { recursive: true });
-  try {
-    await writeFile(join(outside, "cinba-update-helper"), "outside");
-    await symlink(outside, linked, process.platform === "win32" ? "junction" : "dir");
-    await assert.rejects(
-      () =>
-        cleanupCopiedUpdateHelper({
-          platform: "linux",
-          helperPath: join(linked, "cinba-update-helper"),
-        }),
-      /symbolic link/,
-    );
-    await access(join(outside, "cinba-update-helper"));
-  } finally {
-    await rm(linked, { recursive: true, force: true });
-    await rm(outside, { recursive: true, force: true });
-  }
+test("helper cleanup refuses a symlinked temp directory without following it", async (t) => {
+  // The link is registered before its target so that it is removed first. A
+  // junction whose target is already gone cannot be removed on Windows at all,
+  // and its parent then stays non-empty forever.
+  const linked = temporaryDirectory("cinba-update-", t);
+  const outsideRoot = temporaryDirectory("cinba-outside-", t);
+  const outside = join(outsideRoot, "target");
+  await mkdir(outside);
+  await removeTemporaryDirectory(linked);
+  await writeFile(join(outside, "cinba-update-helper"), "outside");
+  await symlink(outside, linked, process.platform === "win32" ? "junction" : "dir");
+  await assert.rejects(
+    () =>
+      cleanupCopiedUpdateHelper({
+        platform: "linux",
+        helperPath: join(linked, "cinba-update-helper"),
+      }),
+    /symbolic link/,
+  );
+  await access(join(outside, "cinba-update-helper"));
 });
 
 test("worker waits for launcher then blocking surface before installation", async () => {
