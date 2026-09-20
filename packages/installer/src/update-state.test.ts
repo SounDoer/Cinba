@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import {
   AUTOMATIC_UPDATE_CHECK_INTERVAL_MS,
   automaticUpdateCheckIsDue,
@@ -29,14 +28,10 @@ const ready = {
   failure: null,
 };
 
-test("update state persists one strictly parsed ready candidate", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-update-state-"));
-  try {
-    await writeUpdateState(root, ready);
-    assert.deepEqual(await readUpdateState(root), ready);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+test("update state persists one strictly parsed ready candidate", async (t) => {
+  const root = temporaryDirectory("cinba-update-state-", t);
+  await writeUpdateState(root, ready);
+  assert.deepEqual(await readUpdateState(root), ready);
 });
 
 test("update state rejects incomplete phases and unknown fields", () => {
@@ -128,54 +123,46 @@ test("an interrupted transient update operation can retry immediately", () => {
   );
 });
 
-test("successful installation replaces stale ready state with the new current version", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-update-installed-"));
-  try {
-    await recordUpdateInstallationResult({
-      stateDirectory: root,
-      currentVersion: ready.currentVersion,
-      candidate: ready.candidate,
-      result: "installed",
-      now: () => new Date("2026-09-18T02:00:00Z"),
-    });
-    const saved = await readUpdateState(root);
-    assert.deepEqual(saved, {
-      schemaVersion: 1,
-      phase: "current",
+test("successful installation replaces stale ready state with the new current version", async (t) => {
+  const root = temporaryDirectory("cinba-update-installed-", t);
+  await recordUpdateInstallationResult({
+    stateDirectory: root,
+    currentVersion: ready.currentVersion,
+    candidate: ready.candidate,
+    result: "installed",
+    now: () => new Date("2026-09-18T02:00:00Z"),
+  });
+  const saved = await readUpdateState(root);
+  assert.deepEqual(saved, {
+    schemaVersion: 1,
+    phase: "current",
+    currentVersion: "0.2.0",
+    checkedAt: "2026-09-18T02:00:00.000Z",
+    candidate: null,
+    failure: null,
+  });
+  assert.equal(
+    automaticUpdateCheckIsDue({
+      state: saved,
       currentVersion: "0.2.0",
-      checkedAt: "2026-09-18T02:00:00.000Z",
-      candidate: null,
-      failure: null,
-    });
-    assert.equal(
-      automaticUpdateCheckIsDue({
-        state: saved,
-        currentVersion: "0.2.0",
-        now: new Date("2026-09-18T03:00:00Z"),
-      }),
-      false,
-    );
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+      now: new Date("2026-09-18T03:00:00Z"),
+    }),
+    false,
+  );
 });
 
-test("installation failure retains the verified candidate for retry", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-update-install-failed-"));
-  try {
-    await recordUpdateInstallationResult({
-      stateDirectory: root,
-      currentVersion: ready.currentVersion,
-      candidate: ready.candidate,
-      result: "failed",
-      now: () => new Date("2026-09-18T02:00:00Z"),
-    });
-    const saved = await readUpdateState(root);
-    assert.equal(saved?.phase, "failed");
-    assert.equal(saved?.failure, "installation-failed");
-    assert.deepEqual(saved?.candidate, ready.candidate);
-    assert.equal(saved?.currentVersion, "0.1.0");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+test("installation failure retains the verified candidate for retry", async (t) => {
+  const root = temporaryDirectory("cinba-update-install-failed-", t);
+  await recordUpdateInstallationResult({
+    stateDirectory: root,
+    currentVersion: ready.currentVersion,
+    candidate: ready.candidate,
+    result: "failed",
+    now: () => new Date("2026-09-18T02:00:00Z"),
+  });
+  const saved = await readUpdateState(root);
+  assert.equal(saved?.phase, "failed");
+  assert.equal(saved?.failure, "installation-failed");
+  assert.deepEqual(saved?.candidate, ready.candidate);
+  assert.equal(saved?.currentVersion, "0.1.0");
 });

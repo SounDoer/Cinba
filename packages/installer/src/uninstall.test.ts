@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { access, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { access, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import { type ResolveProductPathsOptions, resolveProductPaths } from "./paths.ts";
 import { createUninstallPlan, executeUninstallPlan } from "./uninstall.ts";
 
@@ -137,67 +137,59 @@ test("each platform removes only its own empty product root, never the shared pa
   }
 });
 
-test("purge leaves no empty Cinba-owned directory behind", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-uninstall-purge-"));
+test("purge leaves no empty Cinba-owned directory behind", async (t) => {
+  const root = temporaryDirectory("cinba-uninstall-purge-", t);
   const options = nativePathOptions(root);
   const plan = createUninstallPlan(options, {
     mode: "purge",
     authorization: { kind: "non-interactive", deleteAllCinbaData: true },
   });
-  try {
-    for (const target of plan.targets) {
-      await mkdir(target.kind === "launcher" ? dirname(target.path) : target.path, {
-        recursive: true,
-      });
-      await writeFile(
-        target.kind === "launcher" ? target.path : join(target.path, "owned.txt"),
-        target.kind,
-      );
-    }
-    const [productRoot] = plan.emptyParents;
-    assert.ok(productRoot);
-    const sharedParent = dirname(productRoot);
-    await writeFile(join(sharedParent, "other-application.txt"), "not Cinba");
-
-    const result = await executeUninstallPlan(plan);
-    assert.deepEqual(result.failed, []);
-    await assert.rejects(access(productRoot), { code: "ENOENT" });
-    assert.equal(await readFile(join(sharedParent, "other-application.txt"), "utf8"), "not Cinba");
-  } finally {
-    await rm(root, { recursive: true, force: true });
+  for (const target of plan.targets) {
+    await mkdir(target.kind === "launcher" ? dirname(target.path) : target.path, {
+      recursive: true,
+    });
+    await writeFile(
+      target.kind === "launcher" ? target.path : join(target.path, "owned.txt"),
+      target.kind,
+    );
   }
+  const [productRoot] = plan.emptyParents;
+  assert.ok(productRoot);
+  const sharedParent = dirname(productRoot);
+  await writeFile(join(sharedParent, "other-application.txt"), "not Cinba");
+
+  const result = await executeUninstallPlan(plan);
+  assert.deepEqual(result.failed, []);
+  await assert.rejects(access(productRoot), { code: "ENOENT" });
+  assert.equal(await readFile(join(sharedParent, "other-application.txt"), "utf8"), "not Cinba");
 });
 
-test("normal uninstall executes every owned target while preserving durable data", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-uninstall-execute-"));
+test("normal uninstall executes every owned target while preserving durable data", async (t) => {
+  const root = temporaryDirectory("cinba-uninstall-execute-", t);
   const options = nativePathOptions(root);
   const plan = createUninstallPlan(options, { mode: "normal" });
   const productPaths = resolveProductPaths(options);
-  try {
-    for (const target of plan.targets) {
-      await mkdir(target.kind === "launcher" ? dirname(target.path) : target.path, {
-        recursive: true,
-      });
-      if (target.kind === "launcher") {
-        await writeFile(target.path, "launcher");
-      } else {
-        await writeFile(join(target.path, "owned.txt"), target.kind);
-      }
+  for (const target of plan.targets) {
+    await mkdir(target.kind === "launcher" ? dirname(target.path) : target.path, {
+      recursive: true,
+    });
+    if (target.kind === "launcher") {
+      await writeFile(target.path, "launcher");
+    } else {
+      await writeFile(join(target.path, "owned.txt"), target.kind);
     }
-    await mkdir(productPaths.dataDirectory, { recursive: true });
-    await writeFile(join(productPaths.dataDirectory, "preserved.txt"), "user data");
-
-    const result = await executeUninstallPlan(plan);
-    assert.deepEqual(result.failed, []);
-    assert.equal(result.removed.length, plan.targets.length);
-    assert.equal(
-      await readFile(join(productPaths.dataDirectory, "preserved.txt"), "utf8"),
-      "user data",
-    );
-    await assert.rejects(readFile(productPaths.launcherPath, "utf8"), /ENOENT/);
-  } finally {
-    await rm(root, { recursive: true, force: true });
   }
+  await mkdir(productPaths.dataDirectory, { recursive: true });
+  await writeFile(join(productPaths.dataDirectory, "preserved.txt"), "user data");
+
+  const result = await executeUninstallPlan(plan);
+  assert.deepEqual(result.failed, []);
+  assert.equal(result.removed.length, plan.targets.length);
+  assert.equal(
+    await readFile(join(productPaths.dataDirectory, "preserved.txt"), "utf8"),
+    "user data",
+  );
+  await assert.rejects(readFile(productPaths.launcherPath, "utf8"), /ENOENT/);
 });
 
 test("uninstall continues through bounded failures and releases state before the launcher", async () => {
@@ -247,35 +239,31 @@ test("uninstall continues through bounded failures and releases state before the
 test(
   "program files locked briefly after Desktop exits are still removed",
   { skip: process.platform !== "win32" },
-  async () => {
-    const root = await mkdtemp(join(tmpdir(), "cinba-uninstall-locked-"));
+  async (t) => {
+    const root = temporaryDirectory("cinba-uninstall-locked-", t);
     const program = join(root, "Programs", "Cinba");
     const desktop = join(program, "desktop");
-    try {
-      await mkdir(desktop, { recursive: true });
-      const image = join(desktop, "Cinba.exe");
-      await copyFile(process.execPath, image);
-      // A running image cannot be deleted; this one exits after the first attempts fail.
-      const running = spawn(image, ["-e", "setTimeout(() => {}, 1500)"], {
-        stdio: "ignore",
-        windowsHide: true,
-      });
-      await new Promise<void>((resolve, reject) => {
-        running.once("spawn", resolve);
-        running.once("error", reject);
-      });
-      const result = await executeUninstallPlan({
-        schemaVersion: 1,
-        identity: "release",
-        mode: "normal",
-        targets: [{ kind: "program", path: program }],
-        preserved: [],
-        emptyParents: [],
-      });
-      assert.deepEqual(result.failed, []);
-      await assert.rejects(access(program), { code: "ENOENT" });
-    } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-    }
+    await mkdir(desktop, { recursive: true });
+    const image = join(desktop, "Cinba.exe");
+    await copyFile(process.execPath, image);
+    // A running image cannot be deleted; this one exits after the first attempts fail.
+    const running = spawn(image, ["-e", "setTimeout(() => {}, 1500)"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    await new Promise<void>((resolve, reject) => {
+      running.once("spawn", resolve);
+      running.once("error", reject);
+    });
+    const result = await executeUninstallPlan({
+      schemaVersion: 1,
+      identity: "release",
+      mode: "normal",
+      targets: [{ kind: "program", path: program }],
+      preserved: [],
+      emptyParents: [],
+    });
+    assert.deepEqual(result.failed, []);
+    await assert.rejects(access(program), { code: "ENOENT" });
   },
 );

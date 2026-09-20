@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import { cleanupInstallation } from "./cleanup.ts";
 import {
   type InstallationLayout,
@@ -33,70 +33,62 @@ function release(revision: string) {
   };
 }
 
-test("cleanup removes only known inactive release storage", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-install-cleanup-"));
+test("cleanup removes only known inactive release storage", async (t) => {
+  const root = temporaryDirectory("cinba-install-cleanup-", t);
   const paths = layout(root);
   const current = release(NEW_REVISION);
   const candidateName = `.${OLD_REVISION}.${TRANSACTION_ID}.candidate`;
   const replacementName = `.${NEW_REVISION}.${TRANSACTION_ID}.replaced`;
-  try {
-    for (const name of [OLD_REVISION, NEW_REVISION, candidateName, replacementName, "keep-me"]) {
-      await mkdir(join(paths.releasesDirectory, name), { recursive: true });
-      await writeFile(join(paths.releasesDirectory, name, "marker.txt"), name);
-    }
-    await writeCurrentRelease(paths, current);
-    await writeInstallationTransaction(paths, {
-      schemaVersion: 1,
-      id: TRANSACTION_ID,
-      phase: "committed",
-      candidate: {
-        ...release(NEW_REVISION),
-        directory: `.${NEW_REVISION}.${TRANSACTION_ID}.candidate`,
-      },
-      previous: release(OLD_REVISION),
-      startedAt: "2026-09-17T00:00:00.000Z",
-      updatedAt: "2026-09-17T00:01:00.000Z",
-      failure: null,
-    });
-
-    const result = await cleanupInstallation(paths);
-    assert.equal(result.failed.length, 0);
-    assert.equal(result.removed.length, 3);
-    assert.equal(
-      await readFile(join(paths.releasesDirectory, NEW_REVISION, "marker.txt"), "utf8"),
-      NEW_REVISION,
-    );
-    assert.equal(
-      await readFile(join(paths.releasesDirectory, "keep-me", "marker.txt"), "utf8"),
-      "keep-me",
-    );
-    await assert.rejects(readFile(join(paths.releasesDirectory, OLD_REVISION, "marker.txt")), {
-      code: "ENOENT",
-    });
-  } finally {
-    await rm(root, { recursive: true, force: true });
+  for (const name of [OLD_REVISION, NEW_REVISION, candidateName, replacementName, "keep-me"]) {
+    await mkdir(join(paths.releasesDirectory, name), { recursive: true });
+    await writeFile(join(paths.releasesDirectory, name, "marker.txt"), name);
   }
+  await writeCurrentRelease(paths, current);
+  await writeInstallationTransaction(paths, {
+    schemaVersion: 1,
+    id: TRANSACTION_ID,
+    phase: "committed",
+    candidate: {
+      ...release(NEW_REVISION),
+      directory: `.${NEW_REVISION}.${TRANSACTION_ID}.candidate`,
+    },
+    previous: release(OLD_REVISION),
+    startedAt: "2026-09-17T00:00:00.000Z",
+    updatedAt: "2026-09-17T00:01:00.000Z",
+    failure: null,
+  });
+
+  const result = await cleanupInstallation(paths);
+  assert.equal(result.failed.length, 0);
+  assert.equal(result.removed.length, 3);
+  assert.equal(
+    await readFile(join(paths.releasesDirectory, NEW_REVISION, "marker.txt"), "utf8"),
+    NEW_REVISION,
+  );
+  assert.equal(
+    await readFile(join(paths.releasesDirectory, "keep-me", "marker.txt"), "utf8"),
+    "keep-me",
+  );
+  await assert.rejects(readFile(join(paths.releasesDirectory, OLD_REVISION, "marker.txt")), {
+    code: "ENOENT",
+  });
 });
 
-test("cleanup refuses to race a nonterminal installation", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-install-cleanup-active-"));
+test("cleanup refuses to race a nonterminal installation", async (t) => {
+  const root = temporaryDirectory("cinba-install-cleanup-active-", t);
   const paths = layout(root);
-  try {
-    await writeInstallationTransaction(paths, {
-      schemaVersion: 1,
-      id: TRANSACTION_ID,
-      phase: "switching",
-      candidate: {
-        ...release(NEW_REVISION),
-        directory: `.${NEW_REVISION}.${TRANSACTION_ID}.candidate`,
-      },
-      previous: release(OLD_REVISION),
-      startedAt: "2026-09-17T00:00:00.000Z",
-      updatedAt: "2026-09-17T00:01:00.000Z",
-      failure: null,
-    });
-    await assert.rejects(cleanupInstallation(paths), /is still switching/);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  await writeInstallationTransaction(paths, {
+    schemaVersion: 1,
+    id: TRANSACTION_ID,
+    phase: "switching",
+    candidate: {
+      ...release(NEW_REVISION),
+      directory: `.${NEW_REVISION}.${TRANSACTION_ID}.candidate`,
+    },
+    previous: release(OLD_REVISION),
+    startedAt: "2026-09-17T00:00:00.000Z",
+    updatedAt: "2026-09-17T00:01:00.000Z",
+    failure: null,
+  });
+  await assert.rejects(cleanupInstallation(paths), /is still switching/);
 });

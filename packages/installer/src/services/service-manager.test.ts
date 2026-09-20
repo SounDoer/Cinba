@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import type { InstallationLayout } from "../installation-store.ts";
 import { resolveProductPaths } from "../paths.ts";
 import { createManagedServiceDefinitions } from "./definitions.ts";
@@ -64,43 +63,39 @@ function setup(root: string) {
   };
 }
 
-test("Background commits only after registration, start, and health", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-service-background-"));
+test("Background commits only after registration, start, and health", async (t) => {
+  const root = temporaryDirectory("cinba-service-background-", t);
   const context = setup(root);
   const events: string[] = [];
   const adapter = fakeAdapter(events);
-  try {
-    const status = await setManagedServiceMode(
-      {
-        layout: context.layout,
-        serviceStateDirectory: context.stateDirectory,
-        definition: context.services.core,
-        adapter,
-        availability: { productInstalled: true, componentCreated: true },
-        verifyHealth: async () => {
-          events.push("health");
-        },
+  const status = await setManagedServiceMode(
+    {
+      layout: context.layout,
+      serviceStateDirectory: context.stateDirectory,
+      definition: context.services.core,
+      adapter,
+      availability: { productInstalled: true, componentCreated: true },
+      verifyHealth: async () => {
+        events.push("health");
       },
-      "background",
-    );
-    assert.equal(status.state, "background");
-    assert.equal(status.phase, "stable");
-    assert.deepEqual(events.slice(0, 6), [
-      "inspect",
-      "inspect",
-      "install",
-      "inspect",
-      "start",
-      "inspect",
-    ]);
-    assert.equal(events.includes("health"), true);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+    },
+    "background",
+  );
+  assert.equal(status.state, "background");
+  assert.equal(status.phase, "stable");
+  assert.deepEqual(events.slice(0, 6), [
+    "inspect",
+    "inspect",
+    "install",
+    "inspect",
+    "start",
+    "inspect",
+  ]);
+  assert.equal(events.includes("health"), true);
 });
 
-test("returning Core to on-demand stops and removes its registration", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-service-ondemand-"));
+test("returning Core to on-demand stops and removes its registration", async (t) => {
+  const root = temporaryDirectory("cinba-service-ondemand-", t);
   const context = setup(root);
   const events: string[] = [];
   const adapter = fakeAdapter(events);
@@ -112,22 +107,18 @@ test("returning Core to on-demand stops and removes its registration", async () 
     availability: { productInstalled: true, componentCreated: true },
     verifyHealth: async () => undefined,
   };
-  try {
-    await setManagedServiceMode(options, "background");
-    events.length = 0;
-    const status = await setManagedServiceMode(options, "on-demand");
-    assert.equal(status.state, "on-demand");
-    assert.equal(adapter.registered, false);
-    assert.equal(adapter.running, false);
-    assert.equal(events.includes("stop"), true);
-    assert.equal(events.includes("remove"), true);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  await setManagedServiceMode(options, "background");
+  events.length = 0;
+  const status = await setManagedServiceMode(options, "on-demand");
+  assert.equal(status.state, "on-demand");
+  assert.equal(adapter.registered, false);
+  assert.equal(adapter.running, false);
+  assert.equal(events.includes("stop"), true);
+  assert.equal(events.includes("remove"), true);
 });
 
-test("a failed Background start compensates to the old mode", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-service-failure-"));
+test("a failed Background start compensates to the old mode", async (t) => {
+  const root = temporaryDirectory("cinba-service-failure-", t);
   const context = setup(root);
   const events: string[] = [];
   const adapter = fakeAdapter(events);
@@ -135,34 +126,30 @@ test("a failed Background start compensates to the old mode", async () => {
     events.push("start-failed");
     throw new Error("platform start failed");
   };
-  try {
-    await assert.rejects(
-      setManagedServiceMode(
-        {
-          layout: context.layout,
-          serviceStateDirectory: context.stateDirectory,
-          definition: context.services.core,
-          adapter,
-          availability: { productInstalled: true, componentCreated: true },
-          verifyHealth: async () => undefined,
-        },
-        "background",
-      ),
-      /could not set Cinba Core to background: platform start failed/,
-    );
-    assert.equal(adapter.registered, false);
-    const state = await readServiceState(context.stateDirectory);
-    assert.equal(state?.core.mode, "on-demand");
-    assert.equal(state?.core.desiredMode, "background");
-    assert.equal(state?.core.phase, "failed");
-    assert.equal(state?.core.failure, "start-failed");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  await assert.rejects(
+    setManagedServiceMode(
+      {
+        layout: context.layout,
+        serviceStateDirectory: context.stateDirectory,
+        definition: context.services.core,
+        adapter,
+        availability: { productInstalled: true, componentCreated: true },
+        verifyHealth: async () => undefined,
+      },
+      "background",
+    ),
+    /could not set Cinba Core to background: platform start failed/,
+  );
+  assert.equal(adapter.registered, false);
+  const state = await readServiceState(context.stateDirectory);
+  assert.equal(state?.core.mode, "on-demand");
+  assert.equal(state?.core.desiredMode, "background");
+  assert.equal(state?.core.phase, "failed");
+  assert.equal(state?.core.failure, "start-failed");
 });
 
-test("a briefly running service is not committed when another process answers health", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-service-impostor-"));
+test("a briefly running service is not committed when another process answers health", async (t) => {
+  const root = temporaryDirectory("cinba-service-impostor-", t);
   const context = setup(root);
   const events: string[] = [];
   const adapter = fakeAdapter(events);
@@ -179,37 +166,33 @@ test("a briefly running service is not committed when another process answers he
     return { registered: this.registered, running: this.running };
   };
   let healthChecks = 0;
-  try {
-    await assert.rejects(
-      setManagedServiceMode(
-        {
-          layout: context.layout,
-          serviceStateDirectory: context.stateDirectory,
-          definition: context.services.core,
-          adapter,
-          availability: { productInstalled: true, componentCreated: true },
-          verifyHealth: async () => {
-            healthChecks += 1;
-            throw new Error("the Core answering health is not the Background service");
-          },
+  await assert.rejects(
+    setManagedServiceMode(
+      {
+        layout: context.layout,
+        serviceStateDirectory: context.stateDirectory,
+        definition: context.services.core,
+        adapter,
+        availability: { productInstalled: true, componentCreated: true },
+        verifyHealth: async () => {
+          healthChecks += 1;
+          throw new Error("the Core answering health is not the Background service");
         },
-        "background",
-      ),
-      /could not set Cinba Core to background/,
-    );
-    assert.equal(healthChecks > 1, true);
-    assert.equal(adapter.registered, false);
-    const state = await readServiceState(context.stateDirectory);
-    assert.equal(state?.core.mode, "on-demand");
-    assert.equal(state?.core.phase, "failed");
-    assert.equal(state?.core.failure, "health-failed");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+      },
+      "background",
+    ),
+    /could not set Cinba Core to background/,
+  );
+  assert.equal(healthChecks > 1, true);
+  assert.equal(adapter.registered, false);
+  const state = await readServiceState(context.stateDirectory);
+  assert.equal(state?.core.mode, "on-demand");
+  assert.equal(state?.core.phase, "failed");
+  assert.equal(state?.core.failure, "health-failed");
 });
 
-test("Background waits for an asynchronously starting platform service", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-service-settle-"));
+test("Background waits for an asynchronously starting platform service", async (t) => {
+  const root = temporaryDirectory("cinba-service-settle-", t);
   const context = setup(root);
   const adapter = fakeAdapter([]);
   let started = false;
@@ -225,70 +208,62 @@ test("Background waits for an asynchronously starting platform service", async (
     inspectionsAfterStart += 1;
     return { registered: adapter.registered, running: inspectionsAfterStart >= 2 };
   };
-  try {
-    const status = await setManagedServiceMode(
+  const status = await setManagedServiceMode(
+    {
+      layout: context.layout,
+      serviceStateDirectory: context.stateDirectory,
+      definition: context.services.core,
+      adapter,
+      availability: { productInstalled: true, componentCreated: true },
+      verifyHealth: async () => {
+        healthChecks += 1;
+        if (healthChecks < 2) {
+          throw new Error("service is still opening its health port");
+        }
+      },
+    },
+    "background",
+  );
+  assert.equal(status.state, "background");
+  assert.equal(status.running, true);
+  assert.equal(inspectionsAfterStart >= 2, true);
+  assert.equal(healthChecks >= 2, true);
+});
+
+test("Core cannot be disabled and uncreated Sync cannot be configured", async (t) => {
+  const root = temporaryDirectory("cinba-service-boundary-", t);
+  const context = setup(root);
+  const adapter = fakeAdapter([]);
+  await assert.rejects(
+    setManagedServiceMode(
       {
         layout: context.layout,
         serviceStateDirectory: context.stateDirectory,
         definition: context.services.core,
         adapter,
         availability: { productInstalled: true, componentCreated: true },
-        verifyHealth: async () => {
-          healthChecks += 1;
-          if (healthChecks < 2) {
-            throw new Error("service is still opening its health port");
-          }
-        },
+      },
+      "disabled",
+    ),
+    /does not support disabled/,
+  );
+  await assert.rejects(
+    setManagedServiceMode(
+      {
+        layout: context.layout,
+        serviceStateDirectory: context.stateDirectory,
+        definition: context.services.sync,
+        adapter,
+        availability: { productInstalled: true, componentCreated: false },
       },
       "background",
-    );
-    assert.equal(status.state, "background");
-    assert.equal(status.running, true);
-    assert.equal(inspectionsAfterStart >= 2, true);
-    assert.equal(healthChecks >= 2, true);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+    ),
+    /has not been created/,
+  );
 });
 
-test("Core cannot be disabled and uncreated Sync cannot be configured", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-service-boundary-"));
-  const context = setup(root);
-  const adapter = fakeAdapter([]);
-  try {
-    await assert.rejects(
-      setManagedServiceMode(
-        {
-          layout: context.layout,
-          serviceStateDirectory: context.stateDirectory,
-          definition: context.services.core,
-          adapter,
-          availability: { productInstalled: true, componentCreated: true },
-        },
-        "disabled",
-      ),
-      /does not support disabled/,
-    );
-    await assert.rejects(
-      setManagedServiceMode(
-        {
-          layout: context.layout,
-          serviceStateDirectory: context.stateDirectory,
-          definition: context.services.sync,
-          adapter,
-          availability: { productInstalled: true, componentCreated: false },
-        },
-        "background",
-      ),
-      /has not been created/,
-    );
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("an unavailable Background stays on-demand and refuses before recording an attempt", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-service-unavailable-"));
+test("an unavailable Background stays on-demand and refuses before recording an attempt", async (t) => {
+  const root = temporaryDirectory("cinba-service-unavailable-", t);
   const context = setup(root);
   const events: string[] = [];
   const adapter = fakeAdapter(events);
@@ -308,23 +283,19 @@ test("an unavailable Background stays on-demand and refuses before recording an 
     availability: { productInstalled: true, componentCreated: true },
     verifyHealth: async () => undefined,
   };
-  try {
-    const onDemand = await setManagedServiceMode(options, "on-demand");
-    assert.equal(onDemand.state, "on-demand");
-    assert.equal(
-      "backgroundUnavailable" in onDemand && onDemand.backgroundUnavailable,
-      "no service manager",
-    );
-    const before = await readServiceState(context.stateDirectory);
-    await assert.rejects(setManagedServiceMode(options, "background"), {
-      message: "Background is unavailable because no service manager",
-    });
-    assert.deepEqual(await readServiceState(context.stateDirectory), before);
-    assert.equal(events.includes("install"), false);
-    const status = await inspectManagedService(options);
-    assert.equal(status.state, "on-demand");
-    assert.equal("phase" in status && status.phase, "stable");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  const onDemand = await setManagedServiceMode(options, "on-demand");
+  assert.equal(onDemand.state, "on-demand");
+  assert.equal(
+    "backgroundUnavailable" in onDemand && onDemand.backgroundUnavailable,
+    "no service manager",
+  );
+  const before = await readServiceState(context.stateDirectory);
+  await assert.rejects(setManagedServiceMode(options, "background"), {
+    message: "Background is unavailable because no service manager",
+  });
+  assert.deepEqual(await readServiceState(context.stateDirectory), before);
+  assert.equal(events.includes("install"), false);
+  const status = await inspectManagedService(options);
+  assert.equal(status.state, "on-demand");
+  assert.equal("phase" in status && status.phase, "stable");
 });

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import type { ProductPaths } from "./paths.ts";
 import type { VerifiedReleaseBundle } from "./release-bundle.ts";
 import { prepareStableProductFiles, recoverStableProductFiles } from "./stable-files.ts";
@@ -59,38 +59,31 @@ async function bundle(root: string, desktop: boolean): Promise<VerifiedReleaseBu
   };
 }
 
-test("a first Desktop install places the whole application and launcher", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-stable-create-"));
+test("a first Desktop install places the whole application and launcher", async (t) => {
+  const root = temporaryDirectory("cinba-stable-create-", t);
   const productPaths = paths(root, true);
-  try {
-    const prepared = await prepareStableProductFiles({
-      bundle: await bundle(root, true),
-      paths: productPaths,
-      mode: "create",
-    });
-    assert.equal(await readFile(productPaths.launcherPath, "utf8"), "new launcher");
-    assert.equal(await readFile(productPaths.desktopApplicationPath!, "utf8"), "new desktop");
-    assert.equal(
-      await readFile(
-        join(productPaths.programDirectory, "desktop", "resources", "app.asar"),
-        "utf8",
-      ),
-      "resources",
+  const prepared = await prepareStableProductFiles({
+    bundle: await bundle(root, true),
+    paths: productPaths,
+    mode: "create",
+  });
+  assert.equal(await readFile(productPaths.launcherPath, "utf8"), "new launcher");
+  assert.equal(await readFile(productPaths.desktopApplicationPath!, "utf8"), "new desktop");
+  assert.equal(
+    await readFile(join(productPaths.programDirectory, "desktop", "resources", "app.asar"), "utf8"),
+    "resources",
+  );
+  await prepared.commit();
+  for (const directory of [productPaths.programDirectory, productPaths.launcherDirectory]) {
+    assert.deepEqual(
+      (await readdir(directory)).filter((name) => name.includes("cinba-")),
+      [],
     );
-    await prepared.commit();
-    for (const directory of [productPaths.programDirectory, productPaths.launcherDirectory]) {
-      assert.deepEqual(
-        (await readdir(directory)).filter((name) => name.includes("cinba-")),
-        [],
-      );
-    }
-  } finally {
-    await rm(root, { recursive: true, force: true });
   }
 });
 
-test("a macOS installer can replace itself from its embedded bundle", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-stable-macos-self-install-"));
+test("a macOS installer can replace itself from its embedded bundle", async (t) => {
+  const root = temporaryDirectory("cinba-stable-macos-self-install-", t);
   const desktopApplicationPath = join(root, "Applications", "Cinba.app");
   const bundleRoot = join(desktopApplicationPath, "Contents", "Resources", "cinba-bundle");
   const launcher = join(bundleRoot, "launcher", "cinba");
@@ -102,125 +95,105 @@ test("a macOS installer can replace itself from its embedded bundle", async () =
     launcherDirectory: join(root, ".local", "bin"),
     launcherPath: join(root, ".local", "bin", "cinba"),
   };
-  try {
-    await mkdir(join(stableApplication, "Contents"), { recursive: true });
-    await mkdir(join(bundleRoot, "launcher"), { recursive: true });
-    await writeFile(join(desktopApplicationPath, "installer.txt"), "outer installer");
-    await writeFile(join(stableApplication, "Contents", "stable.txt"), "stable application");
-    await writeFile(launcher, "stable launcher");
-    const prepared = await prepareStableProductFiles({
-      bundle: {
-        ...(await bundle(root, false)),
-        rootDirectory: bundleRoot,
-        launcher,
-        desktopApplication: stableApplication,
-        metadata: {
-          schemaVersion: 1,
-          product: "Cinba",
-          version: "0.1.0",
-          revision: "a".repeat(40),
-          target: "macos-arm64",
-          kind: "desktop",
-        },
+  await mkdir(join(stableApplication, "Contents"), { recursive: true });
+  await mkdir(join(bundleRoot, "launcher"), { recursive: true });
+  await writeFile(join(desktopApplicationPath, "installer.txt"), "outer installer");
+  await writeFile(join(stableApplication, "Contents", "stable.txt"), "stable application");
+  await writeFile(launcher, "stable launcher");
+  const prepared = await prepareStableProductFiles({
+    bundle: {
+      ...(await bundle(root, false)),
+      rootDirectory: bundleRoot,
+      launcher,
+      desktopApplication: stableApplication,
+      metadata: {
+        schemaVersion: 1,
+        product: "Cinba",
+        version: "0.1.0",
+        revision: "a".repeat(40),
+        target: "macos-arm64",
+        kind: "desktop",
       },
-      paths: productPaths,
-      mode: "replace",
-    });
-    assert.equal(
-      await readFile(join(desktopApplicationPath, "Contents", "stable.txt"), "utf8"),
-      "stable application",
-    );
-    assert.equal(await readFile(productPaths.launcherPath, "utf8"), "stable launcher");
-    await prepared.commit();
-    await assert.rejects(readFile(join(desktopApplicationPath, "installer.txt"), "utf8"), /ENOENT/);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+    },
+    paths: productPaths,
+    mode: "replace",
+  });
+  assert.equal(
+    await readFile(join(desktopApplicationPath, "Contents", "stable.txt"), "utf8"),
+    "stable application",
+  );
+  assert.equal(await readFile(productPaths.launcherPath, "utf8"), "stable launcher");
+  await prepared.commit();
+  await assert.rejects(readFile(join(desktopApplicationPath, "installer.txt"), "utf8"), /ENOENT/);
 });
 
-test("create mode refuses an occupied launcher and removes the prepared Desktop", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-stable-collision-"));
+test("create mode refuses an occupied launcher and removes the prepared Desktop", async (t) => {
+  const root = temporaryDirectory("cinba-stable-collision-", t);
   const productPaths = paths(root, true);
-  try {
-    await mkdir(productPaths.launcherDirectory, { recursive: true });
-    await writeFile(productPaths.launcherPath, "someone else's command");
-    await assert.rejects(
-      prepareStableProductFiles({
-        bundle: await bundle(root, true),
-        paths: productPaths,
-        mode: "create",
-      }),
-      /destination already exists/,
-    );
-    await assert.rejects(readFile(productPaths.desktopApplicationPath!, "utf8"), /ENOENT/);
-    assert.equal(await readFile(productPaths.launcherPath, "utf8"), "someone else's command");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("an update rollback restores both stable application and launcher", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-stable-rollback-"));
-  const productPaths = paths(root, true);
-  try {
-    await mkdir(join(productPaths.programDirectory, "desktop"), { recursive: true });
-    await mkdir(productPaths.launcherDirectory, { recursive: true });
-    await writeFile(productPaths.desktopApplicationPath!, "old desktop");
-    await writeFile(productPaths.launcherPath, "old launcher");
-    const prepared = await prepareStableProductFiles({
+  await mkdir(productPaths.launcherDirectory, { recursive: true });
+  await writeFile(productPaths.launcherPath, "someone else's command");
+  await assert.rejects(
+    prepareStableProductFiles({
       bundle: await bundle(root, true),
-      paths: productPaths,
-      mode: "replace",
-    });
-    assert.equal(await readFile(productPaths.desktopApplicationPath!, "utf8"), "new desktop");
-    assert.equal(await readFile(productPaths.launcherPath, "utf8"), "new launcher");
-    await prepared.rollback();
-    assert.equal(await readFile(productPaths.desktopApplicationPath!, "utf8"), "old desktop");
-    assert.equal(await readFile(productPaths.launcherPath, "utf8"), "old launcher");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("a headless install places only the stable launcher", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-stable-headless-"));
-  const productPaths = paths(root, false);
-  try {
-    const prepared = await prepareStableProductFiles({
-      bundle: await bundle(root, false),
       paths: productPaths,
       mode: "create",
-    });
-    await prepared.commit();
-    assert.equal(await readFile(productPaths.launcherPath, "utf8"), "new launcher");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+    }),
+    /destination already exists/,
+  );
+  await assert.rejects(readFile(productPaths.desktopApplicationPath!, "utf8"), /ENOENT/);
+  assert.equal(await readFile(productPaths.launcherPath, "utf8"), "someone else's command");
 });
 
-test("interrupted stable-file preparation can be rolled back deterministically", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-stable-recovery-"));
+test("an update rollback restores both stable application and launcher", async (t) => {
+  const root = temporaryDirectory("cinba-stable-rollback-", t);
   const productPaths = paths(root, true);
-  try {
-    await mkdir(join(productPaths.programDirectory, "desktop"), { recursive: true });
-    await mkdir(productPaths.launcherDirectory, { recursive: true });
-    await writeFile(productPaths.desktopApplicationPath!, "old desktop");
-    await writeFile(productPaths.launcherPath, "old launcher");
-    await prepareStableProductFiles({
-      bundle: await bundle(root, true),
-      paths: productPaths,
-      mode: "replace",
-    });
+  await mkdir(join(productPaths.programDirectory, "desktop"), { recursive: true });
+  await mkdir(productPaths.launcherDirectory, { recursive: true });
+  await writeFile(productPaths.desktopApplicationPath!, "old desktop");
+  await writeFile(productPaths.launcherPath, "old launcher");
+  const prepared = await prepareStableProductFiles({
+    bundle: await bundle(root, true),
+    paths: productPaths,
+    mode: "replace",
+  });
+  assert.equal(await readFile(productPaths.desktopApplicationPath!, "utf8"), "new desktop");
+  assert.equal(await readFile(productPaths.launcherPath, "utf8"), "new launcher");
+  await prepared.rollback();
+  assert.equal(await readFile(productPaths.desktopApplicationPath!, "utf8"), "old desktop");
+  assert.equal(await readFile(productPaths.launcherPath, "utf8"), "old launcher");
+});
 
-    await recoverStableProductFiles({
-      target: "windows-x64",
-      paths: productPaths,
-      mode: "replace",
-      outcome: "rollback",
-    });
-    assert.equal(await readFile(productPaths.desktopApplicationPath!, "utf8"), "old desktop");
-    assert.equal(await readFile(productPaths.launcherPath, "utf8"), "old launcher");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+test("a headless install places only the stable launcher", async (t) => {
+  const root = temporaryDirectory("cinba-stable-headless-", t);
+  const productPaths = paths(root, false);
+  const prepared = await prepareStableProductFiles({
+    bundle: await bundle(root, false),
+    paths: productPaths,
+    mode: "create",
+  });
+  await prepared.commit();
+  assert.equal(await readFile(productPaths.launcherPath, "utf8"), "new launcher");
+});
+
+test("interrupted stable-file preparation can be rolled back deterministically", async (t) => {
+  const root = temporaryDirectory("cinba-stable-recovery-", t);
+  const productPaths = paths(root, true);
+  await mkdir(join(productPaths.programDirectory, "desktop"), { recursive: true });
+  await mkdir(productPaths.launcherDirectory, { recursive: true });
+  await writeFile(productPaths.desktopApplicationPath!, "old desktop");
+  await writeFile(productPaths.launcherPath, "old launcher");
+  await prepareStableProductFiles({
+    bundle: await bundle(root, true),
+    paths: productPaths,
+    mode: "replace",
+  });
+
+  await recoverStableProductFiles({
+    target: "windows-x64",
+    paths: productPaths,
+    mode: "replace",
+    outcome: "rollback",
+  });
+  assert.equal(await readFile(productPaths.desktopApplicationPath!, "utf8"), "old desktop");
+  assert.equal(await readFile(productPaths.launcherPath, "utf8"), "old launcher");
 });

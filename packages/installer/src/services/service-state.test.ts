@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import {
   createDefaultServiceState,
   parseServiceState,
@@ -34,15 +33,11 @@ test("service state rejects unknown schemas and inconsistent success", () => {
   );
 });
 
-test("service state is atomically persisted outside a release", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-service-state-"));
+test("service state is atomically persisted outside a release", async (t) => {
+  const root = temporaryDirectory("cinba-service-state-", t);
   const stateDirectory = join(root, "state");
-  try {
-    assert.equal(await readServiceState(stateDirectory), undefined);
-    const state = createDefaultServiceState(new Date("2026-09-17T00:00:00.000Z"));
-    await writeServiceState(stateDirectory, state);
-    assert.deepEqual(await readServiceState(stateDirectory), state);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  assert.equal(await readServiceState(stateDirectory), undefined);
+  const state = createDefaultServiceState(new Date("2026-09-17T00:00:00.000Z"));
+  await writeServiceState(stateDirectory, state);
+  assert.deepEqual(await readServiceState(stateDirectory), state);
 });

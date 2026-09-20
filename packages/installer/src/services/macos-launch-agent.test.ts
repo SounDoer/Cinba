@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import { resolveProductPaths } from "../paths.ts";
 import { createManagedServiceDefinitions } from "./definitions.ts";
 import {
@@ -35,8 +35,8 @@ test("LaunchAgent property lists XML-escape paths", () => {
   assert.match(plist, /A&amp;B\/&lt;cinba&gt;/);
 });
 
-test("the adapter bootstraps, starts, stops, inspects, and removes one user agent", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-launch-agent-"));
+test("the adapter bootstraps, starts, stops, inspects, and removes one user agent", async (t) => {
+  const root = temporaryDirectory("cinba-launch-agent-", t);
   const commands: string[][] = [];
   let registered = false;
   let running = false;
@@ -67,21 +67,17 @@ test("the adapter bootstraps, starts, stops, inspects, and removes one user agen
     launchAgentsDirectory: directory,
     runLaunchctl,
   });
-  try {
-    await adapter.install(installedCore);
-    assert.match(
-      await readFile(join(directory, "com.soundoer.cinba.core.plist"), "utf8"),
-      /Logs[\\/]core\.log/,
-    );
-    assert.deepEqual(await adapter.inspect(installedCore), { registered: true, running: true });
-    await adapter.stop(installedCore);
-    assert.deepEqual(await adapter.inspect(installedCore), { registered: true, running: false });
-    await adapter.start(installedCore);
-    await adapter.stop(installedCore);
-    await adapter.remove(installedCore);
-    assert.deepEqual(await adapter.inspect(installedCore), { registered: false, running: false });
-    assert.deepEqual(commands[0]?.slice(0, 2), ["bootstrap", "gui/501"]);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  await adapter.install(installedCore);
+  assert.match(
+    await readFile(join(directory, "com.soundoer.cinba.core.plist"), "utf8"),
+    /Logs[\\/]core\.log/,
+  );
+  assert.deepEqual(await adapter.inspect(installedCore), { registered: true, running: true });
+  await adapter.stop(installedCore);
+  assert.deepEqual(await adapter.inspect(installedCore), { registered: true, running: false });
+  await adapter.start(installedCore);
+  await adapter.stop(installedCore);
+  await adapter.remove(installedCore);
+  assert.deepEqual(await adapter.inspect(installedCore), { registered: false, running: false });
+  assert.deepEqual(commands[0]?.slice(0, 2), ["bootstrap", "gui/501"]);
 });

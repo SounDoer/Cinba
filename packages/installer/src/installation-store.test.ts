@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import {
   type InstallationLayout,
   clearCurrentRelease,
@@ -21,8 +21,8 @@ function layout(root: string): InstallationLayout {
   };
 }
 
-test("the current release pointer is strict, atomic, and removable", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-install-store-"));
+test("the current release pointer is strict, atomic, and removable", async (t) => {
+  const root = temporaryDirectory("cinba-install-store-", t);
   const paths = layout(root);
   const release = {
     version: "1.2.3",
@@ -32,18 +32,14 @@ test("the current release pointer is strict, atomic, and removable", async () =>
     target: "windows-x64" as const,
     directory: REVISION,
   };
-  try {
-    await writeCurrentRelease(paths, release);
-    assert.deepEqual(await readCurrentRelease(paths), release);
-    assert.match(
-      await readFile(join(paths.programDirectory, "current.json"), "utf8"),
-      /"schemaVersion": 1/,
-    );
-    await clearCurrentRelease(paths);
-    assert.equal(await readCurrentRelease(paths), undefined);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  await writeCurrentRelease(paths, release);
+  assert.deepEqual(await readCurrentRelease(paths), release);
+  assert.match(
+    await readFile(join(paths.programDirectory, "current.json"), "utf8"),
+    /"schemaVersion": 1/,
+  );
+  await clearCurrentRelease(paths);
+  assert.equal(await readCurrentRelease(paths), undefined);
 });
 
 test("a current pointer cannot escape the releases directory", () => {
@@ -64,22 +60,18 @@ test("a current pointer cannot escape the releases directory", () => {
   );
 });
 
-test("product path metadata is not mistaken for an installation path", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-install-product-paths-"));
+test("product path metadata is not mistaken for an installation path", async (t) => {
+  const root = temporaryDirectory("cinba-install-product-paths-", t);
   const paths = {
     ...layout(root),
     identity: "release",
     applicationId: "com.soundoer.cinba",
   };
-  try {
-    assert.equal(await readCurrentRelease(paths), undefined);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  assert.equal(await readCurrentRelease(paths), undefined);
 });
 
-test("a separate stable manager directory can own the current pointer", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-install-pointer-directory-"));
+test("a separate stable manager directory can own the current pointer", async (t) => {
+  const root = temporaryDirectory("cinba-install-pointer-directory-", t);
   const paths = {
     ...layout(root),
     currentPointerDirectory: join(root, "manager"),
@@ -92,20 +84,16 @@ test("a separate stable manager directory can own the current pointer", async ()
     target: "macos-arm64" as const,
     directory: REVISION,
   };
-  try {
-    await writeCurrentRelease(paths, release);
-    assert.deepEqual(await readCurrentRelease(paths), release);
-    assert.match(
-      await readFile(join(paths.currentPointerDirectory, "current.json"), "utf8"),
-      /"schemaVersion": 1/,
-    );
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  await writeCurrentRelease(paths, release);
+  assert.deepEqual(await readCurrentRelease(paths), release);
+  assert.match(
+    await readFile(join(paths.currentPointerDirectory, "current.json"), "utf8"),
+    /"schemaVersion": 1/,
+  );
 });
 
-test("macOS release storage can live outside the application bundle", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-install-macos-layout-"));
+test("macOS release storage can live outside the application bundle", async (t) => {
+  const root = temporaryDirectory("cinba-install-macos-layout-", t);
   const paths = {
     programDirectory: join(root, "Applications", "Cinba.app"),
     releasesDirectory: join(
@@ -138,10 +126,6 @@ test("macOS release storage can live outside the application bundle", async () =
     target: "macos-arm64" as const,
     directory: REVISION,
   };
-  try {
-    await writeCurrentRelease(paths, release);
-    assert.deepEqual(await readCurrentRelease(paths), release);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  await writeCurrentRelease(paths, release);
+  assert.deepEqual(await readCurrentRelease(paths), release);
 });

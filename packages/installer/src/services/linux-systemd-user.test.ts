@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import { resolveProductPaths } from "../paths.ts";
 import { createManagedServiceDefinitions } from "./definitions.ts";
 import {
@@ -48,8 +48,8 @@ test("Linux Background reports linger as an explicit authorization prerequisite"
   assert.deepEqual(commands.at(-1), ["loginctl", "enable-linger", "cinba"]);
 });
 
-test("the adapter installs, enables, starts, stops, and removes one user unit", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-systemd-user-"));
+test("the adapter installs, enables, starts, stops, and removes one user unit", async (t) => {
+  const root = temporaryDirectory("cinba-systemd-user-", t);
   const commands: string[][] = [];
   let registered = false;
   let running = false;
@@ -83,20 +83,16 @@ test("the adapter installs, enables, starts, stops, and removes one user unit", 
     userUnitDirectory: join(root, "systemd", "user"),
     runCommand,
   });
-  try {
-    await adapter.install(core);
-    assert.match(
-      await readFile(join(root, "systemd", "user", "cinba-core.service"), "utf8"),
-      /Cinba Core/,
-    );
-    await adapter.start(core);
-    assert.deepEqual(await adapter.inspect(core), { registered: true, running: true });
-    await adapter.stop(core);
-    await adapter.remove(core);
-    assert.deepEqual(await adapter.inspect(core), { registered: false, running: false });
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  await adapter.install(core);
+  assert.match(
+    await readFile(join(root, "systemd", "user", "cinba-core.service"), "utf8"),
+    /Cinba Core/,
+  );
+  await adapter.start(core);
+  assert.deepEqual(await adapter.inspect(core), { registered: true, running: true });
+  await adapter.stop(core);
+  await adapter.remove(core);
+  assert.deepEqual(await adapter.inspect(core), { registered: false, running: false });
 });
 
 function missingSystemctl(): RunServiceCommand {

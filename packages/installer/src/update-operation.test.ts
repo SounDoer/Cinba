@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import {
   UPDATE_DISCOVERY_FAILURE_CODE,
   type UpdateDiscovery,
@@ -52,47 +51,67 @@ function blockedCandidate() {
   };
 }
 
-test("one update operation advances through discovery and download to ready", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-update-operation-"));
+test("one update operation advances through discovery and download to ready", async (t) => {
+  const root = temporaryDirectory("cinba-update-operation-", t);
   const artifactPath = join(root, "cache", "Cinba.exe");
   const controller = new AbortController();
   const phases: string[] = [];
-  try {
-    const result = await prepareProductUpdate({
+  const result = await prepareProductUpdate({
+    currentVersion: "0.1.0",
+    currentRevision: "0".repeat(40),
+    target: "windows-x64",
+    stateDirectory: join(root, "state"),
+    cacheDirectory: join(root, "cache"),
+    now: () => new Date("2026-09-18T01:02:03Z"),
+    signal: controller.signal,
+    onStateChange: (state) => phases.push(state.phase),
+    discover: async (options) => {
+      assert.equal(options.signal, controller.signal);
+      return available();
+    },
+    download: async () => ({
+      version: "0.2.0",
+      revision,
+      target: "windows-x64",
+      artifactPath,
+      size: 42,
+      sha256: "b".repeat(64),
+      reused: false,
+    }),
+  });
+  assert.equal(result.phase, "ready");
+  assert.equal(result.candidate?.artifactPath, artifactPath);
+  assert.deepEqual(phases, ["checking", "downloading", "ready"]);
+  assert.deepEqual(await readUpdateState(join(root, "state")), result);
+});
+
+test("download failure leaves a retryable candidate and a safe failure code", async (t) => {
+  const root = temporaryDirectory("cinba-update-failure-", t);
+  await assert.rejects(
+    prepareProductUpdate({
       currentVersion: "0.1.0",
       currentRevision: "0".repeat(40),
       target: "windows-x64",
       stateDirectory: join(root, "state"),
       cacheDirectory: join(root, "cache"),
-      now: () => new Date("2026-09-18T01:02:03Z"),
-      signal: controller.signal,
-      onStateChange: (state) => phases.push(state.phase),
-      discover: async (options) => {
-        assert.equal(options.signal, controller.signal);
-        return available();
+      discover: async () => available(),
+      download: async () => {
+        throw new Error("network secret must not persist");
       },
-      download: async () => ({
-        version: "0.2.0",
-        revision,
-        target: "windows-x64",
-        artifactPath,
-        size: 42,
-        sha256: "b".repeat(64),
-        reused: false,
-      }),
-    });
-    assert.equal(result.phase, "ready");
-    assert.equal(result.candidate?.artifactPath, artifactPath);
-    assert.deepEqual(phases, ["checking", "downloading", "ready"]);
-    assert.deepEqual(await readUpdateState(join(root, "state")), result);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+    }),
+    /network secret/,
+  );
+  const saved = await readUpdateState(join(root, "state"));
+  assert.equal(saved?.phase, "failed");
+  assert.equal(saved?.failure, "download-failed");
+  assert.equal(JSON.stringify(saved).includes("network secret"), false);
 });
 
-test("download failure leaves a retryable candidate and a safe failure code", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-update-failure-"));
-  try {
+for (const failure of ["system-incompatible", "system-unverified"] as const) {
+  test(`${failure} retains the candidate and fails before artifact download`, async (t) => {
+    const root = temporaryDirectory(`cinba-update-${failure}-`, t);
+    let downloads = 0;
+    const update = available();
     await assert.rejects(
       prepareProductUpdate({
         currentVersion: "0.1.0",
@@ -100,103 +119,67 @@ test("download failure leaves a retryable candidate and a safe failure code", as
         target: "windows-x64",
         stateDirectory: join(root, "state"),
         cacheDirectory: join(root, "cache"),
-        discover: async () => available(),
-        download: async () => {
-          throw new Error("network secret must not persist");
-        },
-      }),
-      /network secret/,
-    );
-    const saved = await readUpdateState(join(root, "state"));
-    assert.equal(saved?.phase, "failed");
-    assert.equal(saved?.failure, "download-failed");
-    assert.equal(JSON.stringify(saved).includes("network secret"), false);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-for (const failure of ["system-incompatible", "system-unverified"] as const) {
-  test(`${failure} retains the candidate and fails before artifact download`, async () => {
-    const root = await mkdtemp(join(tmpdir(), `cinba-update-${failure}-`));
-    let downloads = 0;
-    const update = available();
-    try {
-      await assert.rejects(
-        prepareProductUpdate({
-          currentVersion: "0.1.0",
-          currentRevision: "0".repeat(40),
-          target: "windows-x64",
-          stateDirectory: join(root, "state"),
-          cacheDirectory: join(root, "cache"),
-          discover: async () => {
-            throw new UpdateDiscoveryFailureError(failure, update, `detailed ${failure} error`);
-          },
-          download: async () => {
-            downloads += 1;
-            throw new Error("artifact download must not start");
-          },
-        }),
-        new RegExp(`detailed ${failure} error`),
-      );
-      assert.equal(downloads, 0);
-      const saved = await readUpdateState(join(root, "state"));
-      assert.equal(saved?.phase, "failed");
-      assert.equal(saved?.failure, failure);
-      assert.deepEqual(saved?.candidate, blockedCandidate());
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-}
-
-test("plain structural system failure survives a cross-realm boundary", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-update-cross-realm-"));
-  let downloads = 0;
-  try {
-    let rejected = false;
-    try {
-      await prepareProductUpdate({
-        currentVersion: "0.1.0",
-        currentRevision: "0".repeat(40),
-        target: "windows-x64",
-        stateDirectory: join(root, "state"),
-        cacheDirectory: join(root, "cache"),
         discover: async () => {
-          throw new Proxy(
-            {
-              code: UPDATE_DISCOVERY_FAILURE_CODE,
-              failure: "system-incompatible",
-              candidate: blockedCandidate(),
-              message: "cross-realm compatibility detail",
-            },
-            {
-              get: () => {
-                throw new Error("operation must not reread the original error");
-              },
-            },
-          );
+          throw new UpdateDiscoveryFailureError(failure, update, `detailed ${failure} error`);
         },
         download: async () => {
           downloads += 1;
           throw new Error("artifact download must not start");
         },
-      });
-    } catch {
-      rejected = true;
-      // The state below is authoritative; do not inspect the hostile rejection object.
-    }
-    assert.equal(rejected, true);
+      }),
+      new RegExp(`detailed ${failure} error`),
+    );
     assert.equal(downloads, 0);
     const saved = await readUpdateState(join(root, "state"));
-    assert.equal(saved?.failure, "system-incompatible");
+    assert.equal(saved?.phase, "failed");
+    assert.equal(saved?.failure, failure);
     assert.deepEqual(saved?.candidate, blockedCandidate());
-  } finally {
-    await rm(root, { recursive: true, force: true });
+  });
+}
+
+test("plain structural system failure survives a cross-realm boundary", async (t) => {
+  const root = temporaryDirectory("cinba-update-cross-realm-", t);
+  let downloads = 0;
+  let rejected = false;
+  try {
+    await prepareProductUpdate({
+      currentVersion: "0.1.0",
+      currentRevision: "0".repeat(40),
+      target: "windows-x64",
+      stateDirectory: join(root, "state"),
+      cacheDirectory: join(root, "cache"),
+      discover: async () => {
+        throw new Proxy(
+          {
+            code: UPDATE_DISCOVERY_FAILURE_CODE,
+            failure: "system-incompatible",
+            candidate: blockedCandidate(),
+            message: "cross-realm compatibility detail",
+          },
+          {
+            get: () => {
+              throw new Error("operation must not reread the original error");
+            },
+          },
+        );
+      },
+      download: async () => {
+        downloads += 1;
+        throw new Error("artifact download must not start");
+      },
+    });
+  } catch {
+    rejected = true;
+    // The state below is authoritative; do not inspect the hostile rejection object.
   }
+  assert.equal(rejected, true);
+  assert.equal(downloads, 0);
+  const saved = await readUpdateState(join(root, "state"));
+  assert.equal(saved?.failure, "system-incompatible");
+  assert.deepEqual(saved?.candidate, blockedCandidate());
 });
 
-test("spoofed structural failures degrade to safe discovery failure state", async () => {
+test("spoofed structural failures degrade to safe discovery failure state", async (t) => {
   const invalidFailures = [
     {
       code: UPDATE_DISCOVERY_FAILURE_CODE,
@@ -241,31 +224,27 @@ test("spoofed structural failures degrade to safe discovery failure state", asyn
     },
   ];
   for (const [index, invalid] of invalidFailures.entries()) {
-    const root = await mkdtemp(join(tmpdir(), `cinba-update-spoof-${index}-`));
-    try {
-      await assert.rejects(
-        prepareProductUpdate({
-          currentVersion: "0.1.0",
-          currentRevision: "0".repeat(40),
-          target: "windows-x64",
-          stateDirectory: join(root, "state"),
-          cacheDirectory: join(root, "cache"),
-          discover: async () => {
-            throw invalid;
-          },
-        }),
-      );
-      const saved = await readUpdateState(join(root, "state"));
-      assert.equal(saved?.failure, "discovery-failed");
-      assert.equal(saved?.candidate, null);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+    const root = temporaryDirectory(`cinba-update-spoof-${index}-`, t);
+    await assert.rejects(
+      prepareProductUpdate({
+        currentVersion: "0.1.0",
+        currentRevision: "0".repeat(40),
+        target: "windows-x64",
+        stateDirectory: join(root, "state"),
+        cacheDirectory: join(root, "cache"),
+        discover: async () => {
+          throw invalid;
+        },
+      }),
+    );
+    const saved = await readUpdateState(join(root, "state"));
+    assert.equal(saved?.failure, "discovery-failed");
+    assert.equal(saved?.candidate, null);
   }
 });
 
-test("automatic callers reuse a recent shared result without another request", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-update-throttle-"));
+test("automatic callers reuse a recent shared result without another request", async (t) => {
+  const root = temporaryDirectory("cinba-update-throttle-", t);
   let discoveries = 0;
   const common = {
     currentVersion: "0.1.0",
@@ -284,15 +263,11 @@ test("automatic callers reuse a recent shared result without another request", a
       };
     },
   };
-  try {
-    await prepareProductUpdate({ ...common, now: () => new Date("2026-09-18T01:00:00Z") });
-    const reused = await prepareProductUpdate({
-      ...common,
-      now: () => new Date("2026-09-18T02:00:00Z"),
-    });
-    assert.equal(reused.phase, "current");
-    assert.equal(discoveries, 1);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  await prepareProductUpdate({ ...common, now: () => new Date("2026-09-18T01:00:00Z") });
+  const reused = await prepareProductUpdate({
+    ...common,
+    now: () => new Date("2026-09-18T02:00:00Z"),
+  });
+  assert.equal(reused.phase, "current");
+  assert.equal(discoveries, 1);
 });

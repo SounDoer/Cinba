@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { copyFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import {
   configureWindowsProductIntegration,
   removeWindowsProductIntegration,
@@ -97,45 +97,41 @@ test("uninstall refuses to continue while Desktop survives the stop request", as
 test(
   "Desktop stop ends Electron children that run from the Desktop directory under any name",
   { skip: process.platform !== "win32" },
-  async () => {
-    const root = await mkdtemp(join(tmpdir(), "cinba-desktop-stop-"));
+  async (t) => {
+    const root = temporaryDirectory("cinba-desktop-stop-", t);
     const desktop = join(root, "desktop");
     // A sibling whose name starts with the Desktop directory's must be left running.
     const sibling = join(root, "desktop-other");
+    await mkdir(desktop);
+    await mkdir(sibling);
+    const child = join(desktop, "crashpad.exe");
+    const unrelated = join(sibling, "unrelated.exe");
+    await copyFile(process.execPath, child);
+    await copyFile(process.execPath, unrelated);
+    const start = async (path: string) => {
+      const running = spawn(path, ["-e", "setTimeout(() => {}, 60000)"], {
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      await new Promise<void>((resolve, reject) => {
+        running.once("spawn", resolve);
+        running.once("error", reject);
+      });
+      return running;
+    };
+    const electronChild = await start(child);
+    const other = await start(unrelated);
+    const exited = new Promise((resolve) => electronChild.once("exit", resolve));
     try {
-      await mkdir(desktop);
-      await mkdir(sibling);
-      const child = join(desktop, "crashpad.exe");
-      const unrelated = join(sibling, "unrelated.exe");
-      await copyFile(process.execPath, child);
-      await copyFile(process.execPath, unrelated);
-      const start = async (path: string) => {
-        const running = spawn(path, ["-e", "setTimeout(() => {}, 60000)"], {
-          stdio: "ignore",
-          windowsHide: true,
-        });
-        await new Promise<void>((resolve, reject) => {
-          running.once("spawn", resolve);
-          running.once("error", reject);
-        });
-        return running;
-      };
-      const electronChild = await start(child);
-      const other = await start(unrelated);
-      const exited = new Promise((resolve) => electronChild.once("exit", resolve));
-      try {
-        const stopped = await stopWindowsDesktopApplication({
-          desktopApplicationPath: join(desktop, "Cinba.exe"),
-        });
-        assert.equal(stopped, 1);
-        await exited;
-        assert.equal(other.exitCode, null);
-      } finally {
-        electronChild.kill();
-        other.kill();
-      }
+      const stopped = await stopWindowsDesktopApplication({
+        desktopApplicationPath: join(desktop, "Cinba.exe"),
+      });
+      assert.equal(stopped, 1);
+      await exited;
+      assert.equal(other.exitCode, null);
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      electronChild.kill();
+      other.kill();
     }
   },
 );

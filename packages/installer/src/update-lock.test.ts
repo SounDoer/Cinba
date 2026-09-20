@@ -1,16 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "@cinba/test-support";
 import {
   acquireProductUpdateLease,
   claimTransferredProductUpdateLease,
   runWithProductUpdateLease,
 } from "./update-lock.ts";
 
-test("one update lease covers asynchronous confirmation and installation", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-update-lease-"));
+test("one update lease covers asynchronous confirmation and installation", async (t) => {
+  const root = temporaryDirectory("cinba-update-lease-", t);
   let continueFirst: () => void = () => undefined;
   const confirmation = new Promise<void>((resolve) => {
     continueFirst = resolve;
@@ -20,60 +18,52 @@ test("one update lease covers asynchronous confirmation and installation", async
     entered = resolve;
   });
   const calls: string[] = [];
-  try {
-    const first = runWithProductUpdateLease(root, async () => {
-      calls.push("first:confirm");
-      entered();
-      await confirmation;
-      calls.push("first:install");
-    });
-    await firstEntered;
-    await assert.rejects(
-      runWithProductUpdateLease(root, async () => {
-        calls.push("second:install");
-      }),
-      /another Cinba update operation is active/,
-    );
-    continueFirst();
-    await first;
-    assert.deepEqual(calls, ["first:confirm", "first:install"]);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  const first = runWithProductUpdateLease(root, async () => {
+    calls.push("first:confirm");
+    entered();
+    await confirmation;
+    calls.push("first:install");
+  });
+  await firstEntered;
+  await assert.rejects(
+    runWithProductUpdateLease(root, async () => {
+      calls.push("second:install");
+    }),
+    /another Cinba update operation is active/,
+  );
+  continueFirst();
+  await first;
+  assert.deepEqual(calls, ["first:confirm", "first:install"]);
 });
 
-test("a transferred lease remains continuously exclusive until the helper releases it", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-update-transfer-"));
-  try {
-    const parent = await acquireProductUpdateLease(root, { processId: 111 });
-    await parent.transferTo(222);
-    await assert.rejects(
-      acquireProductUpdateLease(root, {
-        processId: 333,
-        processIsAlive: () => true,
-      }),
-      /another Cinba update operation is active/,
-    );
+test("a transferred lease remains continuously exclusive until the helper releases it", async (t) => {
+  const root = temporaryDirectory("cinba-update-transfer-", t);
+  const parent = await acquireProductUpdateLease(root, { processId: 111 });
+  await parent.transferTo(222);
+  await assert.rejects(
+    acquireProductUpdateLease(root, {
+      processId: 333,
+      processIsAlive: () => true,
+    }),
+    /another Cinba update operation is active/,
+  );
 
-    const helper = await claimTransferredProductUpdateLease(root, parent.token, {
-      processId: 222,
-    });
-    await parent.waitForClaim(222);
-    await parent.release();
-    await assert.rejects(
-      acquireProductUpdateLease(root, {
-        processId: 333,
-        processIsAlive: () => true,
-      }),
-      /another Cinba update operation is active/,
-    );
+  const helper = await claimTransferredProductUpdateLease(root, parent.token, {
+    processId: 222,
+  });
+  await parent.waitForClaim(222);
+  await parent.release();
+  await assert.rejects(
+    acquireProductUpdateLease(root, {
+      processId: 333,
+      processIsAlive: () => true,
+    }),
+    /another Cinba update operation is active/,
+  );
 
-    await helper.release();
-    const competitor = await acquireProductUpdateLease(root, { processId: 333 });
-    await competitor.release();
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  await helper.release();
+  const competitor = await acquireProductUpdateLease(root, { processId: 333 });
+  await competitor.release();
 });
 
 test("runWithProductUpdateLease preserves operation failure when release also fails", async () => {
