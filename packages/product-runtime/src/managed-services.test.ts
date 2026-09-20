@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import type { LocalCoreControlStatus } from "@cinba/core-client";
@@ -11,6 +10,7 @@ import {
   readServiceState,
   resolveProductPaths,
 } from "@cinba/installer";
+import { temporaryDirectory } from "@cinba/test-support";
 import { createCoreServiceControlConfig } from "./core-service-control.ts";
 import {
   type ProductManagedServiceOptions,
@@ -57,40 +57,32 @@ function nativeOptions(root: string): ProductManagedServiceOptions {
   };
 }
 
-test("the product management facade controls Core through the shared service manager", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-product-service-"));
+test("the product management facade controls Core through the shared service manager", async (t) => {
+  const root = temporaryDirectory("cinba-product-service-", t);
   const adapter = fakeAdapter();
   const options = {
     ...nativeOptions(root),
     adapter,
     verifyHealth: async () => undefined,
   };
-  try {
-    const initial = await inspectProductComponentMode("core", options);
-    assert.equal(initial.state, "on-demand");
-    const background = await setProductComponentMode("core", "background", options);
-    assert.equal(background.state, "background");
-    assert.match(formatProductComponentMode(background), /Service: running/);
-    const onDemand = await setProductComponentMode("core", "on-demand", options);
-    assert.equal(onDemand.state, "on-demand");
-    assert.equal(adapter.registered, false);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  const initial = await inspectProductComponentMode("core", options);
+  assert.equal(initial.state, "on-demand");
+  const background = await setProductComponentMode("core", "background", options);
+  assert.equal(background.state, "background");
+  assert.match(formatProductComponentMode(background), /Service: running/);
+  const onDemand = await setProductComponentMode("core", "on-demand", options);
+  assert.equal(onDemand.state, "on-demand");
+  assert.equal(adapter.registered, false);
 });
 
-test("Sync remains not created until its authority directory exists", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-product-sync-"));
-  try {
-    const status = await inspectProductComponentMode("sync", {
-      ...nativeOptions(root),
-      adapter: fakeAdapter(),
-    });
-    assert.equal(status.state, "not-created");
-    assert.equal(formatProductComponentMode(status), "Cinba Sync: not created");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+test("Sync remains not created until its authority directory exists", async (t) => {
+  const root = temporaryDirectory("cinba-product-sync-", t);
+  const status = await inspectProductComponentMode("sync", {
+    ...nativeOptions(root),
+    adapter: fakeAdapter(),
+  });
+  assert.equal(status.state, "not-created");
+  assert.equal(formatProductComponentMode(status), "Cinba Sync: not created");
 });
 
 function stateDirectory(options: ProductManagedServiceOptions): string {
@@ -158,8 +150,8 @@ function sharedCorePort(onDemand: { safeToStop: boolean }) {
   return port;
 }
 
-test("Background takes over from an idle on-demand Core before starting the service", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-product-handoff-"));
+test("Background takes over from an idle on-demand Core before starting the service", async (t) => {
+  const root = temporaryDirectory("cinba-product-handoff-", t);
   const base = nativeOptions(root);
   const config = await onDemandCore(root);
   const port = sharedCorePort({ safeToStop: true });
@@ -175,8 +167,30 @@ test("Background takes over from an idle on-demand Core before starting the serv
     port.serviceRunning = true;
     adapter.running = true;
   };
-  try {
-    const status = await setProductComponentMode("core", "background", {
+  const status = await setProductComponentMode("core", "background", {
+    ...base,
+    adapter,
+    localCore: {
+      config,
+      probe: port.probe,
+      requestStatus: port.requestStatus,
+      requestStop: port.requestStop,
+    },
+  });
+  assert.equal(status.state, "background");
+  assert.equal(status.state === "background" && status.healthy, true);
+  assert.equal(port.stopRequests, 1);
+  await assert.rejects(access(config.startLockPath), { code: "ENOENT" });
+});
+
+test("Background refuses to take over while the on-demand Core has active work", async (t) => {
+  const root = temporaryDirectory("cinba-product-busy-", t);
+  const base = nativeOptions(root);
+  const config = await onDemandCore(root);
+  const port = sharedCorePort({ safeToStop: false });
+  const adapter = fakeAdapter();
+  await assert.rejects(
+    setProductComponentMode("core", "background", {
       ...base,
       adapter,
       localCore: {
@@ -185,47 +199,17 @@ test("Background takes over from an idle on-demand Core before starting the serv
         requestStatus: port.requestStatus,
         requestStop: port.requestStop,
       },
-    });
-    assert.equal(status.state, "background");
-    assert.equal(status.state === "background" && status.healthy, true);
-    assert.equal(port.stopRequests, 1);
-    await assert.rejects(access(config.startLockPath), { code: "ENOENT" });
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+    }),
+    /on-demand Cinba Core has active work/,
+  );
+  assert.equal(port.stopRequests, 0);
+  assert.equal(port.onDemandRunning, true);
+  assert.equal(adapter.registered, false);
+  await assert.rejects(access(config.startLockPath), { code: "ENOENT" });
 });
 
-test("Background refuses to take over while the on-demand Core has active work", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-product-busy-"));
-  const base = nativeOptions(root);
-  const config = await onDemandCore(root);
-  const port = sharedCorePort({ safeToStop: false });
-  const adapter = fakeAdapter();
-  try {
-    await assert.rejects(
-      setProductComponentMode("core", "background", {
-        ...base,
-        adapter,
-        localCore: {
-          config,
-          probe: port.probe,
-          requestStatus: port.requestStatus,
-          requestStop: port.requestStop,
-        },
-      }),
-      /on-demand Cinba Core has active work/,
-    );
-    assert.equal(port.stopRequests, 0);
-    assert.equal(port.onDemandRunning, true);
-    assert.equal(adapter.registered, false);
-    await assert.rejects(access(config.startLockPath), { code: "ENOENT" });
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("a Background service that exits is not verified by another Core on its port", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-product-impostor-"));
+test("a Background service that exits is not verified by another Core on its port", async (t) => {
+  const root = temporaryDirectory("cinba-product-impostor-", t);
   const base = nativeOptions(root);
   const config = await onDemandCore(root);
   const port = sharedCorePort({ safeToStop: true });
@@ -240,31 +224,27 @@ test("a Background service that exits is not verified by another Core on its por
     port.onDemandRunning = true;
     adapter.running = true;
   };
-  try {
-    await assert.rejects(
-      setProductComponentMode("core", "background", {
-        ...base,
-        adapter,
-        localCore: {
-          config,
-          probe: port.probe,
-          requestStatus: port.requestStatus,
-          requestStop: port.requestStop,
-        },
-      }),
-      /could not set Cinba Core to background/,
-    );
-    const state = await readServiceState(stateDirectory(base));
-    assert.equal(state?.core.mode, "on-demand");
-    assert.equal(state?.core.failure, "health-failed");
-    assert.equal(adapter.registered, false);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  await assert.rejects(
+    setProductComponentMode("core", "background", {
+      ...base,
+      adapter,
+      localCore: {
+        config,
+        probe: port.probe,
+        requestStatus: port.requestStatus,
+        requestStop: port.requestStop,
+      },
+    }),
+    /could not set Cinba Core to background/,
+  );
+  const state = await readServiceState(stateDirectory(base));
+  assert.equal(state?.core.mode, "on-demand");
+  assert.equal(state?.core.failure, "health-failed");
+  assert.equal(adapter.registered, false);
 });
 
-test("a host without systemd keeps Core on-demand and can still leave Background", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cinba-product-no-systemd-"));
+test("a host without systemd keeps Core on-demand and can still leave Background", async (t) => {
+  const root = temporaryDirectory("cinba-product-no-systemd-", t);
   const base = nativeOptions(root);
   const config = await onDemandCore(root);
   const port = sharedCorePort({ safeToStop: true });
@@ -276,35 +256,31 @@ test("a host without systemd keeps Core on-demand and can still leave Background
     },
   });
   const options = { ...base, adapter, verifyHealth: async () => undefined };
-  try {
-    const status = await inspectProductComponentMode("core", options);
-    assert.equal(status.state, "on-demand");
-    assert.match(
-      formatProductComponentMode(status),
-      /Background: unavailable \(this host does not run systemd/,
-    );
-    await assert.rejects(
-      setProductComponentMode("core", "background", {
-        ...options,
-        localCore: {
-          config,
-          probe: port.probe,
-          requestStatus: port.requestStatus,
-          requestStop: port.requestStop,
-        },
-      }),
-      /Background is unavailable because this host does not run systemd/,
-    );
-    assert.equal(port.stopRequests, 0, "a refused Background must not stop the on-demand Core");
-    assert.equal((await inspectProductComponentMode("core", options)).state, "on-demand");
-    // Uninstall's path: every mode change away from Background succeeds with nothing to remove.
-    assert.equal((await setProductComponentMode("core", "on-demand", options)).state, "on-demand");
-    const sync = await setProductComponentMode("sync", "disabled", {
+  const status = await inspectProductComponentMode("core", options);
+  assert.equal(status.state, "on-demand");
+  assert.match(
+    formatProductComponentMode(status),
+    /Background: unavailable \(this host does not run systemd/,
+  );
+  await assert.rejects(
+    setProductComponentMode("core", "background", {
       ...options,
-      componentCreated: true,
-    });
-    assert.equal(sync.state, "disabled");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+      localCore: {
+        config,
+        probe: port.probe,
+        requestStatus: port.requestStatus,
+        requestStop: port.requestStop,
+      },
+    }),
+    /Background is unavailable because this host does not run systemd/,
+  );
+  assert.equal(port.stopRequests, 0, "a refused Background must not stop the on-demand Core");
+  assert.equal((await inspectProductComponentMode("core", options)).state, "on-demand");
+  // Uninstall's path: every mode change away from Background succeeds with nothing to remove.
+  assert.equal((await setProductComponentMode("core", "on-demand", options)).state, "on-demand");
+  const sync = await setProductComponentMode("sync", "disabled", {
+    ...options,
+    componentCreated: true,
+  });
+  assert.equal(sync.state, "disabled");
 });

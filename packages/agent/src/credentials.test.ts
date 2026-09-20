@@ -1,13 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { temporaryDirectory } from "@cinba/test-support";
 
 // Point Pi's entire agent directory at a throwaway one before importing the
 // module under test, so these tests can log in and out without going anywhere
 // near the real ~/.pi/agent/auth.json.
-const agentDir = mkdtempSync(join(tmpdir(), "cinba-credentials-test-")).replace(/\\/g, "/");
+const agentDir = temporaryDirectory("cinba-credentials-test-").replace(/\\/g, "/");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 
 const { clearCredential, listCoreCapabilities, listProviders, setApiKey } =
@@ -15,11 +13,7 @@ const { clearCredential, listCoreCapabilities, listProviders, setApiKey } =
 
 const FAKE_KEY = "sk-this-is-not-a-real-key-0123456789";
 
-test("a stored key makes its provider configured, and is never handed back", async (t) => {
-  t.after(() => {
-    rmSync(agentDir, { recursive: true, force: true });
-  });
-
+test("a stored key makes its provider configured, and is never handed back", async () => {
   const before = await listProviders();
   assert.ok(before.length > 10, "Pi knows about many providers");
   assert.equal(

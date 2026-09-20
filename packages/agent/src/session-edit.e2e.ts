@@ -1,14 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { temporaryDirectory } from "@cinba/test-support";
 import { PiClient } from "./pi-client.ts";
 import { startPi } from "./pi-process.ts";
 import { StdioTransport } from "./transport.ts";
 
-test("the bundled edit bridge moves the leaf without changing the session", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "cinba-edit-"));
+test("the bundled edit bridge moves the leaf without changing the session", async (t) => {
+  const directory = temporaryDirectory("cinba-edit-", t);
   const sessionPath = join(directory, "session.jsonl");
   const timestamp = "2026-01-01T00:00:00.000Z";
   writeFileSync(
@@ -49,6 +49,5 @@ test("the bundled edit bridge moves the leaf without changing the session", asyn
     assert.equal((state.data as { sessionId?: string }).sessionId, "edit-session");
   } finally {
     await client.close();
-    rmSync(directory, { recursive: true, force: true });
   }
 });
