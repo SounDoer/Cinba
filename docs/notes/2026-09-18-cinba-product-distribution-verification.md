@@ -4,8 +4,8 @@
 
 最后更新：2026-09-19
 
-状态：候选 Draft 已从 `e8a6ca1` 重建；Windows 当前用户与 Linux 容器验收通过；macOS 需用该 Draft
-重测，干净账号、真实 Linux 主机和正式发布待验收
+状态：候选 Draft 已从 `af1f453` 重建；Windows 当前用户与 Linux 容器验收通过，Windows 安装耗时降至
+约 65 秒；macOS 需用该 Draft 重测，干净账号、真实 Linux 主机和正式发布待验收
 
 对应规格：`docs/specs/2026-09-17-cinba-product-distribution-design.md`
 
@@ -289,6 +289,28 @@ Linux 重新加载 shell 与 Background 的 systemd / linger 要求、各平台�
 均可验证；`install.sh` 内嵌的 archive 哈希与 Linux archive 一致；Draft 正文与本地
 `scripts/release-notes.ts` 渲染结果逐字一致。macOS DMG 的 SHA-256 为
 `888b5a25e0ed613dbd762b8cbf4334053c4e216d82989a8a30367823062b747c`。
+
+### 安装体验复测
+
+Windows 安装在进度提示上停留很久：`1db7d2f` 改写安装器提示并用 `nsExec::ExecToLog` 流式显示
+launcher 的阶段输出，`af1f453` 让 Windows 安装器以 `--consume-bundle` 移动 payload 而不是复制，
+并为激活阶段的 rename 加入约五秒退避重试。从
+`af1f4538ec6424c79ec940b3d75017745c85b05f` 重建 Draft
+（[Prepare product release](https://github.com/SounDoer/Cinba/actions/runs/35486268634)）后实测：
+
+- 修改前后对比：安装 146 秒 → 63—65 秒；同一构建不带 `--consume-bundle` 的复制路径为 210 秒，
+  说明差异来自 payload 移动；
+- 安装器详情区的默认提示为 “Installing Cinba. This usually takes a few minutes.”，不再声称在等待
+  卸载；直接运行 launcher 可见阶段输出实时产生：checking-package 1.1s、preparing 与
+  copying-payload 96.2s、activating 与 verifying 203.4s（复制路径计时）；
+- 回归：普通卸载 14 秒且数据哈希不变，重装 59 秒且标记文件恢复，purge 后无残留，`%TEMP%` 无
+  helper 残留；
+- Linux 容器复测通过，并用同一解压目录成功重装，确认 `install.sh` 路径仍为复制、包目录保留；
+- 修改前后 `%TEMP%` 都会留下 `ns*.tmp` 目录，修改后该目录为空。
+
+过程中两次异常均由探针自身造成，非产品缺陷：一次复制到的是上一轮 Draft 残留的 bundle（改用
+7-Zip 从安装包解出后确认新代码已包含）；一次监控脚本持续递归枚举 `releases` 导致激活 rename
+报 `EPERM`，事务如实回滚，这正是本轮重试所针对的场景。
 
 ## 正式发版前置检查
 
