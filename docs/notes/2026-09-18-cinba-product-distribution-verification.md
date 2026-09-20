@@ -4,8 +4,8 @@
 
 最后更新：2026-09-19
 
-状态：候选 Draft 已从 `af1f453` 重建；Windows 当前用户与 Linux 容器验收通过，Windows 安装耗时降至
-约 65 秒；macOS 需用该 Draft 重测，干净账号、真实 Linux 主机和正式发布待验收
+状态：候选 Draft 已从 `304db9c` 重建；Windows 当前用户与 Linux 容器验收通过，Windows 安装耗时降至
+约 65 秒且不再残留临时目录；macOS 需用该 Draft 重测，干净账号、真实 Linux 主机和正式发布待验收
 
 对应规格：`docs/specs/2026-09-17-cinba-product-distribution-design.md`
 
@@ -306,11 +306,33 @@ launcher 的阶段输出，`af1f453` 让 Windows 安装器以 `--consume-bundle`
 - 回归：普通卸载 14 秒且数据哈希不变，重装 59 秒且标记文件恢复，purge 后无残留，`%TEMP%` 无
   helper 残留；
 - Linux 容器复测通过，并用同一解压目录成功重装，确认 `install.sh` 路径仍为复制、包目录保留；
-- 修改前后 `%TEMP%` 都会留下 `ns*.tmp` 目录，修改后该目录为空。
+- 修改前后 `%TEMP%` 都会留下 `ns*.tmp` 目录，修改后该目录为空。后续对照实验表明，勾选与不勾选
+  “Launch Cinba” 都会残留，与 Desktop 启动无关；安装器退出后可手工删除，说明是退出时删除失败。
+  当时的旧安装包已删除，无法与改动前做对照，故不能断定该残留由本轮改动引入。
 
 过程中两次异常均由探针自身造成，非产品缺陷：一次复制到的是上一轮 Draft 残留的 bundle（改用
 7-Zip 从安装包解出后确认新代码已包含）；一次监控脚本持续递归枚举 `releases` 导致激活 rename
 报 `EPERM`，事务如实回滚，这正是本轮重试所针对的场景。
+
+### 安装器临时目录复测
+
+`304db9c` 定位到根因：脚本中的 `SetOutPath "$PLUGINSDIR\CinbaBundle"` 使解压目录成为安装器的当前
+工作目录，Windows 不允许删除任何进程正在使用的工作目录，因此安装器退出时删除 `$PLUGINSDIR`
+只删掉文件、留下两层空目录；与 `cc7b5bf` 的卸载 helper 是同一机制。修复为执行安装后、失败分支
+之前切回 `$TEMP`。
+
+从 `304db9c5d711902677be01352a42a8fb85dc1b48` 重建 Draft
+（[Prepare product release](https://github.com/SounDoer/Cinba/actions/runs/35495656822)），资产与
+attestation 校验一致。复测结果：
+
+- 勾选 “Launch Cinba” 安装 61 秒、清除勾选安装 67 秒，两次之后 `%TEMP%` 均无 `ns*.tmp` 残留；
+  清除勾选时 Desktop 确实未启动；
+- 回归：普通卸载 14 秒且数据哈希不变，重装 67 秒且标记文件恢复，purge 后程序、数据与 PATH 条目
+  均清除，全程无 helper 与临时目录残留；
+- Linux 容器复测通过（安装、doctor、无 systemd 说明、离线更新提示、卸载保留数据、重装、purge）。
+
+两条看似异常的观察均非缺陷：清除启动勾选的安装后数据目录尚未创建，符合“配置在首次进入产品后
+完成”的规格；PATH 基线记录时机器上已装有 Cinba，purge 后差异仅为该条目本身。
 
 ## 正式发版前置检查
 
