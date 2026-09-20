@@ -26,7 +26,7 @@ Download `Cinba-X.Y.Z-macos-arm64.dmg` on an Apple Silicon Mac, open it, and run
 inside. Cinba installs to `~/Applications/Cinba.app` for the current user.
 
 If Gatekeeper blocks the unsigned application, first verify that the DMG came from the selected
-GitHub Release, then run:
+GitHub Release, then allow it under **System Settings → Privacy & Security**, or run:
 
 ```sh
 xattr -dr com.apple.quarantine "$HOME/Applications/Cinba.app"
@@ -40,6 +40,19 @@ install Node.js, clone this repository, start the TUI, start Core, or create a b
 
 For an offline installation, copy the Linux archive and `SHA256SUMS` from the same release, verify
 the archive, extract it, and run the bundled `install.sh`.
+
+The installer adds `~/.local/bin` to the shell startup file it owns, so open a new shell, or run
+`source ~/.bashrc` (`source ~/.zshrc` for zsh), before running `cinba`.
+
+Background mode needs a systemd user manager, and linger so it survives logout and host restarts:
+
+```sh
+sudo loginctl enable-linger "$USER"
+```
+
+Cinba checks this when Background is enabled and offers to run it for you in an interactive
+terminal. Without systemd, Cinba reports Background as unavailable and stays on demand; everything
+else, including uninstall, still works.
 
 ## Use an installed release
 

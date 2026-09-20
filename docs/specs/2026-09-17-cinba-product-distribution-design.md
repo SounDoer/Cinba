@@ -189,10 +189,12 @@ Windows / macOS / Linux 从同一 SHA 构建并验证
 Windows、macOS、Linux artifact 和 manifest 必须全部构建验证成功后，才发布整个 release；不发布
 缺失部分平台的正式版本。
 
-每条 GitHub Release notes 必须包含版本变更说明，以及 Windows、macOS、Linux 三个平台的中文安装
-说明和紧随其后的英文安装说明。说明需列出准确 artifact 文件名、Windows SmartScreen 提示、macOS
-Gatekeeper 提示和 `xattr` 命令、Linux 推荐与手工安装方式、已有用户的产品内更新方式，以及必要的
-系统下限或数据兼容变化。Release notes 模板不完整时保持 draft，不能正式发布。
+Release notes 只服务于“把 Cinba 装上”，保持简短；卸载、Background 与 linger 等使用细节属于仓库
+文档，不进入 release notes。每条 GitHub Release notes 必须包含版本变更说明，以及 Windows、macOS、
+Linux 三个平台的中文安装说明和紧随其后的英文安装说明。说明需列出准确 artifact 文件名与系统下限、
+Windows SmartScreen 提示、macOS Gatekeeper 被阻止时的系统设置放行路径与 `xattr` 命令、Linux 推荐
+与离线安装方式、已有用户的产品内更新方式，以及必要的数据兼容变化。Release notes 模板不完整时
+保持 draft，不能正式发布。
 
 新体系完成并验收后，`prod` 分支可以删除。现有 `master → prod` promotion、VPS 定时 Git fetch 和
 相关 release skill 随之退役。现在不删除 `prod`，也不改变现有线上环境。
@@ -288,10 +290,10 @@ macOS `.dmg` 中的 Cinba 首次运行时完成用户级自安装：
 xattr -dr com.apple.quarantine "$HOME/Applications/Cinba.app"
 ```
 
-Cinba 不自动执行该命令；它代表用户对所下载 GitHub Release 的主动信任。
-若 Gatekeeper 在 DMG 内首次启动、自安装尚未发生前就拦截，说明应先引导用户把 `Cinba.app` 手工复制到
-`~/Applications`，再执行上述固定路径命令并打开；不提供会因挂载卷名称变化而失效的 `/Volumes/...`
-命令。
+Cinba 不自动执行该命令；它代表用户对所下载 GitHub Release 的主动信任。Release notes 以“系统设置 →
+隐私与安全性”中的放行为首选路径，该命令作为等价的终端做法；不提供会因挂载卷名称变化而失效的
+`/Volumes/...` 命令。Gatekeeper 在干净 macOS 上的实际拦截位置尚未实测，实测后按结果修订本节与
+release notes。
 
 ### 9.4 安装完成行为
 
