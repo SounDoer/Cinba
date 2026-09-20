@@ -201,10 +201,15 @@ export {
   waitForInstallationIdle,
 } from "./installation-lock.ts";
 export { installReleaseBundle } from "./bundle-installation.ts";
-export type { InstallReleaseBundleOptions, PreparedStableFiles } from "./bundle-installation.ts";
+export type {
+  InstallReleaseBundleOptions,
+  PreparedStableFiles,
+  ReleaseBundleProgress,
+} from "./bundle-installation.ts";
 export { prepareStableProductFiles, recoverStableProductFiles } from "./stable-files.ts";
 export type { StableFileInstallMode } from "./stable-files.ts";
 export { installProductBundle, verifyInstalledProductRelease } from "./product-installation.ts";
+export type { ProductInstallationProgress } from "./product-installation.ts";
 export { configurePosixLauncherPath, removePosixLauncherPathBlock } from "./shell-path.ts";
 export type { PosixPathConfiguration } from "./shell-path.ts";
 export { configureWindowsUserPath, removeWindowsUserPath } from "./windows-path.ts";

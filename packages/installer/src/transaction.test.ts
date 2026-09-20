@@ -480,11 +480,32 @@ test("an installer waits for a running uninstall to release the lock", async () 
   const root = await mkdtemp(join(tmpdir(), "cinba-install-wait-"));
   const paths = layout(root);
   try {
+    const states: string[] = [];
     const unlock = await acquireInstallationLock(paths);
-    const waiting = waitForInstallationIdle(paths, { timeoutMs: 5_000, pollMs: 10 });
+    const waiting = waitForInstallationIdle(paths, {
+      timeoutMs: 5_000,
+      pollMs: 10,
+      onWait: (state) => void states.push(state),
+    });
     await new Promise((resolve) => setTimeout(resolve, 50));
     await unlock();
     await waiting;
+    assert.deepEqual(states, ["waiting", "released"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an idle installation reports no waiting at all", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-install-no-wait-"));
+  try {
+    const states: string[] = [];
+    await waitForInstallationIdle(layout(root), {
+      timeoutMs: 5_000,
+      pollMs: 10,
+      onWait: (state) => void states.push(state),
+    });
+    assert.deepEqual(states, []);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

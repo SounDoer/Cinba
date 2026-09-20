@@ -11,7 +11,7 @@ test("the Windows setup delegates installation and offers to launch Cinba", () =
   assert.match(script, /RequestExecutionLevel user/);
   assert.match(
     script,
-    /nsExec::ExecToStack '"\$PLUGINSDIR\\CinbaBundle\\launcher\\cinba\.exe" install'/,
+    /nsExec::ExecToLog '"\$PLUGINSDIR\\CinbaBundle\\launcher\\cinba\.exe" install --failure-log "\$PLUGINSDIR\\install-failure\.txt"'/,
   );
   assert.match(
     script,
@@ -21,6 +21,21 @@ test("the Windows setup delegates installation and offers to launch Cinba", () =
   assert.match(script, /MUI_FINISHPAGE_RUN_CHECKED/);
   assert.match(script, /Programs\\Cinba\\desktop\\Cinba\.exe/);
   assert.doesNotMatch(script, /CreateShortCut[^\n]*Desktop/);
+});
+
+test("the Windows setup streams installer output and still reports the failure line", () => {
+  const script = renderWindowsInstallerScript({
+    version: "0.1.0",
+    bundleDirectory: "C:\\build\\bundle",
+    outputPath: "C:\\build\\Cinba-0.1.0-windows-x64.exe",
+  });
+  assert.doesNotMatch(script, /ExecToStack/);
+  assert.match(script, /DetailPrint "Installing Cinba\. This usually takes a few minutes\."/);
+  assert.doesNotMatch(script, /DetailPrint[^\n]*uninstall/);
+  assert.match(script, /StrCpy \$1 "See the installation details for what failed\."/);
+  assert.match(script, /FileOpen \$2 "\$PLUGINSDIR\\install-failure\.txt" r/);
+  assert.match(script, /\$\{IfNot\} \$\{Errors\}\n      FileRead \$2 \$3\n      FileClose \$2/);
+  assert.match(script, /\$\{If\} \$3 != ""\n        StrCpy \$1 \$3/);
 });
 
 test("NSIS paths cannot inject new directives", () => {

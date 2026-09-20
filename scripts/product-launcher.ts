@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline/promises";
 import {
+  type ProductInstallationProgress,
   configurePosixLauncherPath,
   configureWindowsProductIntegration,
   configureWindowsUserPath,
@@ -34,6 +36,19 @@ import {
   runStableProductUpdate,
   runUpdateHandoffHelper,
 } from "./product-update.ts";
+
+const INSTALL_PROGRESS_MESSAGES: Record<ProductInstallationProgress, string> = {
+  "waiting-for-lock": "Waiting for another Cinba installation or uninstall to finish.",
+  "lock-released": "The other Cinba operation finished; continuing.",
+  "checking-package": "Checking the Cinba package.",
+  preparing: "Preparing the installation.",
+  "copying-payload": "Copying program files.",
+  activating: "Activating Cinba.",
+  verifying: "Verifying the installed files.",
+};
+
+/** Where to record the final failure line for an installer that only sees this process' output. */
+let installFailureLogPath: string | undefined;
 
 function openMacosApplication(applicationPath: string): void {
   const child = spawn("/usr/bin/open", [applicationPath], {
@@ -133,6 +148,7 @@ async function run(): Promise<void> {
     return;
   }
   if (launcherCommand.type === "install") {
+    installFailureLogPath = launcherCommand.failureLogPath;
     const macosHandoff = parseMacosInstallHandoff(process.env);
     if (macosHandoff) {
       if (platform !== "darwin") {
@@ -149,6 +165,7 @@ async function run(): Promise<void> {
       paths,
       target,
       ...(expectedRelease ? { expectedRelease } : {}),
+      report: (progress) => console.log(INSTALL_PROGRESS_MESSAGES[progress]),
     });
     console.log(`Cinba ${transaction.candidate.version} installed successfully.`);
     if (platform === "win32") {
@@ -223,9 +240,18 @@ async function run(): Promise<void> {
 }
 
 run().catch((error: unknown) => {
-  console.error(
-    `[cinba] ${error instanceof Error ? error.message : String(error)}`.slice(0, 2_048),
+  const message = `[cinba] ${error instanceof Error ? error.message : String(error)}`.slice(
+    0,
+    2_048,
   );
+  console.error(message);
+  if (installFailureLogPath) {
+    try {
+      writeFileSync(installFailureLogPath, message.slice(0, 1_024));
+    } catch {
+      // The installer falls back to its own message when this log is missing.
+    }
+  }
   if (process.platform === "darwin" && process.env[MACOS_INSTALL_PARENT_PROCESS_ID]) {
     showMacosInstallationFailure();
   }

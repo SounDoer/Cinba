@@ -136,17 +136,30 @@ export async function installationLockHeldBy(
 
 export async function waitForInstallationIdle(
   layout: InstallationLayout,
-  options: { timeoutMs?: number; pollMs?: number } = {},
+  options: {
+    timeoutMs?: number;
+    pollMs?: number;
+    /** Reports that the lock was held by someone else, and later that the wait ended. */
+    onWait?: (state: "waiting" | "released") => void;
+  } = {},
 ): Promise<void> {
   const deadline = Date.now() + (options.timeoutMs ?? 180_000);
+  let waited = false;
   for (;;) {
     try {
       const unlock = await acquireInstallationLock(layout);
       await unlock();
+      if (waited) {
+        options.onWait?.("released");
+      }
       return;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== LOCK_BUSY) {
         throw error;
+      }
+      if (!waited) {
+        waited = true;
+        options.onWait?.("waiting");
       }
       if (Date.now() >= deadline) {
         throw new Error(

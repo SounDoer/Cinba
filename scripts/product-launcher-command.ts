@@ -7,7 +7,7 @@ type ExpectedProductInstallRelease = {
 };
 
 export type StableLauncherCommand =
-  | { type: "install"; bundleDirectory: string }
+  | { type: "install"; bundleDirectory: string; failureLogPath?: string }
   | { type: "update" }
   | {
       type: "begin-update-handoff";
@@ -48,6 +48,20 @@ export function parseStableLauncherCommand(
 ): StableLauncherCommand {
   if (arguments_.length === 1 && arguments_[0] === "install") {
     return { type: "install", bundleDirectory: resolve(dirname(executable), "..") };
+  }
+  // A graphical installer streams this output into its own view, so it needs the final failure
+  // line in a file it can read back.
+  if (
+    arguments_.length === 3 &&
+    arguments_[0] === "install" &&
+    arguments_[1] === "--failure-log" &&
+    isAbsolute(arguments_[2]!)
+  ) {
+    return {
+      type: "install",
+      bundleDirectory: resolve(dirname(executable), ".."),
+      failureLogPath: arguments_[2]!,
+    };
   }
   if (arguments_.length === 1 && arguments_[0] === "update") {
     return { type: "update" };

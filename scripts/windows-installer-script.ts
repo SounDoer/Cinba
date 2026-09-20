@@ -37,11 +37,20 @@ Section "Install Cinba"
   InitPluginsDir
   SetOutPath "$PLUGINSDIR\\CinbaBundle"
   File /r "${bundle}\\*.*"
-  DetailPrint "Installing Cinba. This waits for any running Cinba uninstall to finish."
-  nsExec::ExecToStack '"$PLUGINSDIR\\CinbaBundle\\launcher\\cinba.exe" install'
+  DetailPrint "Installing Cinba. This usually takes a few minutes."
+  nsExec::ExecToLog '"$PLUGINSDIR\\CinbaBundle\\launcher\\cinba.exe" install --failure-log "$PLUGINSDIR\\install-failure.txt"'
   Pop $0
-  Pop $1
   ${"$"}{If} $0 != 0
+    StrCpy $1 "See the installation details for what failed."
+    ClearErrors
+    FileOpen $2 "$PLUGINSDIR\\install-failure.txt" r
+    ${"$"}{IfNot} ${"$"}{Errors}
+      FileRead $2 $3
+      FileClose $2
+      ${"$"}{If} $3 != ""
+        StrCpy $1 $3
+      ${"$"}{EndIf}
+    ${"$"}{EndIf}
     MessageBox MB_ICONSTOP "Cinba installation failed (exit code $0).$\\r$\\n$\\r$\\n$1"
     SetErrorLevel 1
     Abort

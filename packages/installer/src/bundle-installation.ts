@@ -15,6 +15,10 @@ export type PreparedStableFiles = {
   rollback(): Promise<void>;
 };
 
+/** Coarse installation steps, reported so a slow install visibly advances. */
+export type ReleaseBundleProgress =
+  "checking-package" | "preparing" | "copying-payload" | "activating";
+
 export type InstallReleaseBundleOptions = {
   bundleDirectory: string;
   layout: StageCandidateOptions["layout"];
@@ -29,11 +33,13 @@ export type InstallReleaseBundleOptions = {
   dataMigration?: ActivateCandidateOptions["dataMigration"];
   transactionId?: string;
   now?: () => Date;
+  report?: (progress: ReleaseBundleProgress) => void;
 };
 
 export async function installReleaseBundle(
   options: InstallReleaseBundleOptions,
 ): Promise<InstallationTransaction> {
+  options.report?.("checking-package");
   const bundle = await verifyReleaseBundle(options.bundleDirectory, options.expectedTarget);
   if (
     options.expectedRelease &&
@@ -45,12 +51,14 @@ export async function installReleaseBundle(
   }
   // Every transaction phase except "ready" runs under the installation lock, so one found here
   // was left by a process that died. Rerunning the installer is the documented repair path.
+  options.report?.("preparing");
   await recoverInterruptedInstallation({
     layout: options.layout,
     verify: options.verify,
     dataMigration: options.dataMigration,
     now: options.now,
   });
+  options.report?.("copying-payload");
   await stageCandidate({
     sourceDirectory: bundle.payloadDirectory,
     layout: options.layout,
@@ -59,6 +67,7 @@ export async function installReleaseBundle(
     now: options.now,
   });
 
+  options.report?.("activating");
   let stableFiles: PreparedStableFiles | undefined;
   try {
     stableFiles = await options.prepareStableFiles?.(bundle);

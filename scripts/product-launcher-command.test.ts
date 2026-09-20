@@ -13,6 +13,19 @@ test("the bundle launcher infers its bundle root for installation", () => {
   );
 });
 
+test("installation accepts an absolute failure log for a graphical installer", () => {
+  const executable = resolve("bundle", "launcher", "cinba");
+  const failureLogPath = resolve("temp", "install-failure.txt");
+  assert.deepEqual(
+    parseStableLauncherCommand(["install", "--failure-log", failureLogPath], executable),
+    { type: "install", bundleDirectory: resolve("bundle"), failureLogPath },
+  );
+  assert.deepEqual(
+    parseStableLauncherCommand(["install", "--failure-log", "install-failure.txt"], executable),
+    { type: "product", arguments: ["install", "--failure-log", "install-failure.txt"] },
+  );
+});
+
 test("ordinary arguments remain owned by the active product CLI", () => {
   assert.deepEqual(parseStableLauncherCommand(["tui", "project"], resolve("cinba")), {
     type: "product",

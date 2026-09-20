@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
-import { installReleaseBundle } from "./bundle-installation.ts";
+import { type ReleaseBundleProgress, installReleaseBundle } from "./bundle-installation.ts";
 import { waitForInstallationIdle } from "./installation-lock.ts";
 import { type InstallationTransaction, readCurrentRelease } from "./installation-store.ts";
 import type { ProductPaths } from "./paths.ts";
@@ -81,6 +81,9 @@ export async function verifyInstalledProductRelease(options: {
   }
 }
 
+export type ProductInstallationProgress =
+  ReleaseBundleProgress | "waiting-for-lock" | "lock-released" | "verifying";
+
 export async function installProductBundle(options: {
   bundleDirectory: string;
   paths: ProductPaths;
@@ -92,9 +95,13 @@ export async function installProductBundle(options: {
   };
   transactionId?: string;
   verify?: typeof verifyInstalledProductRelease;
+  report?: (progress: ProductInstallationProgress) => void;
 }): Promise<InstallationTransaction> {
+  const report = options.report;
   // A detached uninstall helper keeps the installation lock until it has removed the program.
-  await waitForInstallationIdle(options.paths);
+  await waitForInstallationIdle(options.paths, {
+    onWait: (state) => report?.(state === "waiting" ? "waiting-for-lock" : "lock-released"),
+  });
   const mode = stableFileInstallMode({
     bundleDirectory: options.bundleDirectory,
     paths: options.paths,
@@ -107,14 +114,17 @@ export async function installProductBundle(options: {
     expectedTarget: options.target,
     ...(options.expectedRelease ? { expectedRelease: options.expectedRelease } : {}),
     ...(options.transactionId ? { transactionId: options.transactionId } : {}),
+    ...(report ? { report } : {}),
     prepareStableFiles: async (bundle) =>
       await prepareStableProductFiles({ bundle, paths: options.paths, mode }),
-    verify: async (releaseDirectory, release) =>
+    verify: async (releaseDirectory, release) => {
+      report?.("verifying");
       await (options.verify ?? verifyInstalledProductRelease)({
         releaseDirectory,
         target: release.target,
         version: release.version,
         revision: release.revision,
-      }),
+      });
+    },
   });
 }

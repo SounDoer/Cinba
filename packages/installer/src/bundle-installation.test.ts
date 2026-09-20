@@ -93,6 +93,23 @@ test("one bundle transaction activates the payload and commits stable files", as
   }
 });
 
+test("a bundle installation reports each step before it starts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cinba-bundle-install-progress-"));
+  const progress: string[] = [];
+  try {
+    await installReleaseBundle({
+      bundleDirectory: await createBundle(root),
+      layout: layout(root),
+      expectedTarget: "windows-x64",
+      transactionId,
+      report: (phase) => void progress.push(phase),
+    });
+    assert.deepEqual(progress, ["checking-package", "preparing", "copying-payload", "activating"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("an activation failure rolls stable files back with the payload", async () => {
   const root = await mkdtemp(join(tmpdir(), "cinba-bundle-install-rollback-"));
   const events: string[] = [];
