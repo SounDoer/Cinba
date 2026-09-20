@@ -6,9 +6,10 @@ import {
   UPDATE_DISCOVERY_FAILURE_CODE,
   type UpdateDiscovery,
   UpdateDiscoveryFailureError,
+  UpdateRateLimitError,
 } from "./update-discovery.ts";
 import { prepareProductUpdate } from "./update-operation.ts";
-import { readUpdateState } from "./update-state.ts";
+import { automaticUpdateCheckIsDue, readUpdateState } from "./update-state.ts";
 
 const revision = "a".repeat(40);
 
@@ -270,4 +271,65 @@ test("automatic callers reuse a recent shared result without another request", a
   });
   assert.equal(reused.phase, "current");
   assert.equal(discoveries, 1);
+});
+
+test("a rate-limited discovery records when the next automatic check may run", async (t) => {
+  const root = temporaryDirectory("cinba-update-rate-limited-", t);
+  const retryAfter = "2026-09-18T01:27:03.000Z";
+  await assert.rejects(
+    prepareProductUpdate({
+      currentVersion: "0.1.0",
+      currentRevision: "0".repeat(40),
+      target: "windows-x64",
+      stateDirectory: join(root, "state"),
+      cacheDirectory: join(root, "cache"),
+      now: () => new Date("2026-09-18T01:02:03Z"),
+      discover: async () => {
+        throw new UpdateRateLimitError("GitHub is rate limiting anonymous requests", retryAfter);
+      },
+    }),
+    /GitHub is rate limiting anonymous requests/,
+  );
+  const saved = await readUpdateState(join(root, "state"));
+  assert.equal(saved?.phase, "failed");
+  assert.equal(saved?.failure, "discovery-failed");
+  assert.equal(saved?.candidate, null);
+  assert.equal(saved?.retryAfter, retryAfter);
+  assert.equal(
+    automaticUpdateCheckIsDue({
+      state: saved,
+      currentVersion: "0.1.0",
+      now: new Date(Date.parse(retryAfter) - 1),
+    }),
+    false,
+  );
+  assert.equal(
+    automaticUpdateCheckIsDue({
+      state: saved,
+      currentVersion: "0.1.0",
+      now: new Date(retryAfter),
+    }),
+    true,
+  );
+});
+
+test("a rate limit without a reset falls back to the ordinary daily check", async (t) => {
+  const root = temporaryDirectory("cinba-update-rate-limited-open-", t);
+  await assert.rejects(
+    prepareProductUpdate({
+      currentVersion: "0.1.0",
+      currentRevision: "0".repeat(40),
+      target: "windows-x64",
+      stateDirectory: join(root, "state"),
+      cacheDirectory: join(root, "cache"),
+      now: () => new Date("2026-09-18T01:02:03Z"),
+      discover: async () => {
+        throw new UpdateRateLimitError("GitHub is rate limiting anonymous requests", null);
+      },
+    }),
+    /GitHub is rate limiting anonymous requests/,
+  );
+  const saved = await readUpdateState(join(root, "state"));
+  assert.equal(saved?.failure, "discovery-failed");
+  assert.equal(saved?.retryAfter, undefined);
 });

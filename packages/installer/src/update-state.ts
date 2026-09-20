@@ -26,6 +26,8 @@ export type UpdateState = {
   checkedAt: string;
   candidate: UpdateCandidate | null;
   failure: UpdateFailure | null;
+  /** When a transient failure may be retried; absent when the usual interval applies. */
+  retryAfter?: string;
 };
 
 export const AUTOMATIC_UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1_000;
@@ -46,6 +48,7 @@ function exactRecord(
   value: unknown,
   fields: readonly string[],
   context: string,
+  optional: readonly string[] = [],
 ): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${context} must be an object`);
@@ -54,7 +57,8 @@ function exactRecord(
   const parsed: Record<string, unknown> = {};
   if (
     Object.entries(descriptors).some(
-      ([field, descriptor]) => descriptor.enumerable && !fields.includes(field),
+      ([field, descriptor]) =>
+        descriptor.enumerable && !fields.includes(field) && !optional.includes(field),
     )
   ) {
     throw new Error(`${context} fields are invalid`);
@@ -65,6 +69,15 @@ function exactRecord(
       throw new Error(`${context} fields are invalid`);
     }
     parsed[field] = descriptor.value;
+  }
+  for (const field of optional) {
+    const descriptor = descriptors[field];
+    if (descriptor) {
+      if (!Object.hasOwn(descriptor, "value")) {
+        throw new Error(`${context} fields are invalid`);
+      }
+      parsed[field] = descriptor.value;
+    }
   }
   return parsed;
 }
@@ -119,6 +132,7 @@ export function parseUpdateState(value: unknown): UpdateState {
     value,
     ["schemaVersion", "phase", "currentVersion", "checkedAt", "candidate", "failure"],
     "update state",
+    ["retryAfter"],
   );
   if (parsed.schemaVersion !== 1) {
     throw new Error("update state schemaVersion must be 1");
@@ -164,6 +178,17 @@ export function parseUpdateState(value: unknown): UpdateState {
       "update system failure requires an undownloaded candidate with null artifactPath",
     );
   }
+  if (parsed.retryAfter !== undefined && phase !== "failed") {
+    throw new Error("update state retryAfter belongs to a failed phase");
+  }
+  if (
+    parsed.retryAfter !== undefined &&
+    (typeof parsed.retryAfter !== "string" ||
+      !parsed.retryAfter.endsWith("Z") ||
+      Number.isNaN(Date.parse(parsed.retryAfter)))
+  ) {
+    throw new Error("update state retryAfter must be an ISO UTC timestamp");
+  }
   return {
     schemaVersion: 1,
     phase,
@@ -171,6 +196,7 @@ export function parseUpdateState(value: unknown): UpdateState {
     checkedAt: parsed.checkedAt,
     candidate,
     failure: parsed.failure as UpdateFailure | null,
+    ...(parsed.retryAfter === undefined ? {} : { retryAfter: parsed.retryAfter as string }),
   };
 }
 
@@ -198,7 +224,12 @@ export function automaticUpdateCheckIsDue(options: {
   if (state.phase === "checking" || state.phase === "downloading") {
     return true;
   }
-  return (options.now ?? new Date()).getTime() - Date.parse(state.checkedAt) >= intervalMs;
+  const now = (options.now ?? new Date()).getTime();
+  // A transient failure named its own moment to retry; honour it instead of the interval.
+  if (state.retryAfter !== undefined) {
+    return now >= Date.parse(state.retryAfter);
+  }
+  return now - Date.parse(state.checkedAt) >= intervalMs;
 }
 
 export async function readUpdateState(stateDirectory: string): Promise<UpdateState | undefined> {

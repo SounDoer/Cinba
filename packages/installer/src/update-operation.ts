@@ -5,6 +5,7 @@ import {
   compareStableVersions,
   discoverCinbaUpdate,
   parseUpdateDiscoveryFailure,
+  parseUpdateRateLimit,
 } from "./update-discovery.ts";
 import type { ProductTarget } from "./platform.ts";
 import { type ProductUpdateLease, acquireProductUpdateLease } from "./update-lock.ts";
@@ -36,8 +37,17 @@ function state(
   checkedAt: string,
   candidate: UpdateCandidate | null,
   failure: UpdateFailure | null = null,
+  retryAfter: string | null = null,
 ): UpdateState {
-  return { schemaVersion: 1, phase, currentVersion, checkedAt, candidate, failure };
+  return {
+    schemaVersion: 1,
+    phase,
+    currentVersion,
+    checkedAt,
+    candidate,
+    failure,
+    ...(retryAfter === null ? {} : { retryAfter }),
+  };
 }
 
 export async function prepareProductUpdate(options: {
@@ -130,7 +140,16 @@ export async function prepareProductUpdate(options: {
     }
     const failure =
       systemFailure ?? (operation === "discovery" ? "discovery-failed" : "download-failed");
-    const failed = state("failed", options.currentVersion, checkedAt, candidate, failure);
+    // Rate limiting is an ordinary failure that simply names when the next check may run.
+    const rateLimit = systemFailure ? undefined : parseUpdateRateLimit(error);
+    const failed = state(
+      "failed",
+      options.currentVersion,
+      checkedAt,
+      candidate,
+      failure,
+      rateLimit?.retryAfter ?? null,
+    );
     await writeUpdateState(options.stateDirectory, failed);
     options.onStateChange?.(failed);
     throw error;

@@ -47,6 +47,9 @@ export type UpdateDiscovery =
 type AvailableUpdate = Extract<UpdateDiscovery, { state: "available" }>;
 export type UpdateDiscoveryFailure = "system-incompatible" | "system-unverified";
 export const UPDATE_DISCOVERY_FAILURE_CODE = "CINBA_UPDATE_DISCOVERY_FAILURE";
+export const UPDATE_RATE_LIMIT_CODE = "CINBA_UPDATE_RATE_LIMITED";
+/** A reset further out than this is not a quota Cinba should wait for. */
+export const MAX_UPDATE_RETRY_AFTER_MS = 24 * 60 * 60 * 1_000;
 const MAX_UPDATE_DISCOVERY_FAILURE_MESSAGE_LENGTH = 2_048;
 const UPDATE_DISCOVERY_FAILURE_FIELDS = new Set(["code", "failure", "candidate", "message"]);
 
@@ -95,6 +98,43 @@ export class UpdateDiscoveryFailureError extends Error {
     this.failure = failure;
     this.candidate = candidateFrom(update);
   }
+}
+
+/** Rate limiting is transient, so it carries the moment a later check may run instead. */
+export class UpdateRateLimitError extends Error {
+  readonly code = UPDATE_RATE_LIMIT_CODE;
+  readonly retryAfter: string | null;
+
+  constructor(message: string, retryAfter: string | null) {
+    super(message);
+    Object.defineProperty(this, "name", {
+      value: "UpdateRateLimitError",
+      configurable: true,
+      writable: true,
+    });
+    this.retryAfter = retryAfter;
+  }
+}
+
+export function parseUpdateRateLimit(value: unknown): { retryAfter: string | null } | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const { code, retryAfter } = value as { code?: unknown; retryAfter?: unknown };
+  if (code !== UPDATE_RATE_LIMIT_CODE) {
+    return undefined;
+  }
+  if (retryAfter === null || retryAfter === undefined) {
+    return { retryAfter: null };
+  }
+  if (
+    typeof retryAfter !== "string" ||
+    !retryAfter.endsWith("Z") ||
+    Number.isNaN(Date.parse(retryAfter))
+  ) {
+    return undefined;
+  }
+  return { retryAfter };
 }
 
 function dataValue(descriptors: PropertyDescriptorMap, field: string): unknown {
@@ -231,9 +271,81 @@ export function compareStableVersions(left: string, right: string): number {
   return 0;
 }
 
-async function jsonResponse(response: Response, context: string, maximumBytes: number) {
+/** GitHub answers an exhausted quota with 403 or 429 and its rate-limit headers. */
+function isRateLimited(response: Response): boolean {
+  return (
+    (response.status === 403 || response.status === 429) &&
+    (response.headers.get("x-ratelimit-remaining")?.trim() === "0" ||
+      response.headers.has("retry-after"))
+  );
+}
+
+/** Milliseconds for a header holding whole seconds, or NaN when it holds something else. */
+function seconds(value: string | null): number {
+  return value !== null && /^\d+$/.test(value.trim()) ? Number(value.trim()) * 1_000 : Number.NaN;
+}
+
+/** Retry-After is a delay in seconds or an HTTP date; X-RateLimit-Reset is epoch seconds. */
+function resetMoment(headers: Headers, now: Date): number {
+  const retryAfter = headers.get("retry-after");
+  if (retryAfter === null) {
+    return seconds(headers.get("x-ratelimit-reset"));
+  }
+  const delay = seconds(retryAfter);
+  return Number.isNaN(delay) ? Date.parse(retryAfter) : now.getTime() + delay;
+}
+
+/** The moment the quota returns, as an ISO timestamp, or null when GitHub did not say. */
+function rateLimitRetryAfter(headers: Headers, now: Date): string | null {
+  const resetsAt = resetMoment(headers, now);
+  // An absent or implausible reset leaves the usual check interval in charge.
+  if (
+    !Number.isFinite(resetsAt) ||
+    resetsAt <= now.getTime() ||
+    resetsAt > now.getTime() + MAX_UPDATE_RETRY_AFTER_MS
+  ) {
+    return null;
+  }
+  return new Date(resetsAt).toISOString();
+}
+
+function rateLimitFailure(response: Response, now: Date): UpdateRateLimitError {
+  const retryAfter = rateLimitRetryAfter(response.headers, now);
+  const limit = response.headers.get("x-ratelimit-limit")?.trim();
+  const quota = limit && /^\d+$/.test(limit) ? `, ${limit} requests per hour` : "";
+  return new UpdateRateLimitError(
+    `GitHub is rate limiting anonymous requests from this network (HTTP ${response.status}${quota}). ${
+      retryAfter
+        ? `The limit resets at ${new Date(retryAfter).toLocaleString()}; check again after that.`
+        : "Check again later."
+    }`,
+    retryAfter,
+  );
+}
+
+function responseFailure(response: Response, context: string, notFound: string, now: Date): Error {
+  if (isRateLimited(response)) {
+    return rateLimitFailure(response, now);
+  }
+  if (response.status === 403) {
+    return new Error(
+      `${context} was forbidden (HTTP 403); a proxy, firewall, or GitHub restriction is blocking this network.`,
+    );
+  }
+  if (response.status === 404) {
+    return new Error(notFound);
+  }
+  return new Error(`${context} request failed with HTTP ${response.status}`);
+}
+
+async function jsonResponse(
+  response: Response,
+  context: string,
+  notFound: string,
+  maximumBytes: number,
+) {
   if (!response.ok) {
-    throw new Error(`${context} request failed with HTTP ${response.status}`);
+    throw responseFailure(response, context, notFound, new Date());
   }
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (bytes.byteLength > maximumBytes) {
@@ -356,6 +468,7 @@ export async function discoverCinbaUpdate(options: {
         ...(options.signal ? { signal: options.signal } : {}),
       }),
       "GitHub latest release",
+      "GitHub has no published Cinba release yet (HTTP 404); the newest release may still be a draft.",
       1_000_000,
     ),
   );
@@ -379,6 +492,7 @@ export async function discoverCinbaUpdate(options: {
         ...(options.signal ? { signal: options.signal } : {}),
       }),
       "Cinba release manifest",
+      `${CINBA_RELEASE_MANIFEST_ASSET} is missing from its GitHub release (HTTP 404).`,
       1_000_000,
     ),
   );

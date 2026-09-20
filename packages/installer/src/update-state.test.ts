@@ -166,3 +166,68 @@ test("installation failure retains the verified candidate for retry", async (t) 
   assert.deepEqual(saved?.candidate, ready.candidate);
   assert.equal(saved?.currentVersion, "0.1.0");
 });
+
+const rateLimited = {
+  schemaVersion: 1 as const,
+  phase: "failed" as const,
+  currentVersion: "0.1.0",
+  checkedAt: "2026-09-18T01:02:03.000Z",
+  candidate: null,
+  failure: "discovery-failed" as const,
+  retryAfter: "2026-09-18T01:27:03.000Z",
+};
+
+test("a rate-limited check waits for its reset rather than the daily interval", async (t) => {
+  const root = temporaryDirectory("cinba-update-retry-after-", t);
+  await writeUpdateState(root, rateLimited);
+  assert.deepEqual(await readUpdateState(root), rateLimited);
+  assert.equal(
+    automaticUpdateCheckIsDue({
+      state: rateLimited,
+      currentVersion: rateLimited.currentVersion,
+      now: new Date(Date.parse(rateLimited.retryAfter) - 1),
+    }),
+    false,
+  );
+  assert.equal(
+    automaticUpdateCheckIsDue({
+      state: rateLimited,
+      currentVersion: rateLimited.currentVersion,
+      now: new Date(rateLimited.retryAfter),
+    }),
+    true,
+  );
+});
+
+test("a discovery failure without a reset still waits a full day", () => {
+  const { retryAfter, ...withoutReset } = rateLimited;
+  assert.equal(
+    automaticUpdateCheckIsDue({
+      state: withoutReset,
+      currentVersion: withoutReset.currentVersion,
+      now: new Date(Date.parse(retryAfter) + 1),
+    }),
+    false,
+  );
+  assert.equal(
+    automaticUpdateCheckIsDue({
+      state: withoutReset,
+      currentVersion: withoutReset.currentVersion,
+      now: new Date(Date.parse(withoutReset.checkedAt) + AUTOMATIC_UPDATE_CHECK_INTERVAL_MS),
+    }),
+    true,
+  );
+});
+
+test("retryAfter must be an ISO UTC timestamp on a failed phase", () => {
+  for (const invalid of ["2026-09-18T01:27:03+08:00", "soon", 1, null]) {
+    assert.throws(
+      () => parseUpdateState({ ...rateLimited, retryAfter: invalid }),
+      /update state retryAfter must be an ISO UTC timestamp/,
+    );
+  }
+  assert.throws(
+    () => parseUpdateState({ ...ready, retryAfter: rateLimited.retryAfter }),
+    /update state retryAfter belongs to a failed phase/,
+  );
+});

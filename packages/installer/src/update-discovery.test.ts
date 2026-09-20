@@ -5,9 +5,11 @@ import test from "node:test";
 import {
   CINBA_RELEASE_API,
   UPDATE_DISCOVERY_FAILURE_CODE,
+  type UpdateDiscovery,
   UpdateDiscoveryFailureError,
   discoverCinbaUpdate,
   parseUpdateDiscoveryFailure,
+  parseUpdateRateLimit,
 } from "./update-discovery.ts";
 
 const digest = "ab".repeat(32);
@@ -443,4 +445,118 @@ test("rejects prereleases, mutable releases, foreign URLs, and identity conflict
     }),
     /different revisions/,
   );
+});
+
+function respondWith(status: number, headers: Record<string, string>): typeof fetch {
+  return async (input) =>
+    String(input) === CINBA_RELEASE_API
+      ? new Response("{}", { status, headers })
+      : Response.json(manifest());
+}
+
+function checkFor(fetcher: typeof fetch): Promise<UpdateDiscovery> {
+  return discoverCinbaUpdate({
+    currentVersion: "0.1.0",
+    currentRevision: "0".repeat(40),
+    target: "windows-x64",
+    fetch: fetcher,
+    probeSystem: async () => supportedSystems["windows-x64"],
+  });
+}
+
+test("an exhausted anonymous quota explains the rate limit and when it resets", async () => {
+  const resetsAt = (Math.floor(Date.now() / 1_000) + 25 * 60) * 1_000;
+  await assert.rejects(
+    checkFor(
+      respondWith(403, {
+        "x-ratelimit-limit": "60",
+        "x-ratelimit-remaining": "0",
+        "x-ratelimit-reset": String(resetsAt / 1_000),
+      }),
+    ),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(
+        error.message,
+        /^GitHub is rate limiting anonymous requests from this network \(HTTP 403, 60 requests per hour\)\./,
+      );
+      assert.ok(error.message.includes(new Date(resetsAt).toLocaleString()));
+      assert.deepEqual(parseUpdateRateLimit(error), {
+        retryAfter: new Date(resetsAt).toISOString(),
+      });
+      return true;
+    },
+  );
+});
+
+test("a rate limit answered with retry-after seconds waits that long", async () => {
+  const before = Date.now();
+  await assert.rejects(checkFor(respondWith(429, { "retry-after": "60" })), (error) => {
+    const parsed = parseUpdateRateLimit(error);
+    assert.ok(parsed?.retryAfter);
+    const retryAt = Date.parse(parsed.retryAfter);
+    assert.ok(retryAt >= before + 60_000 && retryAt <= Date.now() + 60_000);
+    assert.ok(error instanceof Error);
+    assert.match(
+      error.message,
+      /^GitHub is rate limiting anonymous requests from this network \(HTTP 429\)\./,
+    );
+    return true;
+  });
+});
+
+test("a rate limit without a usable reset leaves the normal check interval in charge", async () => {
+  const resets: Array<Record<string, string>> = [
+    { "x-ratelimit-remaining": "0" },
+    { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "not-a-number" },
+    { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "1" },
+    {
+      "x-ratelimit-remaining": "0",
+      "x-ratelimit-reset": String(Math.floor(Date.now() / 1_000) + 48 * 60 * 60),
+    },
+  ];
+  for (const headers of resets) {
+    await assert.rejects(checkFor(respondWith(403, headers)), (error) => {
+      assert.deepEqual(parseUpdateRateLimit(error), { retryAfter: null });
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /Check again later\.$/);
+      return true;
+    });
+  }
+});
+
+test("a forbidden check without rate-limit headers names the block instead", async () => {
+  await assert.rejects(checkFor(respondWith(403, {})), (error) => {
+    assert.ok(error instanceof Error);
+    assert.equal(
+      error.message,
+      "GitHub latest release was forbidden (HTTP 403); a proxy, firewall, or GitHub restriction is blocking this network.",
+    );
+    assert.equal(parseUpdateRateLimit(error), undefined);
+    return true;
+  });
+});
+
+test("a missing latest release reports that nothing is published yet", async () => {
+  await assert.rejects(checkFor(respondWith(404, {})), {
+    message:
+      "GitHub has no published Cinba release yet (HTTP 404); the newest release may still be a draft.",
+  });
+});
+
+test("a missing release manifest names the absent asset", async () => {
+  await assert.rejects(
+    checkFor(async (input) =>
+      String(input) === CINBA_RELEASE_API
+        ? Response.json(githubRelease())
+        : new Response("missing", { status: 404 }),
+    ),
+    { message: "cinba-release.json is missing from its GitHub release (HTTP 404)." },
+  );
+});
+
+test("other HTTP failures keep their plain status report", async () => {
+  await assert.rejects(checkFor(respondWith(500, {})), {
+    message: "GitHub latest release request failed with HTTP 500",
+  });
 });
