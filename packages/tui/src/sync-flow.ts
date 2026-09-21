@@ -222,6 +222,12 @@ export class SyncFlow {
       ...(this.#hostStatus.state === "created" && this.#hostManager.configure
         ? [{ value: "configure", label: "Configure public origin" }]
         : []),
+      ...(this.#hostStatus.state === "created" && this.#hostManager.setMode
+        ? [
+            { value: "mode", label: "Change lifecycle mode" },
+            { value: "disable", label: "Disable Sync Host" },
+          ]
+        : []),
     ]);
     picker.onAnswer = (choice) => {
       this.#host.showPrompt();
@@ -237,6 +243,26 @@ export class SyncFlow {
       }
       if (choice === "configure") {
         this.#confirmHostConfiguration();
+      }
+      if (choice === "mode") {
+        this.#chooseHostMode();
+      }
+      if (choice === "disable") {
+        this.#confirmHostDisable();
+      }
+    };
+    this.#host.showInteraction(picker);
+  }
+
+  #confirmHostDisable(): void {
+    const picker = new ChoicePicker(
+      "Disable Sync Host — service stops, but Host configuration and authority are kept",
+      [{ value: "disable", label: "Disable and keep Host data" }],
+    );
+    picker.onAnswer = (choice) => {
+      this.#host.showPrompt();
+      if (choice === "disable") {
+        void this.#setHostMode("disabled");
       }
     };
     this.#host.showInteraction(picker);
