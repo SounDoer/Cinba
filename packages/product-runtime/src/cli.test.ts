@@ -135,6 +135,7 @@ test("the internal Sync service is loopback-only and isolated from Core data", (
   assert.equal(service.entry, join(payload, "lib", "sync.mjs"));
   assert.equal(service.environment.CINBA_SYNC_HOST, "127.0.0.1");
   assert.equal(service.environment.CINBA_SYNC_PORT, "4518");
+  assert.equal(service.environment.CINBA_SYNC_PUBLIC_ORIGIN, "http://127.0.0.1:4518");
   assert.equal(
     service.environment.CINBA_SYNC_STATE_DIR,
     "/Users/ada/Library/Application Support/com.soundoer.cinba/Data/Sync",
@@ -144,6 +145,17 @@ test("the internal Sync service is loopback-only and isolated from Core data", (
     service.controlStateDirectory,
     "/Users/ada/Library/Application Support/com.soundoer.cinba/State",
   );
+});
+
+test("the internal Sync service uses Host public origin without widening its listener", () => {
+  const service = createProductServiceProcess(resolve("payload"), release, "sync", {
+    platform: "linux",
+    homeDirectory: "/home/ada",
+    environment: { CINBA_SYNC_HOST: "0.0.0.0", CINBA_SYNC_PUBLIC_ORIGIN: "http://unsafe" },
+    syncHostConfig: { schemaVersion: 1, publicOrigin: "https://sync.example.com" },
+  });
+  assert.equal(service.environment.CINBA_SYNC_HOST, "127.0.0.1");
+  assert.equal(service.environment.CINBA_SYNC_PUBLIC_ORIGIN, "https://sync.example.com");
 });
 
 test("foreground Sync never receives managed ownership records or a control token", () => {

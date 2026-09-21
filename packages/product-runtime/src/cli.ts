@@ -29,6 +29,12 @@ import {
   createManagedSyncControlConfig,
   removeManagedSyncControl,
 } from "./sync-control.ts";
+import {
+  type SyncHostConfig,
+  createSyncHostConfig,
+  readSyncHostConfig,
+  syncHostConfigPath,
+} from "./sync-host-config.ts";
 
 export type ProductCommand =
   | { type: "tui"; workingDirectory: string }
@@ -182,6 +188,7 @@ export function createProductServiceProcess(
     environment?: NodeJS.ProcessEnv;
     platform?: "win32" | "darwin" | "linux";
     managedService?: boolean;
+    syncHostConfig?: SyncHostConfig;
   } = {},
 ): ProductServiceProcess {
   const environment = { ...(options.environment ?? process.env) };
@@ -219,6 +226,9 @@ export function createProductServiceProcess(
     };
   }
   delete environment.CINBA_LOCAL_SYNC_CONTROL_TOKEN;
+  const syncHostConfig = options.syncHostConfig
+    ? createSyncHostConfig(options.syncHostConfig.publicOrigin)
+    : createSyncHostConfig();
   return {
     component,
     entry: payload.syncEntry,
@@ -228,7 +238,7 @@ export function createProductServiceProcess(
       ELECTRON_RUN_AS_NODE: "1",
       CINBA_SYNC_HOST: "127.0.0.1",
       CINBA_SYNC_PORT: "4518",
-      CINBA_SYNC_PUBLIC_ORIGIN: "http://127.0.0.1:4518",
+      CINBA_SYNC_PUBLIC_ORIGIN: syncHostConfig.publicOrigin,
       CINBA_SYNC_STATE_DIR: paths.syncDataDirectory,
       CINBA_SYNC_WEB_ROOT: payload.syncWebRoot,
     },
@@ -475,9 +485,12 @@ export async function runProductCli(
     return;
   }
   if (command.type === "service") {
+    const syncHostConfig =
+      command.component === "sync" ? await readInstalledSyncHostConfig() : undefined;
     await runProductService(
       createProductServiceProcess(payload.root, release, command.component, {
         managedService: true,
+        ...(syncHostConfig ? { syncHostConfig } : {}),
       }),
     );
     return;
@@ -495,9 +508,30 @@ export async function runProductCli(
     return;
   }
   if (command.type === "sync") {
-    await runProductService(createProductServiceProcess(payload.root, release, "sync"));
+    const syncHostConfig = await readInstalledSyncHostConfig();
+    await runProductService(
+      createProductServiceProcess(
+        payload.root,
+        release,
+        "sync",
+        syncHostConfig ? { syncHostConfig } : undefined,
+      ),
+    );
     return;
   }
+}
+
+async function readInstalledSyncHostConfig(): Promise<SyncHostConfig | undefined> {
+  const platform = process.platform;
+  if (platform !== "win32" && platform !== "darwin" && platform !== "linux") {
+    throw new Error(`Cinba is not available on ${platform}`);
+  }
+  const paths = resolveProductPaths({
+    platform,
+    homeDirectory: homedir(),
+    environment: process.env,
+  });
+  return await readSyncHostConfig(syncHostConfigPath(paths));
 }
 
 async function askLingerConsent(userName: string): Promise<boolean> {

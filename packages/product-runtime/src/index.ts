@@ -63,3 +63,14 @@ export type {
   ManagedSyncControlConfig,
   ManagedSyncStatus,
 } from "./sync-control.ts";
+export {
+  LOCAL_SYNC_ORIGIN,
+  SyncHostConfigError,
+  createSyncHostConfig,
+  inspectSyncHostStorage,
+  parseSyncHostConfig,
+  readSyncHostConfig,
+  syncHostConfigPath,
+  writeSyncHostConfig,
+} from "./sync-host-config.ts";
+export type { SyncHostConfig, SyncHostStorageState } from "./sync-host-config.ts";
