@@ -264,6 +264,45 @@ test("Sync create prints its one-time Setup Code only through the explicit escap
   assert.equal(output[1], "Setup Code: setup-once");
 });
 
+test("Sync create uses the shared installed Host manager", async () => {
+  let creations = 0;
+  await runProductCli(["sync", "create"], resolve("project"), {
+    readRelease: async () => release,
+    checkForUpdates: async () => undefined,
+    createInstalledSyncHostManager: (_payloadRoot, actualRelease) => {
+      assert.equal(actualRelease, release);
+      return {
+        inspect: async () => ({ schemaVersion: 1, state: "not-created" }),
+        create: async () => {
+          creations += 1;
+          return {
+            status: {
+              schemaVersion: 1,
+              state: "created",
+              publicOrigin: "http://127.0.0.1:4518",
+              availability: "this-device-only",
+              mode: "on-demand",
+              running: false,
+              healthy: null,
+              setupState: null,
+              settingsRevision: null,
+              syncRevision: null,
+              connectedCoreCount: null,
+              pendingEnrollmentCount: null,
+            },
+          };
+        },
+        configure: async () => ({ schemaVersion: 1, state: "not-created" }),
+        setMode: async () => ({ schemaVersion: 1, state: "not-created" }),
+        delete: async () => ({ schemaVersion: 1, state: "not-created" }),
+      };
+    },
+    writeOutput: () => undefined,
+  });
+
+  assert.equal(creations, 1);
+});
+
 test("Sync delete requires its dedicated automation confirmation before invoking the manager", async () => {
   const output: string[] = [];
   let deletions = 0;

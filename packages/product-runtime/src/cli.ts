@@ -1,28 +1,17 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { dirname, posix, resolve, win32 } from "node:path";
+import { dirname, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
-import { CoreSyncControlClient } from "@cinba/core-client";
-import {
-  type LocalCoreConfig,
-  ensureLocalCore,
-  inspectLocalCore,
-  stopLocalCore,
-} from "@cinba/core-manager";
+import { ensureLocalCore, inspectLocalCore, stopLocalCore } from "@cinba/core-manager";
 import { type ServiceMode, requireProductTarget, resolveProductPaths } from "@cinba/installer";
 import {
   CINBA_UPDATE_STATE_DIRECTORY_ENV,
   checkForProductUpdatesAutomatically,
 } from "./automatic-update.ts";
-import {
-  beginManagedCoreSyncEnrollment,
-  createCoreServiceControlConfig,
-  prepareManagedCoreSyncHostDelete,
-} from "./core-service-control.ts";
 import { resolveProductPayloadLayout } from "./layout.ts";
 import { formatInstalledDoctorReport, runInstalledDoctor } from "./doctor.ts";
+import { createInstalledSyncHostManager } from "./installed-sync-host.ts";
 import {
   formatProductComponentMode,
   inspectProductComponentMode,
@@ -30,31 +19,16 @@ import {
 } from "./managed-services.ts";
 import { readProductRelease } from "./release.ts";
 import {
-  type ProductProtocolIdentity,
   type ProductServiceComponent,
-  type ProductServiceProcess,
+  createProductCoreConfig,
+  createProductServiceProcess,
+  runProductService,
 } from "./product-service.ts";
-import {
-  bootstrapManagedSyncHost,
-  createManagedSyncControl,
-  createManagedSyncControlConfig,
-  inspectManagedSyncControl,
-  readManagedSyncSetupCode,
-  removeManagedSyncControl,
-  stopManagedSyncControl,
-} from "./sync-control.ts";
-import {
-  type SyncHostConfig,
-  createSyncHostConfig,
-  readSyncHostConfig,
-  syncHostConfigPath,
-} from "./sync-host-config.ts";
+import { type SyncHostConfig, readSyncHostConfig, syncHostConfigPath } from "./sync-host-config.ts";
 import {
   type ProductSyncHostCreation,
   type ProductSyncHostStatus,
   configureProductSyncHost,
-  createProductSyncHost,
-  deleteProductSyncHost,
   formatProductSyncHostStatus,
   inspectProductSyncHost,
   setProductSyncHostMode,
@@ -75,10 +49,12 @@ export type ProductCommand =
   | { type: "help" };
 
 export type { ProductServiceComponent, ProductServiceProcess } from "./product-service.ts";
+export { createProductCoreConfig, createProductServiceProcess } from "./product-service.ts";
 
 export type ProductCliDependencies = {
   readRelease: typeof readProductRelease;
   checkForUpdates: typeof checkForProductUpdatesAutomatically;
+  createInstalledSyncHostManager: typeof createInstalledSyncHostManager;
   configureSyncHost: typeof configureProductSyncHost;
   createSyncHost?: (publicOrigin?: string) => Promise<ProductSyncHostCreation>;
   deleteSyncHost?: () => Promise<ProductSyncHostStatus>;
@@ -266,117 +242,6 @@ export function createProductTuiEnvironment(
   };
 }
 
-export function createProductServiceProcess(
-  payloadRoot: string,
-  release: ProductProtocolIdentity,
-  component: ProductServiceComponent,
-  options: {
-    homeDirectory?: string;
-    environment?: NodeJS.ProcessEnv;
-    platform?: "win32" | "darwin" | "linux";
-    managedService?: boolean;
-    syncHostConfig?: SyncHostConfig;
-  } = {},
-): ProductServiceProcess {
-  const environment = { ...(options.environment ?? process.env) };
-  const platform = options.platform ?? process.platform;
-  if (platform !== "win32" && platform !== "darwin" && platform !== "linux") {
-    throw new Error(`Cinba is not available on ${platform}`);
-  }
-  const payload = resolveProductPayloadLayout(payloadRoot, platform);
-  const productJoin = platform === "win32" ? win32.join : posix.join;
-  const paths = resolveProductPaths({
-    platform,
-    homeDirectory: options.homeDirectory ?? homedir(),
-    environment,
-  });
-  if (component === "core") {
-    delete environment.CINBA_LOCAL_CONTROL_TOKEN;
-    return {
-      component,
-      entry: payload.coreEntry,
-      workingDirectory: payload.root,
-      environment: {
-        ...environment,
-        ELECTRON_RUN_AS_NODE: "1",
-        CINBA_CORE_LIFETIME: "persistent",
-        CINBA_PRODUCT_VERSION: release.version,
-        CINBA_PROTOCOL_VERSION: String(release.protocolVersion),
-        CINBA_REVISION: release.revision,
-        CINBA_PORT: "4517",
-        CINBA_STATE_DIR: productJoin(paths.dataDirectory, "Core"),
-        PI_CODING_AGENT_DIR: productJoin(paths.dataDirectory, "Pi"),
-        CINBA_EXTENSION_ROOT: payload.extensionRoot,
-        CINBA_WEB_ROOT: payload.webRoot,
-      },
-      ...(options.managedService ? { controlStateDirectory: paths.stateDirectory } : {}),
-    };
-  }
-  delete environment.CINBA_LOCAL_SYNC_CONTROL_TOKEN;
-  const syncHostConfig = options.syncHostConfig
-    ? createSyncHostConfig(options.syncHostConfig.publicOrigin)
-    : createSyncHostConfig();
-  return {
-    component,
-    entry: payload.syncEntry,
-    workingDirectory: payload.root,
-    environment: {
-      ...environment,
-      ELECTRON_RUN_AS_NODE: "1",
-      CINBA_SYNC_HOST: "127.0.0.1",
-      CINBA_SYNC_PORT: "4518",
-      CINBA_SYNC_PUBLIC_ORIGIN: syncHostConfig.publicOrigin,
-      CINBA_SYNC_STATE_DIR: paths.syncDataDirectory,
-      CINBA_SYNC_WEB_ROOT: payload.syncWebRoot,
-    },
-    ...(options.managedService ? { controlStateDirectory: paths.stateDirectory } : {}),
-  };
-}
-
-export function createProductCoreConfig(
-  payloadRoot: string,
-  options: {
-    homeDirectory?: string;
-    environment?: NodeJS.ProcessEnv;
-    platform?: "win32" | "darwin" | "linux";
-    release?: ProductProtocolIdentity;
-  } = {},
-): LocalCoreConfig {
-  const platform = options.platform ?? process.platform;
-  if (platform !== "win32" && platform !== "darwin" && platform !== "linux") {
-    throw new Error(`Cinba is not available on ${platform}`);
-  }
-  const environment = options.environment ?? process.env;
-  const paths = resolveProductPaths({
-    platform,
-    homeDirectory: options.homeDirectory ?? homedir(),
-    environment,
-  });
-  const payload = resolveProductPayloadLayout(payloadRoot, platform);
-  const productJoin = platform === "win32" ? win32.join : posix.join;
-  return {
-    baseUrl: "http://127.0.0.1:4517/",
-    repositoryRoot: payload.root,
-    serverEntry: payload.coreEntry,
-    stateDirectory: productJoin(paths.dataDirectory, "Core"),
-    piAgentDirectory: productJoin(paths.dataDirectory, "Pi"),
-    startLockPath: productJoin(paths.stateDirectory, "core-start.lock"),
-    runtimePath: productJoin(paths.stateDirectory, "core-runtime.json"),
-    controlPath: productJoin(paths.stateDirectory, "core-control.json"),
-    logPath: productJoin(paths.logDirectory, "core.log"),
-    environment: {
-      CINBA_EXTENSION_ROOT: payload.extensionRoot,
-      CINBA_WEB_ROOT: payload.webRoot,
-      ...(options.release
-        ? {
-            CINBA_PRODUCT_VERSION: options.release.version,
-            CINBA_PROTOCOL_VERSION: String(options.release.protocolVersion),
-          }
-        : {}),
-    },
-  };
-}
-
 function waitForExit(child: ChildProcess): Promise<number> {
   return new Promise((resolvePromise, reject) => {
     child.once("error", reject);
@@ -387,250 +252,6 @@ function waitForExit(child: ChildProcess): Promise<number> {
         resolvePromise(code ?? 0);
       }
     });
-  });
-}
-
-function waitForServiceExit(child: ChildProcess): Promise<number> {
-  return new Promise((resolvePromise, reject) => {
-    const forward = (signal: NodeJS.Signals) => {
-      child.kill(signal);
-    };
-    const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
-    for (const signal of signals) {
-      process.on(signal, forward);
-    }
-    const cleanup = () => {
-      for (const signal of signals) {
-        process.off(signal, forward);
-      }
-    };
-    child.once("error", (error) => {
-      cleanup();
-      reject(error);
-    });
-    child.once("exit", (code, signal) => {
-      cleanup();
-      if (code !== null) {
-        resolvePromise(code);
-      } else if (signal === "SIGINT" || signal === "SIGTERM") {
-        resolvePromise(0);
-      } else {
-        reject(new Error(`service stopped by ${signal ?? "an unknown signal"}`));
-      }
-    });
-  });
-}
-
-async function runProductService(service: ProductServiceProcess): Promise<void> {
-  // A managed service records its PID and control token so mode changes can prove identity.
-  const serviceControl = service.controlStateDirectory
-    ? {
-        config:
-          service.component === "sync"
-            ? createManagedSyncControlConfig(service.controlStateDirectory)
-            : createCoreServiceControlConfig(service.controlStateDirectory),
-        token: randomUUID(),
-      }
-    : undefined;
-  const tokenVariable =
-    service.component === "sync" ? "CINBA_LOCAL_SYNC_CONTROL_TOKEN" : "CINBA_LOCAL_CONTROL_TOKEN";
-  const child = spawn(process.execPath, [service.entry], {
-    cwd: service.workingDirectory,
-    stdio: "inherit",
-    windowsHide: true,
-    env: {
-      ...service.environment,
-      ...(serviceControl ? { [tokenVariable]: serviceControl.token } : {}),
-    },
-  });
-  const exit = waitForServiceExit(child);
-  if (serviceControl) {
-    if (!child.pid) {
-      child.kill();
-      await exit.catch(() => undefined);
-      throw new Error(`Cinba ${service.component} did not report a PID`);
-    }
-    try {
-      await createManagedSyncControl({
-        config: serviceControl.config,
-        pid: child.pid,
-        token: serviceControl.token,
-      });
-    } catch (error) {
-      child.kill();
-      await exit.catch(() => undefined);
-      throw error;
-    }
-  }
-  let code: number;
-  try {
-    code = await exit;
-  } finally {
-    if (serviceControl && child.pid) {
-      await removeManagedSyncControl(serviceControl.config, child.pid);
-    }
-  }
-  if (code !== 0) {
-    throw new Error(`Cinba ${service.component} exited with code ${code}`);
-  }
-}
-
-async function runningCoreControlConfig(coreConfig: LocalCoreConfig, stateDirectory: string) {
-  const mode = await inspectProductComponentMode("core");
-  return mode.state === "background" && mode.running
-    ? createCoreServiceControlConfig(stateDirectory)
-    : {
-        baseUrl: coreConfig.baseUrl,
-        runtimePath: coreConfig.runtimePath,
-        controlPath: coreConfig.controlPath,
-      };
-}
-
-async function createInstalledSyncHost(
-  payloadRoot: string,
-  release: ProductProtocolIdentity,
-  publicOrigin = createSyncHostConfig().publicOrigin,
-): Promise<ProductSyncHostCreation> {
-  const platform = process.platform;
-  if (platform !== "win32" && platform !== "darwin" && platform !== "linux") {
-    throw new Error(`Cinba is not available on ${platform}`);
-  }
-  const homeDirectory = homedir();
-  const environment = process.env;
-  const paths = resolveProductPaths({ platform, homeDirectory, environment });
-  const coreConfig = createProductCoreConfig(payloadRoot, {
-    platform,
-    homeDirectory,
-    environment,
-    release,
-  });
-  const syncControl = createManagedSyncControlConfig(paths.stateDirectory);
-  const coreSync = new CoreSyncControlClient(coreConfig.baseUrl, { timeoutMs: 2_000 });
-  let syncRun: Promise<void> | undefined;
-  let syncFailure: unknown;
-  const delay = (milliseconds: number) =>
-    new Promise<void>((resolvePromise) => setTimeout(resolvePromise, milliseconds));
-
-  return await createProductSyncHost(publicOrigin, {
-    platform,
-    homeDirectory,
-    environment,
-    createRuntime: {
-      ensureCore: async () => {
-        await ensureLocalCore({ config: coreConfig, expectedRevision: release.revision });
-      },
-      startSync: async (syncHostConfig) => {
-        syncFailure = undefined;
-        syncRun = runProductService(
-          createProductServiceProcess(payloadRoot, release, "sync", {
-            platform,
-            homeDirectory,
-            environment,
-            managedService: true,
-            syncHostConfig: { schemaVersion: 1, ...syncHostConfig },
-          }),
-        ).catch((error: unknown) => {
-          syncFailure = error;
-        });
-        const deadline = Date.now() + 30_000;
-        while (Date.now() < deadline) {
-          if (syncFailure) {
-            throw syncFailure;
-          }
-          const status = await inspectManagedSyncControl({ config: syncControl });
-          if (status.running && status.managed) {
-            return;
-          }
-          await delay(100);
-        }
-        throw new Error("Cinba Sync did not become ready for Host creation");
-      },
-      beginEnrollment: async (serverUrl) =>
-        await beginManagedCoreSyncEnrollment(
-          await runningCoreControlConfig(coreConfig, paths.stateDirectory),
-          serverUrl,
-        ),
-      bootstrap: async (receipt) => {
-        await bootstrapManagedSyncHost({
-          config: syncControl,
-          request: {
-            enrollmentId: receipt.enrollmentId,
-            enrollmentSecret: receipt.enrollmentSecret,
-            settings: receipt.settings,
-          },
-        });
-      },
-      waitCoreOnline: async () => {
-        const deadline = Date.now() + 30_000;
-        while (Date.now() < deadline) {
-          try {
-            if ((await coreSync.status()).state === "online") {
-              return;
-            }
-          } catch {
-            // The Core may still be consuming its one-time approval.
-          }
-          await delay(100);
-        }
-        throw new Error("Cinba Core did not become online with the new Sync Host");
-      },
-      readSetupCode: async () => await readManagedSyncSetupCode({ config: syncControl }),
-      stopSync: async () => {
-        const status = await inspectManagedSyncControl({ config: syncControl });
-        if (status.running && status.managed) {
-          await stopManagedSyncControl({ config: syncControl });
-        }
-        await syncRun;
-        if (syncFailure) {
-          throw syncFailure;
-        }
-      },
-      cancelEnrollment: async () => {
-        await coreSync.cancelEnrollment();
-      },
-    },
-  });
-}
-
-async function deleteInstalledSyncHost(
-  payloadRoot: string,
-  release: ProductProtocolIdentity,
-): Promise<ProductSyncHostStatus> {
-  const platform = process.platform;
-  if (platform !== "win32" && platform !== "darwin" && platform !== "linux") {
-    throw new Error(`Cinba is not available on ${platform}`);
-  }
-  const homeDirectory = homedir();
-  const environment = process.env;
-  const paths = resolveProductPaths({ platform, homeDirectory, environment });
-  const coreConfig = createProductCoreConfig(payloadRoot, {
-    platform,
-    homeDirectory,
-    environment,
-    release,
-  });
-  const syncControl = createManagedSyncControlConfig(paths.stateDirectory);
-  return await deleteProductSyncHost({
-    platform,
-    homeDirectory,
-    environment,
-    deleteRuntime: {
-      prepareDisconnect: async () => {
-        await ensureLocalCore({ config: coreConfig, expectedRevision: release.revision });
-        await prepareManagedCoreSyncHostDelete(
-          await runningCoreControlConfig(coreConfig, paths.stateDirectory),
-        );
-      },
-      stopSync: async () => {
-        const status = await inspectManagedSyncControl({ config: syncControl });
-        if (status.running && !status.managed) {
-          throw new Error("the running local Sync is not owned by this manager");
-        }
-        if (status.running) {
-          await stopManagedSyncControl({ config: syncControl });
-        }
-      },
-    },
   });
 }
 
@@ -649,6 +270,7 @@ export async function runProductCli(
   const dependencies: ProductCliDependencies = {
     readRelease: readProductRelease,
     checkForUpdates: checkForProductUpdatesAutomatically,
+    createInstalledSyncHostManager,
     configureSyncHost: configureProductSyncHost,
     inspectSyncHost: inspectProductSyncHost,
     setSyncHostMode: setProductSyncHostMode,
@@ -661,6 +283,7 @@ export async function runProductCli(
   if (release.target !== requireProductTarget()) {
     throw new Error(`this ${release.target} release cannot run on the current platform`);
   }
+  const installedSyncHost = dependencies.createInstalledSyncHostManager(payload.root, release);
   const command = parseProductCommand(arguments_, workingDirectory);
   if (command.type === "tui") {
     const controller = new AbortController();
@@ -736,7 +359,7 @@ export async function runProductCli(
   if (command.type === "sync-host-create") {
     const creation = dependencies.createSyncHost
       ? await dependencies.createSyncHost(command.publicOrigin)
-      : await createInstalledSyncHost(payload.root, release, command.publicOrigin);
+      : await installedSyncHost.create(command.publicOrigin);
     dependencies.writeOutput(formatProductSyncHostStatus(creation.status));
     if (creation.setupCode && (command.showSetupCode || process.stdout.isTTY)) {
       dependencies.writeOutput(`Setup Code: ${creation.setupCode}`);
@@ -754,7 +377,7 @@ export async function runProductCli(
     }
     const status = dependencies.deleteSyncHost
       ? await dependencies.deleteSyncHost()
-      : await deleteInstalledSyncHost(payload.root, release);
+      : await installedSyncHost.delete();
     dependencies.writeOutput(formatProductSyncHostStatus(status));
     return;
   }
