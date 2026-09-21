@@ -7,6 +7,7 @@ import { removeTemporaryDirectory, temporaryDirectory } from "@cinba/test-suppor
 import {
   beginForegroundUpdateHandoff,
   cleanupCopiedUpdateHelper,
+  createCommandLineUpdateHandoff,
   createUpdateRestartCommand,
   launchForegroundUpdateHandoff,
   restartUpdateSurface,
@@ -86,6 +87,19 @@ test("foreground handoff writes private state and passes no candidate or token i
   ]);
   assert.equal(JSON.stringify(calls).includes(leaseToken), false);
   assert.equal(JSON.stringify(calls).includes(updateHandoff.candidate.sha256), false);
+});
+
+test("the standalone update command creates a CLI handoff without restart metadata", () => {
+  const source = handoff("tui");
+  const updateHandoff = createCommandLineUpdateHandoff({
+    id: source.id,
+    createdAt: new Date(source.createdAt),
+    blockingProcessId: source.blockingProcessId,
+    candidate: source.candidate,
+    leaseToken: source.leaseToken,
+  });
+  assert.equal(updateHandoff.surface, "cli");
+  assert.deepEqual(updateHandoff.restart, {});
 });
 
 test("begin handoff rejects a blocking PID that is not alive before taking the lease", async () => {
@@ -529,6 +543,38 @@ test("surface restart uses the injectable argv runner", async () => {
       workingDirectory: (updateHandoff.restart as { workingDirectory: string }).workingDirectory,
     },
   ]);
+});
+
+test("a command-line handoff never restarts a TUI or Desktop surface", async () => {
+  const calls: unknown[] = [];
+  const updateHandoff = {
+    ...handoff(),
+    surface: "cli",
+    restart: {},
+  } as unknown as UpdateHandoff;
+  assert.equal(
+    createUpdateRestartCommand({
+      platform: "linux",
+      paths: {
+        launcherPath: "/home/a/.local/bin/cinba",
+        desktopApplicationPath: null,
+      } as ProductPaths,
+      handoff: updateHandoff,
+    }),
+    undefined,
+  );
+  await restartUpdateSurface({
+    platform: "linux",
+    paths: {
+      launcherPath: "/home/a/.local/bin/cinba",
+      desktopApplicationPath: null,
+    } as ProductPaths,
+    handoff: updateHandoff,
+    run: async (command) => {
+      calls.push(command);
+    },
+  });
+  assert.deepEqual(calls, []);
 });
 
 test("process waiting treats an already exited PID as success without delay", async () => {

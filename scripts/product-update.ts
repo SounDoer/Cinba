@@ -67,7 +67,10 @@ export function createUpdateRestartCommand(options: {
   platform: SupportedPlatform;
   paths: Pick<ProductPaths, "launcherPath" | "desktopApplicationPath">;
   handoff: UpdateHandoff;
-}): UpdateRestartCommand {
+}): UpdateRestartCommand | undefined {
+  if (options.handoff.surface === "cli") {
+    return undefined;
+  }
   if (options.handoff.surface === "tui") {
     const workingDirectory = (options.handoff.restart as { workingDirectory: string })
       .workingDirectory;
@@ -93,6 +96,24 @@ export function createUpdateRestartCommand(options: {
 
 export type RunUpdateRestart = (command: UpdateRestartCommand) => Promise<void>;
 
+export function createCommandLineUpdateHandoff(options: {
+  id?: string;
+  createdAt?: Date;
+  blockingProcessId: number;
+  candidate: UpdateCandidate;
+  leaseToken: string;
+}): UpdateHandoff {
+  return createUpdateHandoff({
+    ...(options.id ? { id: options.id } : {}),
+    ...(options.createdAt ? { createdAt: options.createdAt } : {}),
+    surface: "cli",
+    blockingProcessId: options.blockingProcessId,
+    candidate: options.candidate,
+    restart: {},
+    leaseToken: options.leaseToken,
+  });
+}
+
 export async function restartUpdateSurface(options: {
   platform: SupportedPlatform;
   paths: Pick<ProductPaths, "launcherPath" | "desktopApplicationPath">;
@@ -100,6 +121,9 @@ export async function restartUpdateSurface(options: {
   run?: RunUpdateRestart;
 }): Promise<void> {
   const command = createUpdateRestartCommand(options);
+  if (!command) {
+    return;
+  }
   await (
     options.run ??
     ((restart: UpdateRestartCommand) =>
@@ -194,7 +218,7 @@ export async function launchForegroundUpdateHandoff(options: {
         new Promise<DetachedHelper>((resolveChild, reject) => {
           const processChild = spawn(executable, [...arguments_], {
             detached: true,
-            stdio: "inherit",
+            stdio: "ignore",
             windowsHide: true,
           });
           processChild.once("spawn", () => {
@@ -1019,11 +1043,9 @@ export async function runStableProductUpdate(options: {
         if (!candidate.artifactPath) {
           throw new Error("prepared update does not have an artifact");
         }
-        const handoff = createUpdateHandoff({
-          surface: "tui",
+        const handoff = createCommandLineUpdateHandoff({
           blockingProcessId: process.pid,
           candidate,
-          restart: { workingDirectory: process.cwd() },
           leaseToken: lease.token,
         });
         await launchForegroundUpdateHandoff({

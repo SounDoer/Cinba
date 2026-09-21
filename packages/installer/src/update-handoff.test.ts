@@ -80,6 +80,29 @@ test("update handoff schema is exact and validates surface-specific restart meta
   );
 });
 
+test("a command-line handoff carries no surface restart metadata", () => {
+  const root = resolve("state");
+  const handoff = createUpdateHandoff({
+    id: "33333333-3333-4333-8333-333333333333",
+    createdAt: now,
+    surface: "cli",
+    blockingProcessId: 456,
+    candidate: candidate(root),
+    restart: {},
+    leaseToken,
+  });
+
+  assert.deepEqual(parseUpdateHandoff(handoff, { now }), handoff);
+  assert.throws(
+    () =>
+      parseUpdateHandoff(
+        { ...handoff, restart: { workingDirectory: resolve("project") } },
+        { now },
+      ),
+    /cli restart fields are invalid/,
+  );
+});
+
 test("update handoff rejects stale and future timestamps", () => {
   const handoff = desktopHandoff(resolve("state"));
   assert.throws(

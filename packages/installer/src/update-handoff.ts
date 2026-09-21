@@ -5,7 +5,7 @@ import { type UpdateCandidate, parseUpdateState, readUpdateState } from "./updat
 
 export const UPDATE_HANDOFF_TTL_MS = 5 * 60 * 1_000;
 
-type UpdateSurface = "desktop" | "tui";
+type UpdateSurface = "cli" | "desktop" | "tui";
 type UpdateRestart = Record<string, never> | { workingDirectory: string };
 
 export type UpdateHandoff = {
@@ -95,16 +95,16 @@ export function parseUpdateHandoff(
   if (!options.allowExpired && now - createdAt > (options.ttlMs ?? UPDATE_HANDOFF_TTL_MS)) {
     throw new Error("update handoff has expired");
   }
-  if (parsed.surface !== "desktop" && parsed.surface !== "tui") {
+  if (parsed.surface !== "cli" && parsed.surface !== "desktop" && parsed.surface !== "tui") {
     throw new Error("update handoff surface is invalid");
   }
   if (!Number.isSafeInteger(parsed.blockingProcessId) || (parsed.blockingProcessId as number) < 1) {
     throw new Error("update handoff blockingProcessId must be a positive integer");
   }
   const restart =
-    parsed.surface === "desktop"
-      ? exactRecord(parsed.restart, [], "desktop restart")
-      : exactRecord(parsed.restart, ["workingDirectory"], "tui restart");
+    parsed.surface === "tui"
+      ? exactRecord(parsed.restart, ["workingDirectory"], "tui restart")
+      : exactRecord(parsed.restart, [], `${parsed.surface} restart`);
   if (
     parsed.surface === "tui" &&
     (typeof restart.workingDirectory !== "string" || !isAbsolute(restart.workingDirectory))
@@ -122,7 +122,7 @@ export function parseUpdateHandoff(
     blockingProcessId: parsed.blockingProcessId as number,
     candidate: parseCandidate(parsed.candidate),
     restart:
-      parsed.surface === "desktop" ? {} : { workingDirectory: restart.workingDirectory as string },
+      parsed.surface === "tui" ? { workingDirectory: restart.workingDirectory as string } : {},
     leaseToken: parsed.leaseToken,
   };
 }
