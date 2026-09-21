@@ -374,6 +374,9 @@ release 非 draft、非 prerelease，`isImmutable=true`，tag 与 latest 均指�
   设置、background mode 与 Core enrollment 保持；两个 HTTPS 入口继续返回 200；
 - VPS 建立权限 `600` 的一致性备份并记录 SHA-256；备份仍与 VPS 同盘，只用于误操作恢复，异机加密
   副本需在个人设备上完成。
+- 新部署完成 TUI、手机登录和两次真实重启验收后，旧 `cinba` 用户的每分钟 update timer、源码服务、
+  checkout、私有 Node、隔离数据、SSH key、home、系统用户与同名组均已永久删除；Caddy、Tailscale 和
+  `xichen` 正式部署不受影响。
 
 验收发现 `v0.1.1` 的独立 `cinba update` 错把命令行 handoff 标记为 TUI，并让 detached helper 继承
 SSH PTY；SSH 关闭后安装没有提交，安全地保留旧版本，却重启了无 TTY 的 TUI。正式 bootstrap 可完成
@@ -422,16 +425,16 @@ SSH PTY；SSH 关闭后安装没有提交，安全地保留旧版本，却重启
 - [x] 无 linger 时给出可理解的诊断和修复边界；
 - [x] 不安装或配置 Tailscale、Caddy、TLS、域名和防火墙。
 
-真实 VPS 使用 revision `99a5742f3fe2767c74d4032fb989c320b774edb9`，artifact SHA-256 为
-`89c87fdb72287279bf38f6e8545b8738d92ecfc304f71c40d2c015f0726b0d26`。Cinba 安装在 `xichen`
+真实 VPS 先以 revision `99a5742f3fe2767c74d4032fb989c320b774edb9` candidate 完成安装，再通过
+正式 bootstrap 更新到 `v0.1.1 (a54322a6a3f6697e563162e13b4388b0c5228a9d)`。Cinba 安装在 `xichen`
 账户，Core/Sync 只监听 loopback，Sync 完成首次设置并连接一个 Core。第一次重启暴露用户自有 Caddy
 早于 Tailscale 地址就绪的竞态；为 Caddy unit 增加 Tailscale 顺序依赖和失败重试后，第二次重启中
-Caddy、Tailscale、Core、Sync 与两个 HTTPS 入口全部自动恢复。旧源码服务已禁用并移动到带时间戳的
-隔离目录，上传和解压临时目录已删除。
+Caddy、Tailscale、Core、Sync 与两个 HTTPS 入口全部自动恢复。旧源码部署、timer、隔离目录和专用
+系统账户均在用户确认后永久删除，上传和解压临时目录也已删除。
 
 ## 更新、兼容与恢复
 
-- [ ] `0.1.0` 安装后能发现下一正式 immutable release，不能发现 draft/prerelease；
+- [x] `0.1.0` 安装后能发现 `v0.1.1` 正式 immutable release，draft 阶段与发布后 latest 行为正确；
 - [ ] 下载可续传并校验，损坏 candidate 不会激活；
 - [ ] 未确认时不安装，活跃任务不会被强制终止；
 - [ ] Desktop 与 TUI handoff 后返回原表面，恢复原 Core/Sync 生命周期模式；
@@ -445,3 +448,4 @@ Caddy、Tailscale、Core、Sync 与两个 HTTPS 入口全部自动恢复。旧�
 - [x] 清理旧服务后的 VPS 已使用正式 Headless artifact 重建；
 - [x] 远端 `prod` 分支已在新发布链验收后删除；
 - [x] 不再存在运行中的第二套 Git checkout/VPS deployment 产品路径。
+- [x] 旧 VPS update timer、隔离部署数据和专用系统账户已在最终确认后永久删除。

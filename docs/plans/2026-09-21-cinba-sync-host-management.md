@@ -2,7 +2,8 @@
 
 日期：2026-09-21
 
-状态：阶段 0—6 已完成；Linux VPS 已由 `xichen` 用户完成正式 artifact 安装与重启验收
+状态：阶段 0—6 已完成；Linux VPS 已由 `xichen` 用户完成 `v0.1.1` 正式安装、重启、远程访问与旧部署
+退役验收
 
 对应规格：`docs/specs/2026-09-17-cinba-sync-product-experience.md`
 
@@ -38,14 +39,21 @@ Cinba 产品入口创建、配置、运行和删除的本机 Sync Host，并首�
   background、重启、disable/enable、普通卸载/重装保留与 purge 验收；revision 为
   `99a5742f3fe2767c74d4032fb989c320b774edb9`，artifact SHA-256 为
   `89c87fdb72287279bf38f6e8545b8738d92ecfc304f71c40d2c015f0726b0d26`；
-- VPS 改由用户的 `xichen` 账户安装和运行 Cinba；旧 `cinba.service`、`cinba-sync.service` 已停止并
-  禁用，旧部署移动到 `/home/cinba/retired/20260921-165948-before-xichen/`，不再有旧用户进程；
-- Core 与 Sync 均以 `xichen` 的 enabled user unit 运行，只监听 `127.0.0.1:4517/4518`；Sync 首次设置
-  已完成，状态为 `ready`，连接一个 Core，Settings/Sync revision 均为 1；
+- VPS 改由用户的 `xichen` 账户安装和运行 Cinba；旧 `cinba.service`、`cinba-sync.service`、每分钟
+  `cinba-update.timer` 与源码部署均已停止并永久删除，旧 `cinba` 系统用户、同名组和 home 也在用户
+  明确确认后删除；
+- Core 与 Sync 均以 `xichen` 的 enabled、active user unit 运行，只监听 `127.0.0.1:4517/4518`；Sync
+  首次设置已完成，状态为 `ready`，连接一个 Core，最终 Settings revision 为 3、Sync revision 为 4；
 - 两次真实 VPS 重启完成验收。第一次发现 Caddy 在 Tailscale 地址就绪前绑定失败，用户自有 Caddy
   unit 增加 `After/Wants=tailscaled.service` 与 `Restart=on-failure` 后，第二次重启中 Caddy、Tailscale、
   Core、Sync 均自动恢复，两个 HTTPS 入口返回 200；
-- 上传 archive、bootstrap 与解压目录已经删除；正式安装、配置、数据和旧部署隔离备份保留。
+- 上传 archive、bootstrap 与解压目录已经删除；正式安装、配置和数据保留。当前部署已建立权限 `600`
+  的一致性备份；旧部署隔离目录在验收和用户确认后永久删除。
+
+正式 `v0.1.1` 发布后的公开 bootstrap 已在干净 Ubuntu 24.04 容器验证，并用于 VPS 更新。验收同时发现
+该版本从 SSH 运行独立 `cinba update` 时 command-line handoff 错当 TUI 且 helper 继承 PTY；旧版本和
+数据会安全保留。`9339963` 已按 TDD 修复并推入 `master`，下一版本首次升级应使用正式 bootstrap 获取
+该修复。
 
 ## 已确认的技术事实
 
@@ -327,9 +335,9 @@ artifact 验收。
 - 对旧 `.cinba`、`.cinba-sync`、`.pi` 和必要日志生成只读 inventory；不把它们自动迁入正式产品；
 - 将旧数据移动到带时间戳的隔离目录，而不是立即永久删除，待新部署验收和用户确认后再清除。
 
-### 必须保留
+### 清理和验收期间必须保留
 
-- Linux 用户 `cinba`、home 权限与已经启用的 linger；
+- Linux 用户 `cinba`、home 权限与已经启用的 linger，直到新部署验收完成且用户明确决定是否删除；
 - Tailscale 安装、登录、ACL 与地址；
 - Caddy 安装、证书和用户自有 route；
 - 与 Cinba 无关的 systemd unit、SSH 配置、日志和数据。
@@ -379,6 +387,9 @@ artifact 验收。
 - `npm run check` 通过；
 - 清理后的真实 VPS 从正式 Linux artifact 安装，重启后 Core + Sync + 用户 HTTPS 入口完整可用；
 - 旧源码服务和每分钟 update timer 不再存在，旧数据只在用户确认后永久删除。
+
+以上完成标准已满足。旧数据、旧 timer、旧服务、旧私有 Node、旧 home 与旧系统账户均在最终确认后
+删除；当前 Core/Sync user unit 均为 `enabled`、`active`。
 
 ## 实施前唯一依赖决策
 

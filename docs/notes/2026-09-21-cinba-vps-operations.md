@@ -2,6 +2,8 @@
 
 日期：2026-09-21
 
+状态：`v0.1.1` 已在真实 VPS 完成安装、Sync 设置、远程访问、两次重启和旧部署退役验收
+
 这份备忘记录正式 Headless artifact 在个人 VPS 上的日常运维方法。Cinba 只管理当前用户下的程序、
 Core 与 Sync Host；Tailscale、Caddy、DNS、TLS、防火墙和系统账号始终由 VPS 管理员独立维护。
 
@@ -142,3 +144,19 @@ systemctl is-active caddy tailscaled
 旧源码 unit、timer、checkout、私有 Node 和部署脚本必须先停止、禁用并移动到精确的隔离目录。新 artifact
 经过安装、远程访问和重启验收后，才永久删除隔离目录。删除前逐项解析绝对路径，确认全部位于旧用户的
 Cinba 范围；不递归删除整个 home，也不删除 Tailscale、Caddy 或其他应用数据。
+
+本次验收先把旧部署移动到隔离目录，确认正式部署、手机管理、TUI 和两次重启均正常后，再永久删除旧
+unit、每分钟 update timer、checkout、release、私有 Node、npm 残留和隔离目录。旧专用系统账户已在
+用户明确确认后连同同名组、SSH key 和 home 删除；当前部署仍由安装用户自己的账户运行。
+
+## 2026-09-21 验收快照
+
+- 正式版本：`0.1.1 (a54322a6a3f6697e563162e13b4388b0c5228a9d)`；
+- `cinba-core.service`、`cinba-sync.service`：`enabled`、`active`；
+- Doctor：`ready`；Sync Host：`ready`、`healthy`、Background、连接一个 Core；
+- Core/Sync：只监听 `127.0.0.1:4517/4518`；远程 HTTPS 和手机登录通过；
+- Caddy：等待 Tailscale 并在失败后重试，两次真实 VPS 重启通过；
+- 一致性备份：服务器本地 archive，权限 `600`，SHA-256
+  `a8191c64c7dd2cb8461ae298295f5ae38add20dd63977369baf74178a948d2ec`；
+- 旧部署和专用账户：已永久删除；
+- 尚未执行：从个人设备制作加密异机备份。
