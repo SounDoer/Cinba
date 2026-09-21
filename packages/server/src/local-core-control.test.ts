@@ -9,9 +9,11 @@ async function withControlServer(
     baseUrl: string,
     stopped: () => number,
     lifetime: () => "persistent" | "on-demand",
+    deletePreparations: () => number,
   ) => Promise<void>,
 ): Promise<void> {
   let stopRequests = 0;
+  let deletePreparations = 0;
   let lifetime: "persistent" | "on-demand" = "on-demand";
   const control = createLocalCoreControlHandler({
     lifetime: () => lifetime,
@@ -31,6 +33,9 @@ async function withControlServer(
         settings: { version: 1, webTools: { searchPrimary: "auto" } },
       };
     },
+    prepareSyncHostDelete: async () => {
+      deletePreparations += 1;
+    },
   });
   const server = createServer(async (request, response) => {
     if (!(await control(request, response))) {
@@ -46,6 +51,7 @@ async function withControlServer(
       `http://127.0.0.1:${address.port}`,
       () => stopRequests,
       () => lifetime,
+      () => deletePreparations,
     );
   } finally {
     await new Promise<void>((resolve, reject) => {
@@ -53,6 +59,18 @@ async function withControlServer(
     });
   }
 }
+
+test("an authorized manager can prepare the current Core for Host deletion", async () => {
+  await withControlServer("secret", async (baseUrl, _stopped, _lifetime, preparations) => {
+    const response = await fetch(`${baseUrl}/local-core/prepare-sync-host-delete`, {
+      method: "POST",
+      headers: { authorization: "Bearer secret" },
+    });
+    assert.equal(response.status, 202);
+    assert.deepEqual(await response.json(), { status: "accepted" });
+    assert.equal(preparations(), 1);
+  });
+});
 
 test("an authorized manager can begin one local Sync enrollment", async () => {
   await withControlServer("secret", async (baseUrl) => {

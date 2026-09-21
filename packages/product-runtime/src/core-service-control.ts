@@ -5,6 +5,7 @@ import {
   type LocalCoreSyncEnrollmentReceipt,
   requestLocalCoreStatus,
   requestLocalCoreSyncEnrollment,
+  requestLocalCoreSyncHostDeletePreparation,
 } from "@cinba/core-client";
 import type { ManagedSyncControlConfig } from "./sync-control.ts";
 
@@ -71,6 +72,35 @@ export async function beginManagedCoreSyncEnrollment(
     throw new Error("Cinba Core refused the local Sync enrollment request");
   }
   return receipt;
+}
+
+export async function prepareManagedCoreSyncHostDelete(
+  config: ManagedSyncControlConfig,
+  options: {
+    requestStatus?: CoreServiceStatusRequest;
+    requestPreparation?: (baseUrl: string, token: string) => Promise<boolean>;
+  } = {},
+): Promise<void> {
+  const control = await readControl(config.controlPath);
+  if (!control) {
+    throw new Error("Cinba Core has not recorded its manager identity");
+  }
+  const status = await (options.requestStatus ?? requestLocalCoreStatus)(
+    config.baseUrl,
+    control.token,
+  );
+  if (status?.pid !== control.pid) {
+    throw new Error("the Core answering on 127.0.0.1:4517 is not owned by this manager");
+  }
+  const accepted = await (options.requestPreparation ?? requestLocalCoreSyncHostDeletePreparation)(
+    config.baseUrl,
+    control.token,
+  );
+  if (!accepted) {
+    throw new Error(
+      "Cinba Core could not preserve its Sync settings before Host deletion; move Shared Credentials to Local first",
+    );
+  }
 }
 
 /**

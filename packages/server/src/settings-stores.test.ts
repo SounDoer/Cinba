@@ -19,6 +19,22 @@ test("Local Settings persist a complete versioned document", (t) => {
   });
 });
 
+test("Local Settings replace a complete shared snapshot atomically", (t) => {
+  const root = temporaryDirectory("cinba-settings-store-replace-", t);
+  const path = join(root, "local-settings.json");
+  const store = createLocalSettingsStore(path);
+
+  store.set({
+    defaultModel: { provider: "openai", id: "gpt-shared" },
+    webTools: { searchPrimary: "exa" },
+  });
+
+  assert.deepEqual(createLocalSettingsStore(path).get(), {
+    defaultModel: { provider: "openai", id: "gpt-shared" },
+    webTools: { searchPrimary: "exa" },
+  });
+});
+
 test("Instance Override removes individual fields instead of copying base values", (t) => {
   const root = temporaryDirectory("cinba-settings-store-", t);
   const path = join(root, "instance-override.json");

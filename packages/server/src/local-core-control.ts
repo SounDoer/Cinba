@@ -84,6 +84,7 @@ export function createLocalCoreControlHandler(options: {
   requestStop: () => void;
   setLifetime: (lifetime: CoreLifetime) => void;
   beginSyncEnrollment?: (serverUrl: string) => Promise<LocalCoreSyncEnrollmentReceipt>;
+  prepareSyncHostDelete?: () => Promise<void>;
   schedule?: (callback: () => void) => void;
 }): LocalCoreControlHandler {
   const enabled = Boolean(options.token);
@@ -103,6 +104,7 @@ export function createLocalCoreControlHandler(options: {
       (path !== "/local-core/status" &&
         path !== "/local-core/stop" &&
         path !== "/local-core/sync-enrollment" &&
+        path !== "/local-core/prepare-sync-host-delete" &&
         !lifetimeRequest)
     ) {
       return false;
@@ -149,6 +151,24 @@ export function createLocalCoreControlHandler(options: {
         });
       } catch {
         sendJson(response, 409, { status: "enrollment-refused" });
+      }
+      return true;
+    }
+
+    if (path === "/local-core/prepare-sync-host-delete") {
+      if (request.method !== "POST") {
+        response.writeHead(405, { allow: "POST" }).end();
+        return true;
+      }
+      if (!options.prepareSyncHostDelete) {
+        response.writeHead(404, { "cache-control": "no-store" }).end();
+        return true;
+      }
+      try {
+        await options.prepareSyncHostDelete();
+        sendJson(response, 202, { status: "accepted" });
+      } catch {
+        sendJson(response, 409, { status: "delete-refused" });
       }
       return true;
     }

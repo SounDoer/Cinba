@@ -6,6 +6,7 @@ const VERSION = 1;
 
 export type LocalSettingsStore = {
   get(): Settings;
+  set(settings: Settings): void;
   setDefaultModel(model: ModelRef | undefined): void;
   setWebSearchPrimary(primary: WebSearchPrimary): void;
   problem(): StoredJsonError | undefined;
@@ -64,6 +65,11 @@ export function createLocalSettingsStore(path: string): LocalSettingsStore {
       defaultModel: state.defaultModel ? { ...state.defaultModel } : undefined,
       webTools: { ...state.webTools },
     }),
+    set: (settings) =>
+      commit({
+        defaultModel: settings.defaultModel ? { ...settings.defaultModel } : undefined,
+        webTools: { ...settings.webTools },
+      }),
     setDefaultModel: (defaultModel) =>
       commit({
         defaultModel: defaultModel ? { ...defaultModel } : undefined,

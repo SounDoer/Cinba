@@ -5,6 +5,7 @@ import {
   requestLocalCoreStatus,
   requestLocalCoreStop,
   requestLocalCoreSyncEnrollment,
+  requestLocalCoreSyncHostDeletePreparation,
 } from "./core-control.ts";
 import type { HttpFetcher, HttpRequestInit } from "./http.ts";
 
@@ -44,6 +45,27 @@ test("requests a protected graceful stop", async () => {
   });
 
   assert.equal(accepted, true);
+  assert.equal(requestInit?.method, "POST");
+  assert.equal(requestInit?.headers?.authorization, "Bearer secret");
+});
+
+test("requests protected preparation for Sync Host deletion", async () => {
+  let requested = "";
+  let requestInit: HttpRequestInit | undefined;
+  const accepted = await requestLocalCoreSyncHostDeletePreparation(
+    "http://127.0.0.1:4517/",
+    "secret",
+    {
+      fetcher: async (input, init) => {
+        requested = input;
+        requestInit = init;
+        return { ok: true, json: async () => ({ status: "accepted" }) };
+      },
+    },
+  );
+
+  assert.equal(accepted, true);
+  assert.equal(requested, "http://127.0.0.1:4517/local-core/prepare-sync-host-delete");
   assert.equal(requestInit?.method, "POST");
   assert.equal(requestInit?.headers?.authorization, "Bearer secret");
 });

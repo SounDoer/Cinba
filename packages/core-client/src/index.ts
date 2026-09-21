@@ -7,6 +7,7 @@ export {
   requestLocalCoreLifetime,
   requestLocalCoreStatus,
   requestLocalCoreStop,
+  requestLocalCoreSyncHostDeletePreparation,
   requestLocalCoreSyncEnrollment,
 } from "./core-control.ts";
 export { probeCoreHealth } from "./core-health.ts";

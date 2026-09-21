@@ -133,6 +133,21 @@ export async function requestLocalCoreStop(
   );
 }
 
+export async function requestLocalCoreSyncHostDeletePreparation(
+  baseUrl: string,
+  token: string,
+  options: ControlOptions = {},
+): Promise<boolean> {
+  const body = await requestJson(baseUrl, "/local-core/prepare-sync-host-delete", {
+    ...options,
+    method: "POST",
+    headers: authorization(token),
+  });
+  return Boolean(
+    body && typeof body === "object" && (body as Record<string, unknown>).status === "accepted",
+  );
+}
+
 export async function requestLocalCoreLifetime(
   baseUrl: string,
   token: string,

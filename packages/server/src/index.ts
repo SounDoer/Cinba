@@ -412,6 +412,28 @@ const serveLocalCoreControl = createLocalCoreControlHandler({
       },
     };
   },
+  prepareSyncHostDelete: async () => {
+    const connection = syncConnection.get();
+    if (!connection) {
+      return;
+    }
+    if (connection.sources.credentials === "sync") {
+      throw new Error("Shared Credentials must be moved before deleting the Sync Host");
+    }
+    if (connection.sources.settings === "sync") {
+      const shared = sync.snapshot()?.settings;
+      if (!shared) {
+        throw new Error("Shared Settings are unavailable and cannot be preserved locally");
+      }
+      localSettings.set({
+        defaultModel: shared.defaultModel,
+        webTools: { ...shared.webTools },
+      });
+    }
+    enrollment.cancel();
+    sync.disconnect();
+    writeEffectiveWebToolsRuntime();
+  },
 });
 const serveCoreSyncControl = createCoreSyncControlHandler({
   view: () => {

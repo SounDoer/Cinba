@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import test from "node:test";
 import {
   type PlatformServiceAdapter,
@@ -13,6 +14,7 @@ import {
   createManagedSyncControlConfig,
   createProductSyncHost,
   createSyncHostConfig,
+  deleteProductSyncHost,
   formatProductSyncHostStatus,
   inspectProductSyncHost,
   removeManagedSyncControl,
@@ -275,6 +277,41 @@ test("creating an existing Host is idempotent and does not reopen bootstrap", as
   assert.equal(result.setupCode, undefined);
   assert.equal(result.status.state, "created");
   assert.equal(result.status.publicOrigin, "https://sync.example.com");
+});
+
+test("deleting a Host performs disconnect protection before removing only Host-owned storage", async (t) => {
+  const root = temporaryDirectory("cinba-sync-host-delete-", t);
+  const { options, paths } = nativeLayout(root);
+  const coreMarker = join(paths.dataDirectory, "Core", "preserved.txt");
+  const configMarker = join(paths.configurationDirectory, "desktop.json");
+  await mkdir(paths.syncDataDirectory, { recursive: true });
+  await mkdir(join(paths.dataDirectory, "Core"), { recursive: true });
+  await writeSyncHostConfig(syncHostConfigPath(paths), createSyncHostConfig());
+  await writeFile(coreMarker, "core");
+  await writeFile(configMarker, "desktop");
+  const events: string[] = [];
+
+  assert.deepEqual(
+    await deleteProductSyncHost({
+      ...options,
+      adapter: stoppedServiceAdapter(),
+      deleteRuntime: {
+        prepareDisconnect: async () => {
+          events.push("prepare-disconnect");
+        },
+        stopSync: async () => {
+          events.push("stop-sync");
+        },
+      },
+    }),
+    { schemaVersion: 1, state: "not-created" },
+  );
+
+  assert.deepEqual(events, ["prepare-disconnect", "stop-sync"]);
+  await assert.rejects(access(syncHostConfigPath(paths)), { code: "ENOENT" });
+  await assert.rejects(access(paths.syncDataDirectory), { code: "ENOENT" });
+  assert.equal(await readFile(coreMarker, "utf8"), "core");
+  assert.equal(await readFile(configMarker, "utf8"), "desktop");
 });
 
 test("configuring a stopped Host atomically updates only its public origin", async (t) => {

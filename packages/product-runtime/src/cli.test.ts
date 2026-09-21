@@ -96,6 +96,17 @@ test("the installed command defaults to the TUI and keeps management explicit", 
   assert.throws(() => parseProductCommand(["sync", "create", "--unknown"], project), {
     message: "run 'cinba help' for usage",
   });
+  assert.deepEqual(parseProductCommand(["sync", "delete"], project), {
+    type: "sync-host-delete",
+    confirmed: false,
+  });
+  assert.deepEqual(parseProductCommand(["sync", "delete", "--confirm-delete-host"], project), {
+    type: "sync-host-delete",
+    confirmed: true,
+  });
+  assert.throws(() => parseProductCommand(["sync", "delete", "--force"], project), {
+    message: "run 'cinba help' for usage",
+  });
   assert.throws(() => parseProductCommand(["sync", "configure"], project), {
     message: "run 'cinba help' for usage",
   });
@@ -231,6 +242,23 @@ test("Sync create prints its one-time Setup Code only through the explicit escap
   assert.equal(output.length, 2);
   assert.match(output[0]!, /Cinba Sync Host: created/);
   assert.equal(output[1], "Setup Code: setup-once");
+});
+
+test("Sync delete requires its dedicated automation confirmation before invoking the manager", async () => {
+  const output: string[] = [];
+  let deletions = 0;
+  await runProductCli(["sync", "delete", "--confirm-delete-host"], resolve("project"), {
+    readRelease: async () => release,
+    checkForUpdates: async () => undefined,
+    deleteSyncHost: async () => {
+      deletions += 1;
+      return { schemaVersion: 1, state: "not-created" };
+    },
+    writeOutput: (line) => output.push(line),
+  });
+
+  assert.equal(deletions, 1);
+  assert.deepEqual(output, ["Cinba Sync Host: not created"]);
 });
 
 test("the installed Core separates durable data, runtime state, logs, and payload", () => {

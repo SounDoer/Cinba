@@ -19,6 +19,7 @@ import {
 import {
   beginManagedCoreSyncEnrollment,
   createCoreServiceControlConfig,
+  prepareManagedCoreSyncHostDelete,
 } from "./core-service-control.ts";
 import { resolveProductPayloadLayout } from "./layout.ts";
 import { formatInstalledDoctorReport, runInstalledDoctor } from "./doctor.ts";
@@ -45,8 +46,10 @@ import {
 } from "./sync-host-config.ts";
 import {
   type ProductSyncHostCreation,
+  type ProductSyncHostStatus,
   configureProductSyncHost,
   createProductSyncHost,
+  deleteProductSyncHost,
   formatProductSyncHostStatus,
   inspectProductSyncHost,
   setProductSyncHostMode,
@@ -57,6 +60,7 @@ export type ProductCommand =
   | { type: "core"; action: "status" | "start" | "stop" }
   | { type: "sync"; action: "serve" }
   | { type: "sync-host-create"; publicOrigin: string | undefined; showSetupCode: boolean }
+  | { type: "sync-host-delete"; confirmed: boolean }
   | { type: "sync-host-status"; json: boolean }
   | { type: "sync-host-configure"; publicOrigin: string }
   | { type: "component-mode"; component: ProductServiceComponent; mode: ServiceMode | null }
@@ -77,6 +81,8 @@ export type ProductCliDependencies = {
   checkForUpdates: typeof checkForProductUpdatesAutomatically;
   configureSyncHost: typeof configureProductSyncHost;
   createSyncHost?: (publicOrigin?: string) => Promise<ProductSyncHostCreation>;
+  deleteSyncHost?: () => Promise<ProductSyncHostStatus>;
+  confirmSyncHostDelete?: () => Promise<boolean>;
   inspectSyncHost: typeof inspectProductSyncHost;
   setSyncHostMode: typeof setProductSyncHostMode;
   writeOutput: (output: string) => void;
@@ -101,6 +107,7 @@ Usage:
   cinba sync serve
   cinba sync create [--public-origin URL] [--show-setup-code]
   cinba sync configure --public-origin URL
+  cinba sync delete [--confirm-delete-host]
   cinba sync status [--json]
   cinba sync mode [disabled|on-demand|background]
   cinba update
@@ -153,6 +160,19 @@ function parseSyncHostCreate(arguments_: readonly string[]): ProductCommand | un
   return { type: "sync-host-create", publicOrigin, showSetupCode };
 }
 
+function parseSyncHostDelete(arguments_: readonly string[]): ProductCommand | undefined {
+  if (arguments_[0] !== "sync" || arguments_[1] !== "delete") {
+    return undefined;
+  }
+  if (
+    arguments_.length !== 2 &&
+    !(arguments_.length === 3 && arguments_[2] === "--confirm-delete-host")
+  ) {
+    throw new Error("run 'cinba help' for usage");
+  }
+  return { type: "sync-host-delete", confirmed: arguments_.length === 3 };
+}
+
 export function parseProductCommand(
   arguments_: readonly string[],
   workingDirectory: string,
@@ -194,6 +214,10 @@ export function parseProductCommand(
   const syncHostCreate = parseSyncHostCreate(arguments_);
   if (syncHostCreate) {
     return syncHostCreate;
+  }
+  const syncHostDelete = parseSyncHostDelete(arguments_);
+  if (syncHostDelete) {
+    return syncHostDelete;
   }
   if (
     arguments_[0] === "sync" &&
@@ -459,6 +483,17 @@ async function runProductService(service: ProductServiceProcess): Promise<void> 
   }
 }
 
+async function runningCoreControlConfig(coreConfig: LocalCoreConfig, stateDirectory: string) {
+  const mode = await inspectProductComponentMode("core");
+  return mode.state === "background" && mode.running
+    ? createCoreServiceControlConfig(stateDirectory)
+    : {
+        baseUrl: coreConfig.baseUrl,
+        runtimePath: coreConfig.runtimePath,
+        controlPath: coreConfig.controlPath,
+      };
+}
+
 async function createInstalledSyncHost(
   payloadRoot: string,
   release: ProductProtocolIdentity,
@@ -477,11 +512,6 @@ async function createInstalledSyncHost(
     environment,
     release,
   });
-  const coreControl = {
-    baseUrl: coreConfig.baseUrl,
-    runtimePath: coreConfig.runtimePath,
-    controlPath: coreConfig.controlPath,
-  };
   const syncControl = createManagedSyncControlConfig(paths.stateDirectory);
   const coreSync = new CoreSyncControlClient(coreConfig.baseUrl, { timeoutMs: 2_000 });
   let syncRun: Promise<void> | undefined;
@@ -524,7 +554,10 @@ async function createInstalledSyncHost(
         throw new Error("Cinba Sync did not become ready for Host creation");
       },
       beginEnrollment: async (serverUrl) =>
-        await beginManagedCoreSyncEnrollment(coreControl, serverUrl),
+        await beginManagedCoreSyncEnrollment(
+          await runningCoreControlConfig(coreConfig, paths.stateDirectory),
+          serverUrl,
+        ),
       bootstrap: async (receipt) => {
         await bootstrapManagedSyncHost({
           config: syncControl,
@@ -562,6 +595,48 @@ async function createInstalledSyncHost(
       },
       cancelEnrollment: async () => {
         await coreSync.cancelEnrollment();
+      },
+    },
+  });
+}
+
+async function deleteInstalledSyncHost(
+  payloadRoot: string,
+  release: ProductProtocolIdentity,
+): Promise<ProductSyncHostStatus> {
+  const platform = process.platform;
+  if (platform !== "win32" && platform !== "darwin" && platform !== "linux") {
+    throw new Error(`Cinba is not available on ${platform}`);
+  }
+  const homeDirectory = homedir();
+  const environment = process.env;
+  const paths = resolveProductPaths({ platform, homeDirectory, environment });
+  const coreConfig = createProductCoreConfig(payloadRoot, {
+    platform,
+    homeDirectory,
+    environment,
+    release,
+  });
+  const syncControl = createManagedSyncControlConfig(paths.stateDirectory);
+  return await deleteProductSyncHost({
+    platform,
+    homeDirectory,
+    environment,
+    deleteRuntime: {
+      prepareDisconnect: async () => {
+        await ensureLocalCore({ config: coreConfig, expectedRevision: release.revision });
+        await prepareManagedCoreSyncHostDelete(
+          await runningCoreControlConfig(coreConfig, paths.stateDirectory),
+        );
+      },
+      stopSync: async () => {
+        const status = await inspectManagedSyncControl({ config: syncControl });
+        if (status.running && !status.managed) {
+          throw new Error("the running local Sync is not owned by this manager");
+        }
+        if (status.running) {
+          await stopManagedSyncControl({ config: syncControl });
+        }
       },
     },
   });
@@ -676,6 +751,21 @@ export async function runProductCli(
     }
     return;
   }
+  if (command.type === "sync-host-delete") {
+    const confirmed =
+      command.confirmed ||
+      (await (dependencies.confirmSyncHostDelete ?? askSyncHostDeleteConfirmation)());
+    if (!confirmed) {
+      throw new Error(
+        "Sync Host deletion was not confirmed; use an interactive terminal or --confirm-delete-host",
+      );
+    }
+    const status = dependencies.deleteSyncHost
+      ? await dependencies.deleteSyncHost()
+      : await deleteInstalledSyncHost(payload.root, release);
+    dependencies.writeOutput(formatProductSyncHostStatus(status));
+    return;
+  }
   if (command.type === "component-mode" && command.component === "sync") {
     const status = command.mode
       ? await dependencies.setSyncHostMode(
@@ -761,6 +851,20 @@ async function askLingerConsent(userName: string): Promise<boolean> {
     );
     const answer = await prompt.question("Enable linger? [y/N] ");
     return /^y(es)?$/i.test(answer.trim());
+  } finally {
+    prompt.close();
+  }
+}
+
+async function askSyncHostDeleteConfirmation(): Promise<boolean> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return false;
+  }
+  const prompt = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    console.log("Deleting this Sync Host permanently removes its trust root and shared data.");
+    const answer = await prompt.question('Type "DELETE SYNC HOST" to continue: ');
+    return answer.trim() === "DELETE SYNC HOST";
   } finally {
     prompt.close();
   }

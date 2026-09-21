@@ -74,6 +74,49 @@ export type ProductSyncHostCreation = {
   setupCode?: string;
 };
 
+export type ProductSyncHostDeleteOptions = ProductSyncHostOptions & {
+  deleteRuntime: {
+    prepareDisconnect(): Promise<void>;
+    stopSync(): Promise<void>;
+  };
+};
+
+export async function deleteProductSyncHost(
+  options: ProductSyncHostDeleteOptions,
+): Promise<ProductSyncHostStatus> {
+  const paths = resolveProductPaths({
+    platform: supportedPlatform(options.platform ?? process.platform),
+    homeDirectory: options.homeDirectory ?? homedir(),
+    environment: options.environment ?? process.env,
+  });
+  const unlock = await acquireInstallationLock({
+    programDirectory: paths.programDirectory,
+    releasesDirectory: paths.releasesDirectory,
+    transactionDirectory: paths.transactionDirectory,
+  });
+  try {
+    const storage = await inspectSyncHostStorage(paths);
+    if (storage.state === "not-created") {
+      return { schemaVersion: 1, state: "not-created" };
+    }
+    if (storage.state !== "created") {
+      throw new Error(`Cinba Sync Host requires repair: ${storage.state}`);
+    }
+    await options.deleteRuntime.prepareDisconnect();
+    await options.deleteRuntime.stopSync();
+    await setProductComponentMode("sync", "disabled", {
+      ...options,
+      componentCreated: true,
+      installationLockHeld: true,
+    });
+    await rm(syncHostConfigPath(paths), { force: true });
+    await rm(paths.syncDataDirectory, { recursive: true, force: true });
+    return { schemaVersion: 1, state: "not-created" };
+  } finally {
+    await unlock();
+  }
+}
+
 export async function createProductSyncHost(
   publicOrigin: string,
   options: ProductSyncHostCreateOptions,
