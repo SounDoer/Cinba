@@ -25,6 +25,17 @@ test("renders bilingual installation notes with exact artifact names", () => {
   }
 });
 
+test("starts with changes instead of repeating the GitHub release title", () => {
+  const notes = renderReleaseNotes({
+    version: "1.2.3",
+    changesZh: "- 变更。",
+    changesEn: "- Change.",
+  });
+
+  assert.ok(notes.startsWith("## 本版变更\n"));
+  assert.doesNotMatch(notes, /^# Cinba 1\.2\.3/m);
+});
+
 test("states the platform baselines and the blocked-launch fallbacks", () => {
   const notes = renderReleaseNotes({
     version: "1.2.3",

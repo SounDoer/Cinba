@@ -44,9 +44,7 @@ export function renderReleaseNotes(options: {
   // "10.0" is the NT version; users know it as Windows 10.
   const windowsVersion = windowsMinimum.version.replace(/\.0$/, "");
 
-  return `# Cinba ${version}
-
-## 本版变更
+  return `## 本版变更
 
 ${changesZh}
 
