@@ -1,6 +1,11 @@
 import type { Component } from "@earendil-works/pi-tui";
 import { type CoreSyncControlClient, CoreSyncControlError } from "@cinba/core-client";
 import type { CoreInstanceOverride, CoreSyncSources, CoreSyncView } from "@cinba/contract";
+import {
+  type ProductSyncHostStatus,
+  formatProductSyncHostStatus,
+  inspectProductSyncHost,
+} from "@cinba/product-runtime/sync-host-manager";
 import { ChoicePicker, TextInput } from "./settings-components.ts";
 import { DIM, GREEN, RESET, YELLOW } from "./theme.ts";
 
@@ -15,6 +20,21 @@ export type SyncFlowHost = {
   showPrompt(): void;
   requestRender(): void;
   showNotice(text: string): void;
+};
+
+export type SyncFlowCoreClient = Pick<
+  CoreSyncControlClient,
+  | "status"
+  | "cancelEnrollment"
+  | "syncNow"
+  | "updateSources"
+  | "disconnect"
+  | "connect"
+  | "updateOverride"
+>;
+
+export type SyncHostManager = {
+  inspect(): Promise<ProductSyncHostStatus>;
 };
 
 const SOURCES: { value: string; label: string; sources: CoreSyncSources }[] = [
@@ -57,14 +77,21 @@ function errorMessage(error: unknown): string {
 }
 
 export class SyncFlow {
-  #client: CoreSyncControlClient;
+  #client: SyncFlowCoreClient;
   #host: SyncFlowHost;
+  #hostManager: SyncHostManager;
   #view: CoreSyncView | undefined;
+  #hostStatus: ProductSyncHostStatus | undefined;
   #busy = false;
 
-  constructor(client: CoreSyncControlClient, host: SyncFlowHost) {
+  constructor(
+    client: SyncFlowCoreClient,
+    host: SyncFlowHost,
+    hostManager: SyncHostManager = { inspect: inspectProductSyncHost },
+  ) {
     this.#client = client;
     this.#host = host;
+    this.#hostManager = hostManager;
   }
 
   async open(): Promise<void> {
@@ -73,8 +100,11 @@ export class SyncFlow {
     }
     this.#busy = true;
     try {
-      this.#view = await this.#client.status();
-      this.#showMenu();
+      [this.#view, this.#hostStatus] = await Promise.all([
+        this.#client.status(),
+        this.#hostManager.inspect(),
+      ]);
+      this.#showSectionMenu();
     } catch (error) {
       this.#host.showNotice(errorMessage(error));
     } finally {
@@ -82,7 +112,34 @@ export class SyncFlow {
     }
   }
 
-  #showMenu(): void {
+  #showSectionMenu(): void {
+    const status = this.#hostStatus;
+    if (!status) {
+      return;
+    }
+    let hostState = "created";
+    if (status.state === "repair-required") {
+      hostState = "repair required";
+    } else if (status.state === "not-created") {
+      hostState = "not created";
+    }
+    const picker = new ChoicePicker("Cinba Sync", [
+      { value: "core", label: "This Core" },
+      { value: "host", label: `Sync Host on this device · ${hostState}` },
+    ]);
+    picker.onAnswer = (choice) => {
+      this.#host.showPrompt();
+      if (choice === "core") {
+        this.#showCoreMenu();
+      }
+      if (choice === "host") {
+        this.#showHostMenu();
+      }
+    };
+    this.#host.showInteraction(picker);
+  }
+
+  #showCoreMenu(): void {
     const view = this.#view;
     if (!view) {
       return;
@@ -141,6 +198,26 @@ export class SyncFlow {
           this.#host.append(`Sync management: ${view.managementUrl}`);
           this.#host.requestRender();
           break;
+      }
+    };
+    this.#host.showInteraction(picker);
+  }
+
+  #showHostMenu(): void {
+    if (!this.#hostStatus) {
+      return;
+    }
+    const picker = new ChoicePicker("Sync Host on this device", [
+      { value: "status", label: "View Host status" },
+    ]);
+    picker.onAnswer = (choice) => {
+      this.#host.showPrompt();
+      if (choice === "status" && this.#hostStatus) {
+        this.#host.append("");
+        for (const line of formatProductSyncHostStatus(this.#hostStatus).split("\n")) {
+          this.#host.append(line);
+        }
+        this.#host.requestRender();
       }
     };
     this.#host.showInteraction(picker);
