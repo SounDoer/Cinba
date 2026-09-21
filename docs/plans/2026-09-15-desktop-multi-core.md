@@ -105,6 +105,7 @@ type CoreProfile = LocalCoreProfile | RemoteCoreProfile;
 
 - label trim 后非空并限制合理长度；
 - URL 只接受 `https:`；
+- 输入可省略 `https://`，Desktop 会补全并在界面中显示规范化后的地址；
 - 拒绝 userinfo、query、fragment 和非根路径；
 - origin 规范化为带结尾 `/` 的 `URL.origin`；
 - ID 使用 `crypto.randomUUID()`，编辑时保持原 ID；

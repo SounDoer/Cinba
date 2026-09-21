@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { normalizeRemoteCoreBaseUrl } from "./remote-core-url.ts";
 
 export type LocalCoreProfile = {
   id: "local";
@@ -32,17 +33,11 @@ export function createRemoteCoreProfile(
   if (label.length > 80) {
     throw new Error("Core profile label must be 80 characters or fewer");
   }
-  const url = new URL(input.baseUrl);
-  if (url.protocol !== "https:") {
-    throw new Error("Remote Core URL must use HTTPS");
-  }
-  if (url.pathname !== "/" || url.search || url.hash || url.username || url.password) {
-    throw new Error("Remote Core URL must point at an origin root");
-  }
+  const baseUrl = normalizeRemoteCoreBaseUrl(input.baseUrl);
   return {
     id: createId(),
     kind: "remote",
     label,
-    baseUrl: `${url.origin}/`,
+    baseUrl,
   };
 }

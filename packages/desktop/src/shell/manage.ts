@@ -1,5 +1,6 @@
 import type { DesktopShellState, ProfileInput } from "../desktop-api.ts";
 import type { CoreProfile } from "../profiles.ts";
+import { normalizeRemoteCoreBaseUrl } from "../remote-core-url.ts";
 import { desktopApi } from "./api.ts";
 import "./style.css";
 
@@ -18,7 +19,14 @@ let state: DesktopShellState;
 const productName = document.querySelector<HTMLElement>("#product-name")!;
 
 function input(): ProfileInput {
-  return { label: labelInput.value, baseUrl: urlInput.value };
+  const baseUrl = normalizeRemoteCoreBaseUrl(urlInput.value);
+  urlInput.value = baseUrl;
+  return { label: labelInput.value, baseUrl };
+}
+
+function errorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/^Error invoking remote method '[^']+': (?:Error|TypeError): /, "");
 }
 
 function resetEditor(): void {
@@ -104,7 +112,7 @@ form.addEventListener("submit", async (event) => {
     }
     resetEditor();
   } catch (error) {
-    formMessage.textContent = error instanceof Error ? error.message : String(error);
+    formMessage.textContent = errorMessage(error);
   }
 });
 
@@ -116,7 +124,7 @@ testButton.addEventListener("click", async () => {
       ? `Connected · revision ${result.revision}`
       : result.message;
   } catch (error) {
-    formMessage.textContent = error instanceof Error ? error.message : String(error);
+    formMessage.textContent = errorMessage(error);
   }
 });
 
@@ -129,7 +137,7 @@ recoverButton.addEventListener("click", async () => {
     const backupPath = await desktopApi.recoverProfiles();
     formMessage.textContent = `The unreadable file was preserved at ${backupPath}`;
   } catch (error) {
-    formMessage.textContent = error instanceof Error ? error.message : String(error);
+    formMessage.textContent = errorMessage(error);
   }
 });
 desktopApi.onStateChanged(render);

@@ -32,11 +32,14 @@
             <input id="label" maxlength="80" placeholder="VPS" required />
           </label>
           <label>
-            <span>HTTPS URL</span>
+            <span>Core address</span>
             <input
               id="base-url"
-              type="url"
-              placeholder="https://cinba-vps.example.ts.net/"
+              type="text"
+              inputmode="url"
+              autocomplete="url"
+              spellcheck="false"
+              placeholder="cinba-vps.example.ts.net"
               required
             />
           </label>
