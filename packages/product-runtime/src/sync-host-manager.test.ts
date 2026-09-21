@@ -5,10 +5,72 @@ import { type PlatformServiceAdapter, resolveProductPaths } from "@cinba/install
 import { temporaryDirectory } from "@cinba/test-support";
 import {
   createSyncHostConfig,
+  formatProductSyncHostStatus,
   inspectProductSyncHost,
   syncHostConfigPath,
   writeSyncHostConfig,
 } from "./index.ts";
+
+test("human Host status names an installation that has not been created", () => {
+  assert.equal(
+    formatProductSyncHostStatus({ schemaVersion: 1, state: "not-created" }),
+    "Cinba Sync Host: not created",
+  );
+});
+
+test("human Host status explains why an installation needs repair", () => {
+  assert.equal(
+    formatProductSyncHostStatus({
+      schemaVersion: 1,
+      state: "repair-required",
+      reason: "invalid-config",
+    }),
+    "Cinba Sync Host: repair required\n  Reason: invalid config",
+  );
+});
+
+test("human Host status describes a created remote Host without inventing health", () => {
+  assert.equal(
+    formatProductSyncHostStatus({
+      schemaVersion: 1,
+      state: "created",
+      publicOrigin: "https://sync.example.com",
+      availability: "remote-https",
+      mode: "disabled",
+      running: false,
+      healthy: null,
+    }),
+    [
+      "Cinba Sync Host: created",
+      "  Public origin: https://sync.example.com",
+      "  Availability: Remote HTTPS",
+      "  Mode: disabled",
+      "  Service: stopped",
+    ].join("\n"),
+  );
+});
+
+test("human Host status reports local-only availability and known health", () => {
+  assert.equal(
+    formatProductSyncHostStatus({
+      schemaVersion: 1,
+      state: "created",
+      publicOrigin: "http://127.0.0.1:4518",
+      availability: "this-device-only",
+      mode: "background",
+      running: true,
+      healthy: true,
+    }),
+    [
+      "Cinba Sync Host: created",
+      "  Public origin: http://127.0.0.1:4518",
+      "  Availability: This device only",
+      "  Mode: background",
+      "  Service: running",
+      "  Health: healthy",
+    ].join("\n"),
+  );
+});
 
 function nativeLayout(root: string) {
   if (

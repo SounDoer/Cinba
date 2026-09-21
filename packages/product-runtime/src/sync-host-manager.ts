@@ -69,3 +69,24 @@ export async function inspectProductSyncHost(
   }
   return { schemaVersion: 1, state: "repair-required", reason: storage.state };
 }
+
+export function formatProductSyncHostStatus(status: ProductSyncHostStatus): string {
+  if (status.state === "not-created") {
+    return "Cinba Sync Host: not created";
+  }
+  if (status.state === "repair-required") {
+    return `Cinba Sync Host: repair required\n  Reason: ${status.reason.replaceAll("-", " ")}`;
+  }
+  const availability = status.availability === "remote-https" ? "Remote HTTPS" : "This device only";
+  const lines = [
+    "Cinba Sync Host: created",
+    `  Public origin: ${status.publicOrigin}`,
+    `  Availability: ${availability}`,
+    `  Mode: ${status.mode}`,
+    `  Service: ${status.running ? "running" : "stopped"}`,
+  ];
+  if (status.healthy !== null) {
+    lines.push(`  Health: ${status.healthy ? "healthy" : "unhealthy"}`);
+  }
+  return lines.join("\n");
+}

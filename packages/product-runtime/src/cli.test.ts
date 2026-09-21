@@ -59,10 +59,55 @@ test("the installed command defaults to the TUI and keeps management explicit", 
     component: "sync",
     mode: "disabled",
   });
+  assert.deepEqual(parseProductCommand(["sync", "status"], project), {
+    type: "sync-host-status",
+    json: false,
+  });
+  assert.deepEqual(parseProductCommand(["sync", "status", "--json"], project), {
+    type: "sync-host-status",
+    json: true,
+  });
+  assert.throws(() => parseProductCommand(["sync", "status", "--verbose"], project), {
+    message: "run 'cinba help' for usage",
+  });
   assert.throws(() => parseProductCommand(["core", "mode", "disabled"], project), {
     message: "core does not support mode disabled",
   });
   assert.match(formatProductHelp(), /cinba update/);
+});
+
+test("Sync status prints the human Host status", async () => {
+  const output: string[] = [];
+  await runProductCli(["sync", "status"], resolve("project"), {
+    readRelease: async () => release,
+    checkForUpdates: async () => undefined,
+    inspectSyncHost: async () => ({ schemaVersion: 1, state: "not-created" }),
+    writeOutput: (line) => output.push(line),
+  });
+
+  assert.deepEqual(output, ["Cinba Sync Host: not created"]);
+});
+
+test("Sync status JSON prints exactly one machine-readable status", async () => {
+  const output: string[] = [];
+  await runProductCli(["sync", "status", "--json"], resolve("project"), {
+    readRelease: async () => release,
+    checkForUpdates: async () => undefined,
+    inspectSyncHost: async () => ({
+      schemaVersion: 1,
+      state: "created",
+      publicOrigin: "https://sync.example.com",
+      availability: "remote-https",
+      mode: "background",
+      running: true,
+      healthy: true,
+    }),
+    writeOutput: (line) => output.push(line),
+  });
+
+  assert.deepEqual(output, [
+    '{"schemaVersion":1,"state":"created","publicOrigin":"https://sync.example.com","availability":"remote-https","mode":"background","running":true,"healthy":true}',
+  ]);
 });
 
 test("the installed Core separates durable data, runtime state, logs, and payload", () => {
