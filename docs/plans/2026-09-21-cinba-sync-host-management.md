@@ -2,7 +2,7 @@
 
 日期：2026-09-21
 
-状态：阶段 0—5 已完成；阶段 6 已完成只读盘点和候选上传，等待 `cinba` 用户操作权限
+状态：阶段 0—6 已完成；Linux VPS 已由 `xichen` 用户完成正式 artifact 安装与重启验收
 
 对应规格：`docs/specs/2026-09-17-cinba-sync-product-experience.md`
 
@@ -34,17 +34,18 @@ Cinba 产品入口创建、配置、运行和删除的本机 Sync Host，并首�
   payload 也已实际执行包内 `version/help/sync status`、Core 与 Web 烟测；
 - `npm run check` 通过：1109 个单元测试中 1106 通过、3 个按平台跳过，12 个 E2E 全部通过，三端
   Web 构建通过；
-- Linux Headless candidate 已在干净 Node 24 容器中构建，bundle 自检完成隔离安装与启动；revision 为
-  `8a0201b1d23a2cebad4870a2efc51d0266ca260c`，artifact SHA-256 为
-  `7b6797ea4472cae8aee6cc107d37723d00d16aeb3cf3b94c06392fbd695e0e38`；
-- 同一 artifact 已在第二个干净 Linux 容器中执行包内 `version`、`help` 和
-  `sync status --json`，并上传到 VPS 的 `/home/xichen/cinba-staging-8a0201b1/`；远端重算 digest 一致，
-  尚未安装；
-- VPS 只读盘点确认：`cinba` 用户 linger 已启用；旧 Core/Sync 仍从 `/home/cinba/current` 源码链运行，
-  且只监听 `127.0.0.1:4517/4518`；Caddy 与 Tailscale active，必须保留；
-- 当前 SSH key 只能登录 `xichen`，不能登录 `cinba`，且 `xichen` 没有免密 sudo。阶段 6 的旧数据
-  inventory、服务停止、隔离移动和正式安装必须等用户提供一次 `cinba` 登录或等价的受限提权入口，
-  不能绕过该权限边界。
+- 最终 Linux Headless candidate 已在干净 Node 24 容器中构建，并在带 systemd 的特权容器中完成
+  background、重启、disable/enable、普通卸载/重装保留与 purge 验收；revision 为
+  `99a5742f3fe2767c74d4032fb989c320b774edb9`，artifact SHA-256 为
+  `89c87fdb72287279bf38f6e8545b8738d92ecfc304f71c40d2c015f0726b0d26`；
+- VPS 改由用户的 `xichen` 账户安装和运行 Cinba；旧 `cinba.service`、`cinba-sync.service` 已停止并
+  禁用，旧部署移动到 `/home/cinba/retired/20260921-165948-before-xichen/`，不再有旧用户进程；
+- Core 与 Sync 均以 `xichen` 的 enabled user unit 运行，只监听 `127.0.0.1:4517/4518`；Sync 首次设置
+  已完成，状态为 `ready`，连接一个 Core，Settings/Sync revision 均为 1；
+- 两次真实 VPS 重启完成验收。第一次发现 Caddy 在 Tailscale 地址就绪前绑定失败，用户自有 Caddy
+  unit 增加 `After/Wants=tailscaled.service` 与 `Restart=on-failure` 后，第二次重启中 Caddy、Tailscale、
+  Core、Sync 均自动恢复，两个 HTTPS 入口返回 200；
+- 上传 archive、bootstrap 与解压目录已经删除；正式安装、配置、数据和旧部署隔离备份保留。
 
 ## 已确认的技术事实
 

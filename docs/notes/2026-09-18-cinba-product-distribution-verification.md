@@ -391,13 +391,20 @@ Windows 上的 `cinba update` 返回 `GitHub latest release request failed with 
 
 ## Ubuntu 22.04/24.04 x64 与干净 VPS
 
-- [ ] 同一条 release notes bootstrap 在普通机器和清空后的 VPS 上完成安装；
+- [x] 正式 Headless artifact 在干净容器和清理旧服务后的 VPS 上完成安装；
 - [x] 安装结束不自动启动 TUI、Core、Sync 或 Background；
 - [x] 手工复制 archive 的离线安装不访问 npm、Node 官网或 pi.dev；
-- [ ] `cinba` 默认 TUI、诊断与更新命令可用；
-- [ ] Background Core/Sync 以普通用户运行，SSH 断开后继续，重启后按模式恢复；
+- [x] `cinba` 版本、帮助、诊断和 Sync 状态命令可用；
+- [x] Background Core/Sync 以普通用户运行，SSH 断开后继续，重启后按模式恢复；
 - [x] 无 linger 时给出可理解的诊断和修复边界；
 - [x] 不安装或配置 Tailscale、Caddy、TLS、域名和防火墙。
+
+真实 VPS 使用 revision `99a5742f3fe2767c74d4032fb989c320b774edb9`，artifact SHA-256 为
+`89c87fdb72287279bf38f6e8545b8738d92ecfc304f71c40d2c015f0726b0d26`。Cinba 安装在 `xichen`
+账户，Core/Sync 只监听 loopback，Sync 完成首次设置并连接一个 Core。第一次重启暴露用户自有 Caddy
+早于 Tailscale 地址就绪的竞态；为 Caddy unit 增加 Tailscale 顺序依赖和失败重试后，第二次重启中
+Caddy、Tailscale、Core、Sync 与两个 HTTPS 入口全部自动恢复。旧源码服务已禁用并移动到带时间戳的
+隔离目录，上传和解压临时目录已删除。
 
 ## 更新、兼容与恢复
 
@@ -412,6 +419,6 @@ Windows 上的 `cinba update` 返回 `GitHub latest release request failed with 
 ## 收尾
 
 - [x] 第一轮真实验收的问题已回写自动化测试或规格；
-- [ ] 清空后的旧 VPS 已使用正式 Headless artifact 重建；
+- [x] 清理旧服务后的 VPS 已使用正式 Headless artifact 重建；
 - [x] 远端 `prod` 分支已在新发布链验收后删除；
-- [ ] 不再存在第二套 Git checkout/VPS deployment 产品路径。
+- [x] 不再存在运行中的第二套 Git checkout/VPS deployment 产品路径。
