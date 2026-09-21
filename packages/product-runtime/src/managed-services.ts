@@ -20,6 +20,7 @@ import {
   createWindowsScheduledTaskAdapter,
   inspectManagedService,
   resolveProductPaths,
+  restartManagedBackgroundService,
   setManagedServiceMode,
 } from "@cinba/installer";
 import {
@@ -231,6 +232,13 @@ export async function setProductComponentMode(
   } finally {
     release();
   }
+}
+
+export async function restartProductBackgroundService(
+  component: ServiceComponent,
+  options: ProductManagedServiceOptions = {},
+): Promise<ManagedServiceStatus> {
+  return await restartManagedBackgroundService(await serviceManagerOptions(component, options));
 }
 
 export function formatProductComponentMode(status: ManagedServiceStatus): string {

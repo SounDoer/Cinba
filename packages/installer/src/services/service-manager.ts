@@ -333,6 +333,44 @@ export async function setManagedServiceMode(
   }
 }
 
+/** Restart an existing Background service without changing its recorded lifecycle mode. */
+export async function restartManagedBackgroundService(
+  options: ServiceManagerOptions,
+): Promise<ManagedServiceStatus> {
+  const unlock = options.installationLockHeld
+    ? async () => undefined
+    : await acquireInstallationLock(options.layout);
+  const verifyHealth = options.verifyHealth ?? defaultVerifyHealth;
+  try {
+    const current = await inspectManagedService(options);
+    if (current.state !== "background" || !current.registered) {
+      throw new Error(`${options.definition.displayName} is not a registered Background service`);
+    }
+    await options.adapter.stop(options.definition);
+    const stopped = await waitForPlatform(
+      options.adapter,
+      options.definition,
+      (snapshot) => !snapshot.running,
+    );
+    if (stopped.running) {
+      throw new Error(`${options.definition.displayName} did not stop`);
+    }
+    await options.adapter.start(options.definition);
+    const started = await waitForPlatform(
+      options.adapter,
+      options.definition,
+      (snapshot) => snapshot.running,
+    );
+    if (!started.running) {
+      throw new Error(`${options.definition.displayName} did not start`);
+    }
+    await waitForHealth(verifyHealth, options.definition);
+    return await inspectManagedService(options);
+  } finally {
+    await unlock();
+  }
+}
+
 export async function recoverManagedServiceOperation(
   options: ServiceManagerOptions,
 ): Promise<ManagedServiceStatus> {

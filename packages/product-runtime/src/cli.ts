@@ -35,13 +35,18 @@ import {
   readSyncHostConfig,
   syncHostConfigPath,
 } from "./sync-host-config.ts";
-import { formatProductSyncHostStatus, inspectProductSyncHost } from "./sync-host-manager.ts";
+import {
+  configureProductSyncHost,
+  formatProductSyncHostStatus,
+  inspectProductSyncHost,
+} from "./sync-host-manager.ts";
 
 export type ProductCommand =
   | { type: "tui"; workingDirectory: string }
   | { type: "core"; action: "status" | "start" | "stop" }
   | { type: "sync"; action: "serve" }
   | { type: "sync-host-status"; json: boolean }
+  | { type: "sync-host-configure"; publicOrigin: string }
   | { type: "component-mode"; component: ProductServiceComponent; mode: ServiceMode | null }
   | { type: "service"; component: ProductServiceComponent }
   | { type: "doctor" }
@@ -58,6 +63,7 @@ type ProductProtocolIdentity = {
 export type ProductCliDependencies = {
   readRelease: typeof readProductRelease;
   checkForUpdates: typeof checkForProductUpdatesAutomatically;
+  configureSyncHost: typeof configureProductSyncHost;
   inspectSyncHost: typeof inspectProductSyncHost;
   writeOutput: (output: string) => void;
   executeCommand?: (command: ProductCommand) => Promise<void>;
@@ -79,6 +85,7 @@ Usage:
   cinba core <status|start|stop>
   cinba core mode [on-demand|background]
   cinba sync serve
+  cinba sync configure --public-origin URL
   cinba sync status [--json]
   cinba sync mode [disabled|on-demand|background]
   cinba update
@@ -150,6 +157,14 @@ export function parseProductCommand(
     (arguments_.length === 2 || (arguments_.length === 3 && arguments_[2] === "--json"))
   ) {
     return { type: "sync-host-status", json: arguments_[2] === "--json" };
+  }
+  if (
+    arguments_.length === 4 &&
+    arguments_[0] === "sync" &&
+    arguments_[1] === "configure" &&
+    arguments_[2] === "--public-origin"
+  ) {
+    return { type: "sync-host-configure", publicOrigin: arguments_[3]! };
   }
   if (
     (arguments_[0] === "core" || arguments_[0] === "sync") &&
@@ -415,6 +430,7 @@ export async function runProductCli(
   const dependencies: ProductCliDependencies = {
     readRelease: readProductRelease,
     checkForUpdates: checkForProductUpdatesAutomatically,
+    configureSyncHost: configureProductSyncHost,
     inspectSyncHost: inspectProductSyncHost,
     writeOutput: (output) => console.log(output),
     ...overrides,
@@ -488,6 +504,12 @@ export async function runProductCli(
     const status = await dependencies.inspectSyncHost();
     dependencies.writeOutput(
       command.json ? JSON.stringify(status) : formatProductSyncHostStatus(status),
+    );
+    return;
+  }
+  if (command.type === "sync-host-configure") {
+    dependencies.writeOutput(
+      formatProductSyncHostStatus(await dependencies.configureSyncHost(command.publicOrigin)),
     );
     return;
   }

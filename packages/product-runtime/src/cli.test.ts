@@ -67,6 +67,19 @@ test("the installed command defaults to the TUI and keeps management explicit", 
     type: "sync-host-status",
     json: true,
   });
+  assert.deepEqual(
+    parseProductCommand(
+      ["sync", "configure", "--public-origin", "https://sync.example.com"],
+      project,
+    ),
+    {
+      type: "sync-host-configure",
+      publicOrigin: "https://sync.example.com",
+    },
+  );
+  assert.throws(() => parseProductCommand(["sync", "configure"], project), {
+    message: "run 'cinba help' for usage",
+  });
   assert.throws(() => parseProductCommand(["sync", "status", "--verbose"], project), {
     message: "run 'cinba help' for usage",
   });
@@ -107,6 +120,43 @@ test("Sync status JSON prints exactly one machine-readable status", async () => 
 
   assert.deepEqual(output, [
     '{"schemaVersion":1,"state":"created","publicOrigin":"https://sync.example.com","availability":"remote-https","mode":"background","running":true,"healthy":true}',
+  ]);
+});
+
+test("Sync configure updates the Host origin and prints its resulting status", async () => {
+  const output: string[] = [];
+  const origins: string[] = [];
+  await runProductCli(
+    ["sync", "configure", "--public-origin", "https://sync.example.com"],
+    resolve("project"),
+    {
+      readRelease: async () => release,
+      checkForUpdates: async () => undefined,
+      configureSyncHost: async (publicOrigin) => {
+        origins.push(publicOrigin);
+        return {
+          schemaVersion: 1,
+          state: "created",
+          publicOrigin,
+          availability: "remote-https",
+          mode: "disabled",
+          running: false,
+          healthy: null,
+        };
+      },
+      writeOutput: (line) => output.push(line),
+    },
+  );
+
+  assert.deepEqual(origins, ["https://sync.example.com"]);
+  assert.deepEqual(output, [
+    [
+      "Cinba Sync Host: created",
+      "  Public origin: https://sync.example.com",
+      "  Availability: Remote HTTPS",
+      "  Mode: disabled",
+      "  Service: stopped",
+    ].join("\n"),
   ]);
 });
 

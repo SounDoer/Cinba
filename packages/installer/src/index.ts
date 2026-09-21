@@ -135,6 +135,7 @@ export type { ManagedServiceDefinition, ServicePlatform } from "./services/defin
 export {
   inspectManagedService,
   recoverManagedServiceOperation,
+  restartManagedBackgroundService,
   setManagedServiceMode,
 } from "./services/service-manager.ts";
 export {
