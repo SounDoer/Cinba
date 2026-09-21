@@ -42,6 +42,7 @@ export type SyncHostManager = {
   }>;
   configure?(publicOrigin: string): Promise<ProductSyncHostStatus>;
   setMode?(mode: ServiceMode): Promise<ProductSyncHostStatus>;
+  delete?(): Promise<ProductSyncHostStatus>;
 };
 
 const SOURCES: { value: string; label: string; sources: CoreSyncSources }[] = [
@@ -228,6 +229,9 @@ export class SyncFlow {
             { value: "disable", label: "Disable Sync Host" },
           ]
         : []),
+      ...(this.#hostStatus.state === "created" && this.#hostManager.delete
+        ? [{ value: "delete", label: "Delete Sync Host permanently" }]
+        : []),
     ]);
     picker.onAnswer = (choice) => {
       this.#host.showPrompt();
@@ -250,8 +254,60 @@ export class SyncFlow {
       if (choice === "disable") {
         this.#confirmHostDisable();
       }
+      if (choice === "delete") {
+        this.#confirmHostDelete();
+      }
     };
     this.#host.showInteraction(picker);
+  }
+
+  #confirmHostDelete(): void {
+    const connectedCores =
+      this.#hostStatus?.state === "created" && this.#hostStatus.connectedCoreCount !== null
+        ? String(this.#hostStatus.connectedCoreCount)
+        : "unknown";
+    const picker = new ChoicePicker(
+      `Delete Sync Host permanently — ${connectedCores} connected Cores; removes authority, Shared Settings, Credentials, and history`,
+      [{ value: "continue", label: "Continue to typed confirmation" }],
+    );
+    picker.onAnswer = (choice) => {
+      this.#host.showPrompt();
+      if (choice === "continue") {
+        this.#askHostDeletePhrase();
+      }
+    };
+    this.#host.showInteraction(picker);
+  }
+
+  #askHostDeletePhrase(): void {
+    const input = new TextInput('Type "DELETE SYNC HOST" to continue');
+    input.onAnswer = (answer) => {
+      this.#host.showPrompt();
+      if (answer === "DELETE SYNC HOST") {
+        void this.#deleteHost();
+      } else if (answer !== undefined) {
+        this.#host.showNotice("Sync Host deletion cancelled");
+      }
+    };
+    this.#host.showInteraction(input);
+  }
+
+  async #deleteHost(): Promise<void> {
+    if (this.#busy || !this.#hostManager.delete) {
+      return;
+    }
+    this.#busy = true;
+    try {
+      this.#hostStatus = await this.#hostManager.delete();
+      this.#view = await this.#client.status();
+      this.#host.showNotice("Sync Host deleted permanently");
+    } catch (error) {
+      this.#host.showNotice(
+        error instanceof Error ? error.message : "The Sync Host could not be deleted",
+      );
+    } finally {
+      this.#busy = false;
+    }
   }
 
   #confirmHostDisable(): void {

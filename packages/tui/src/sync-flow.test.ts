@@ -295,3 +295,71 @@ test("a created Host separates lifecycle changes from disabling it", async () =>
   assert.match(rendered, /Change lifecycle mode/);
   assert.match(rendered, /Disable Sync Host/);
 });
+
+test("deleting a Host names connected Cores and all permanently removed data", async () => {
+  let interaction: Component | undefined;
+  let deletions = 0;
+  const coreView = view("online");
+  const created = {
+    schemaVersion: 1 as const,
+    state: "created" as const,
+    publicOrigin: "https://sync.example.com",
+    availability: "remote-https" as const,
+    mode: "background" as const,
+    running: true,
+    healthy: true,
+    setupState: "ready" as const,
+    settingsRevision: 2,
+    syncRevision: 4,
+    connectedCoreCount: 3,
+    pendingEnrollmentCount: 0,
+  };
+  const flow = new SyncFlow(
+    {
+      status: async () => coreView,
+      cancelEnrollment: async () => ({ version: 1, accepted: true }),
+      syncNow: async () => ({ version: 1, accepted: true }),
+      updateSources: async () => ({ version: 1, accepted: true }),
+      disconnect: async () => ({ version: 1, accepted: true }),
+      connect: async () => ({ version: 1, accepted: true }),
+      updateOverride: async () => ({ version: 1, accepted: true }),
+    },
+    {
+      append: () => undefined,
+      showInteraction: (component) => {
+        interaction = component;
+      },
+      showPrompt: () => undefined,
+      requestRender: () => undefined,
+      showNotice: () => undefined,
+    },
+    {
+      inspect: async () => created,
+      delete: async () => {
+        deletions += 1;
+        return { schemaVersion: 1, state: "not-created" };
+      },
+    },
+  );
+  await flow.open();
+
+  send(interaction, "\x1b[B");
+  send(interaction, "\r");
+  assert.match(interaction?.render(80).join("\n") ?? "", /Delete Sync Host/);
+  send(interaction, "\x1b[B");
+  send(interaction, "\r");
+
+  const rendered = interaction?.render(80).join("\n") ?? "";
+  assert.match(rendered, /3 connected Cores/i);
+  assert.match(rendered, /authority/i);
+  assert.match(rendered, /Shared/i);
+  assert.match(rendered, /Settings/i);
+  assert.match(rendered, /Credentials/i);
+  assert.match(rendered, /history/i);
+
+  send(interaction, "\r");
+  send(interaction, "delete sync host");
+  send(interaction, "\r");
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(deletions, 0);
+});
