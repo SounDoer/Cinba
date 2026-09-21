@@ -14,7 +14,7 @@ VPS 与跨版本更新待验收
 
 ## 已由自动化验证
 
-- 根 `package.json` 是唯一产品版本源，当前版本为 `0.1.0`；
+- 根 `package.json` 是唯一产品版本源；首个正式版本为 `0.1.0`，当前发布准备版本为 `0.1.1`；
 - Windows x64、macOS Apple Silicon、Linux x64 使用同一 release/payload/manifest 契约；
 - payload 包含受控 Node 运行时、Pi、Core、TUI、Desktop（适用平台）和共同 CLI；
 - artifact inventory、release manifest、大小、SHA-256、平台下限和 revision 均有严格解析与校验；
