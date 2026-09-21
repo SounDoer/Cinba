@@ -2,7 +2,7 @@
 
 日期：2026-09-21
 
-状态：待实施
+状态：阶段 0—5 已完成；阶段 6 已完成只读盘点和候选上传，等待 `cinba` 用户操作权限
 
 对应规格：`docs/specs/2026-09-17-cinba-sync-product-experience.md`
 
@@ -25,6 +25,26 @@ Cinba 产品入口创建、配置、运行和删除的本机 Sync Host，并首�
 
 这份计划不实施 Tailscale、Caddy、Nginx、DNS、TLS、防火墙、无密码管理端、Desktop 图形入口或新的
 自动更新机制。
+
+## 2026-09-21 实施进度
+
+- Host 配置、受保护 bootstrap、跨平台 manager、正式 CLI 和 TUI 管理入口已经实施；CLI 与 TUI
+  共用 `installed-sync-host` manager，不再保留两套创建/删除编排；
+- 真实 Core + Sync 子进程已经覆盖 `create → bootstrap → configure → status → delete`，Windows
+  payload 也已实际执行包内 `version/help/sync status`、Core 与 Web 烟测；
+- `npm run check` 通过：1109 个单元测试中 1106 通过、3 个按平台跳过，12 个 E2E 全部通过，三端
+  Web 构建通过；
+- Linux Headless candidate 已在干净 Node 24 容器中构建，bundle 自检完成隔离安装与启动；revision 为
+  `8a0201b1d23a2cebad4870a2efc51d0266ca260c`，artifact SHA-256 为
+  `7b6797ea4472cae8aee6cc107d37723d00d16aeb3cf3b94c06392fbd695e0e38`；
+- 同一 artifact 已在第二个干净 Linux 容器中执行包内 `version`、`help` 和
+  `sync status --json`，并上传到 VPS 的 `/home/xichen/cinba-staging-8a0201b1/`；远端重算 digest 一致，
+  尚未安装；
+- VPS 只读盘点确认：`cinba` 用户 linger 已启用；旧 Core/Sync 仍从 `/home/cinba/current` 源码链运行，
+  且只监听 `127.0.0.1:4517/4518`；Caddy 与 Tailscale active，必须保留；
+- 当前 SSH key 只能登录 `xichen`，不能登录 `cinba`，且 `xichen` 没有免密 sudo。阶段 6 的旧数据
+  inventory、服务停止、隔离移动和正式安装必须等用户提供一次 `cinba` 登录或等价的受限提权入口，
+  不能绕过该权限边界。
 
 ## 已确认的技术事实
 
