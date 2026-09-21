@@ -20,6 +20,11 @@ function view(state: CoreSyncState): CoreSyncView {
   };
 }
 
+function send(component: Component | undefined, data: string): void {
+  assert.ok(component && "handleInput" in component);
+  (component as Component & { handleInput(data: string): void }).handleInput(data);
+}
+
 test("Local, pending, online, stale, and revoked states remain explicit", () => {
   for (const state of ["disconnected", "pending", "online", "stale", "revoked"] as const) {
     assert.match(describeCoreSync(view(state)).join("\n"), new RegExp(`Sync ${state}`));
@@ -82,4 +87,44 @@ test("opening Sync separates This Core from the local Sync Host", async () => {
   assert.match(rendered, /Cinba Sync/);
   assert.match(rendered, /This Core/);
   assert.match(rendered, /Sync Host on this device.*not created/);
+});
+
+test("creating a Host explains Settings initialization and keeps Credentials local", async () => {
+  let interaction: Component | undefined;
+  const coreView = view("disconnected");
+  const flow = new SyncFlow(
+    {
+      status: async () => coreView,
+      cancelEnrollment: async () => ({ version: 1, accepted: true }),
+      syncNow: async () => ({ version: 1, accepted: true }),
+      updateSources: async () => ({ version: 1, accepted: true }),
+      disconnect: async () => ({ version: 1, accepted: true }),
+      connect: async () => ({ version: 1, accepted: true }),
+      updateOverride: async () => ({ version: 1, accepted: true }),
+    },
+    {
+      append: () => undefined,
+      showInteraction: (component) => {
+        interaction = component;
+      },
+      showPrompt: () => undefined,
+      requestRender: () => undefined,
+      showNotice: () => undefined,
+    },
+    {
+      inspect: async () => ({ schemaVersion: 1, state: "not-created" }),
+      create: async () => ({ status: { schemaVersion: 1, state: "not-created" } }),
+    },
+  );
+  await flow.open();
+
+  send(interaction, "\x1b[B");
+  send(interaction, "\r");
+  send(interaction, "\x1b[B");
+  send(interaction, "\r");
+
+  const rendered = interaction?.render(80).join("\n") ?? "";
+  assert.match(rendered, /current Settings/i);
+  assert.match(rendered, /Credentials stay/i);
+  assert.match(rendered, /local/i);
 });

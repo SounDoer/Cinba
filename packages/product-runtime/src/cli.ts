@@ -30,6 +30,11 @@ import {
 } from "./managed-services.ts";
 import { readProductRelease } from "./release.ts";
 import {
+  type ProductProtocolIdentity,
+  type ProductServiceComponent,
+  type ProductServiceProcess,
+} from "./product-service.ts";
+import {
   bootstrapManagedSyncHost,
   createManagedSyncControl,
   createManagedSyncControlConfig,
@@ -69,12 +74,7 @@ export type ProductCommand =
   | { type: "version" }
   | { type: "help" };
 
-export type ProductServiceComponent = "core" | "sync";
-type ProductProtocolIdentity = {
-  version: string;
-  revision: string;
-  protocolVersion: number;
-};
+export type { ProductServiceComponent, ProductServiceProcess } from "./product-service.ts";
 
 export type ProductCliDependencies = {
   readRelease: typeof readProductRelease;
@@ -87,14 +87,6 @@ export type ProductCliDependencies = {
   setSyncHostMode: typeof setProductSyncHostMode;
   writeOutput: (output: string) => void;
   executeCommand?: (command: ProductCommand) => Promise<void>;
-};
-
-export type ProductServiceProcess = {
-  component: ProductServiceComponent;
-  entry: string;
-  workingDirectory: string;
-  environment: NodeJS.ProcessEnv;
-  controlStateDirectory?: string;
 };
 
 const HELP = `Cinba

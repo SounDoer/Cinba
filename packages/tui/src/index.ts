@@ -16,6 +16,9 @@
 // directory and opens the most recent, or starts one. Do not launch it through
 // npm --workspace, which would set the directory to the package's own.
 
+import { dirname, resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import {
   type Component,
   Container,
@@ -46,6 +49,7 @@ import {
 } from "@cinba/contract";
 import { CoreClient, CoreSyncControlClient } from "@cinba/core-client";
 import { parseInstalledProductLauncher } from "@cinba/installer";
+import { createInstalledSyncHostManagerFromPayload } from "@cinba/product-runtime/installed-sync-host";
 import { BLUE, BOLD, DIM, GREEN, MAGENTA, RED, RESET, SELECT_THEME, YELLOW } from "./theme.ts";
 import { InteractionOwner } from "./interaction-owner.ts";
 import { Transcript } from "./transcript.ts";
@@ -222,6 +226,11 @@ const promptInput = new PromptInput();
 const statusBar = new StatusBar();
 const interactionOwner = new InteractionOwner();
 const installedProductLauncher = parseInstalledProductLauncher(process.env);
+const installedSyncHostManager = installedProductLauncher
+  ? createInstalledSyncHostManagerFromPayload(
+      resolvePath(dirname(fileURLToPath(import.meta.url)), ".."),
+    )
+  : undefined;
 const updateInstallAbort = new AbortController();
 const updateHandoffController = new TuiUpdateHandoffController();
 const tuiLocalCommands = createTuiLocalCommands(installedProductLauncher !== undefined);
@@ -805,13 +814,17 @@ function runTuiCommand(name: string): void {
   }
 }
 
-const syncFlow = new SyncFlow(new CoreSyncControlClient(SERVER_URL), {
-  append: (line) => transcript.append(line),
-  showInteraction: showFlowInteraction,
-  showPrompt: showFlowPrompt,
-  requestRender: () => tui.requestRender(),
-  showNotice: (text) => applyAction({ type: "notice", text }),
-});
+const syncFlow = new SyncFlow(
+  new CoreSyncControlClient(SERVER_URL),
+  {
+    append: (line) => transcript.append(line),
+    showInteraction: showFlowInteraction,
+    showPrompt: showFlowPrompt,
+    requestRender: () => tui.requestRender(),
+    showNotice: (text) => applyAction({ type: "notice", text }),
+  },
+  installedSyncHostManager,
+);
 
 const providerFlow = new ProviderFlow(coreClient, {
   append: (line) => transcript.append(line),

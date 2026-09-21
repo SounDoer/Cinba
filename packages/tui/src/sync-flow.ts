@@ -35,6 +35,10 @@ export type SyncFlowCoreClient = Pick<
 
 export type SyncHostManager = {
   inspect(): Promise<ProductSyncHostStatus>;
+  create?(publicOrigin?: string): Promise<{
+    status: ProductSyncHostStatus;
+    setupCode?: string;
+  }>;
 };
 
 const SOURCES: { value: string; label: string; sources: CoreSyncSources }[] = [
@@ -209,6 +213,9 @@ export class SyncFlow {
     }
     const picker = new ChoicePicker("Sync Host on this device", [
       { value: "status", label: "View Host status" },
+      ...(this.#hostStatus.state === "not-created" && this.#hostManager.create
+        ? [{ value: "create", label: "Create Sync Host on this device" }]
+        : []),
     ]);
     picker.onAnswer = (choice) => {
       this.#host.showPrompt();
@@ -219,8 +226,63 @@ export class SyncFlow {
         }
         this.#host.requestRender();
       }
+      if (choice === "create") {
+        this.#confirmHostCreation();
+      }
     };
     this.#host.showInteraction(picker);
+  }
+
+  #confirmHostCreation(): void {
+    const picker = new ChoicePicker(
+      "Create Sync Host — current Settings initialize Shared Settings; Credentials stay local",
+      [
+        {
+          value: "continue",
+          label: "Continue",
+          description: "API Credentials are not uploaded.",
+        },
+      ],
+    );
+    picker.onAnswer = (choice) => {
+      this.#host.showPrompt();
+      if (choice === "continue") {
+        this.#askHostPublicOrigin();
+      }
+    };
+    this.#host.showInteraction(picker);
+  }
+
+  #askHostPublicOrigin(): void {
+    const input = new TextInput("Public HTTPS origin (leave blank for this device only)");
+    input.onAnswer = (publicOrigin) => {
+      this.#host.showPrompt();
+      void this.#createHost(publicOrigin);
+    };
+    this.#host.showInteraction(input);
+  }
+
+  async #createHost(publicOrigin: string | undefined): Promise<void> {
+    if (this.#busy || !this.#hostManager.create) {
+      return;
+    }
+    this.#busy = true;
+    try {
+      const creation = await this.#hostManager.create(publicOrigin);
+      this.#hostStatus = creation.status;
+      this.#view = await this.#client.status();
+      this.#host.showNotice("Sync Host created");
+      if (creation.setupCode) {
+        this.#host.append(`Setup Code: ${creation.setupCode}`);
+        this.#host.requestRender();
+      }
+    } catch (error) {
+      this.#host.showNotice(
+        error instanceof Error ? error.message : "The Sync Host could not be created",
+      );
+    } finally {
+      this.#busy = false;
+    }
   }
 
   #appendStatus(): void {

@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./automatic-update": "./src/automatic-update.ts",
+    "./installed-sync-host": "./src/installed-sync-host.ts",
     "./sync-host-manager": "./src/sync-host-manager.ts"
   },
   "scripts": {
