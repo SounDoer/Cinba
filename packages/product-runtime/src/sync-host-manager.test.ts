@@ -52,6 +52,11 @@ test("human Host status describes a created remote Host without inventing health
       mode: "disabled",
       running: false,
       healthy: null,
+      setupState: null,
+      settingsRevision: null,
+      syncRevision: null,
+      connectedCoreCount: null,
+      pendingEnrollmentCount: null,
     }),
     [
       "Cinba Sync Host: created",
@@ -73,6 +78,11 @@ test("human Host status reports local-only availability and known health", () =>
       mode: "background",
       running: true,
       healthy: true,
+      setupState: "ready",
+      settingsRevision: 7,
+      syncRevision: 9,
+      connectedCoreCount: 2,
+      pendingEnrollmentCount: 1,
     }),
     [
       "Cinba Sync Host: created",
@@ -81,6 +91,11 @@ test("human Host status reports local-only availability and known health", () =>
       "  Mode: background",
       "  Service: running",
       "  Health: healthy",
+      "  Setup: ready",
+      "  Connected Cores: 2",
+      "  Pending enrollments: 1",
+      "  Settings revision: 7",
+      "  Sync revision: 9",
     ].join("\n"),
   );
 });
@@ -333,6 +348,11 @@ test("configuring a stopped Host atomically updates only its public origin", asy
       mode: "disabled",
       running: false,
       healthy: null,
+      setupState: null,
+      settingsRevision: null,
+      syncRevision: null,
+      connectedCoreCount: null,
+      pendingEnrollmentCount: null,
     },
   );
   assert.deepEqual(
@@ -675,6 +695,11 @@ test("a committed Host changes mode through the shared platform service adapter"
       mode: "background",
       running: true,
       healthy: true,
+      setupState: null,
+      settingsRevision: null,
+      syncRevision: null,
+      connectedCoreCount: null,
+      pendingEnrollmentCount: null,
     },
   );
 });
@@ -726,5 +751,66 @@ test("a committed Host reports its origin, availability, and lifecycle", async (
     mode: "disabled",
     running: false,
     healthy: null,
+    setupState: null,
+    settingsRevision: null,
+    syncRevision: null,
+    connectedCoreCount: null,
+    pendingEnrollmentCount: null,
   });
+});
+
+test("a running committed Host aggregates its non-sensitive control-plane status", async (t) => {
+  const root = temporaryDirectory("cinba-sync-host-running-status-", t);
+  const { options, paths } = nativeLayout(root);
+  await mkdir(paths.syncDataDirectory, { recursive: true });
+  await writeSyncHostConfig(
+    syncHostConfigPath(paths),
+    createSyncHostConfig("https://sync.example.com"),
+  );
+  const control = createManagedSyncControlConfig(paths.stateDirectory);
+  await createManagedSyncControl({ config: control, pid: process.pid, token: "manager-token" });
+
+  assert.deepEqual(
+    await inspectProductSyncHost({
+      ...options,
+      adapter: {
+        ...stoppedServiceAdapter(),
+        inspect: async () => ({ registered: true, running: true }),
+      },
+      verifyHealth: async () => undefined,
+      syncControl: {
+        probeHealth: async () => true,
+        processIsAlive: () => true,
+        requestStatus: async () => ({
+          status: "ok",
+          pid: process.pid,
+          activeRequestCount: 0,
+          safeToStop: true,
+          draining: false,
+        }),
+        requestHostStatus: async () => ({
+          serverId: "sync-server-1",
+          setupState: "setup-required",
+          settingsRevision: 3,
+          syncRevision: 5,
+          connectedCoreCount: 2,
+          pendingEnrollmentCount: 1,
+        }),
+      },
+    }),
+    {
+      schemaVersion: 1,
+      state: "created",
+      publicOrigin: "https://sync.example.com",
+      availability: "remote-https",
+      mode: "disabled",
+      running: true,
+      healthy: true,
+      setupState: "setup-required",
+      settingsRevision: 3,
+      syncRevision: 5,
+      connectedCoreCount: 2,
+      pendingEnrollmentCount: 1,
+    },
+  );
 });

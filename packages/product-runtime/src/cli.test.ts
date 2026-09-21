@@ -144,12 +144,17 @@ test("Sync status JSON prints exactly one machine-readable status", async () => 
       mode: "background",
       running: true,
       healthy: true,
+      setupState: "ready",
+      settingsRevision: 3,
+      syncRevision: 5,
+      connectedCoreCount: 2,
+      pendingEnrollmentCount: 1,
     }),
     writeOutput: (line) => output.push(line),
   });
 
   assert.deepEqual(output, [
-    '{"schemaVersion":1,"state":"created","publicOrigin":"https://sync.example.com","availability":"remote-https","mode":"background","running":true,"healthy":true}',
+    '{"schemaVersion":1,"state":"created","publicOrigin":"https://sync.example.com","availability":"remote-https","mode":"background","running":true,"healthy":true,"setupState":"ready","settingsRevision":3,"syncRevision":5,"connectedCoreCount":2,"pendingEnrollmentCount":1}',
   ]);
 });
 
@@ -172,6 +177,11 @@ test("Sync configure updates the Host origin and prints its resulting status", a
           mode: "disabled",
           running: false,
           healthy: null,
+          setupState: null,
+          settingsRevision: null,
+          syncRevision: null,
+          connectedCoreCount: null,
+          pendingEnrollmentCount: null,
         };
       },
       writeOutput: (line) => output.push(line),
@@ -206,6 +216,11 @@ test("Sync mode changes only a committed Host through the Host manager", async (
         mode,
         running: true,
         healthy: true,
+        setupState: null,
+        settingsRevision: null,
+        syncRevision: null,
+        connectedCoreCount: null,
+        pendingEnrollmentCount: null,
       };
     },
     writeOutput: (line) => output.push(line),
@@ -232,6 +247,11 @@ test("Sync create prints its one-time Setup Code only through the explicit escap
           mode: "on-demand",
           running: false,
           healthy: null,
+          setupState: null,
+          settingsRevision: null,
+          syncRevision: null,
+          connectedCoreCount: null,
+          pendingEnrollmentCount: null,
         },
         setupCode: "setup-once",
       };

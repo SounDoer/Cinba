@@ -16,7 +16,9 @@ import {
 } from "./managed-services.ts";
 import {
   type LocalSyncControlStatus,
+  type ManagedSyncHostStatus,
   createManagedSyncControlConfig,
+  inspectManagedSyncHost,
   stopManagedSyncControl,
 } from "./sync-control.ts";
 
@@ -27,6 +29,10 @@ export type ProductSyncHostOptions = Omit<ProductManagedServiceOptions, "compone
     probeHealth?: (baseUrl: string) => Promise<boolean>;
     processIsAlive?: (pid: number) => boolean;
     requestStatus?: (baseUrl: string, token: string) => Promise<LocalSyncControlStatus | undefined>;
+    requestHostStatus?: (
+      baseUrl: string,
+      token: string,
+    ) => Promise<ManagedSyncHostStatus | undefined>;
     requestStop?: (
       baseUrl: string,
       token: string,
@@ -52,6 +58,11 @@ export type ProductSyncHostStatus =
       mode: ServiceMode | "unknown";
       running: boolean;
       healthy: boolean | null;
+      setupState: ManagedSyncHostStatus["setupState"] | null;
+      settingsRevision: number | null;
+      syncRevision: number | null;
+      connectedCoreCount: number | null;
+      pendingEnrollmentCount: number | null;
     };
 
 export type ProductSyncHostCreateRuntime = {
@@ -332,6 +343,17 @@ export async function inspectProductSyncHost(
     if (service.state === "not-created" || service.state === "not-installed") {
       throw new Error("Sync Host service state is inconsistent with committed storage");
     }
+    let hostStatus: ManagedSyncHostStatus | undefined;
+    if (service.running && service.healthy === true) {
+      try {
+        hostStatus = await inspectManagedSyncHost({
+          config: createManagedSyncControlConfig(paths.stateDirectory),
+          ...options.syncControl,
+        });
+      } catch {
+        // Lifecycle status remains useful while the protected control plane is unavailable.
+      }
+    }
     return {
       schemaVersion: 1,
       state: "created",
@@ -343,6 +365,11 @@ export async function inspectProductSyncHost(
       mode: service.state,
       running: service.running,
       healthy: service.healthy,
+      setupState: hostStatus?.setupState ?? null,
+      settingsRevision: hostStatus?.settingsRevision ?? null,
+      syncRevision: hostStatus?.syncRevision ?? null,
+      connectedCoreCount: hostStatus?.connectedCoreCount ?? null,
+      pendingEnrollmentCount: hostStatus?.pendingEnrollmentCount ?? null,
     };
   }
   if (storage.state === "not-created") {
@@ -368,6 +395,21 @@ export function formatProductSyncHostStatus(status: ProductSyncHostStatus): stri
   ];
   if (status.healthy !== null) {
     lines.push(`  Health: ${status.healthy ? "healthy" : "unhealthy"}`);
+  }
+  if (status.setupState !== null) {
+    lines.push(`  Setup: ${status.setupState === "setup-required" ? "required" : "ready"}`);
+  }
+  if (status.connectedCoreCount !== null) {
+    lines.push(`  Connected Cores: ${status.connectedCoreCount}`);
+  }
+  if (status.pendingEnrollmentCount !== null) {
+    lines.push(`  Pending enrollments: ${status.pendingEnrollmentCount}`);
+  }
+  if (status.settingsRevision !== null) {
+    lines.push(`  Settings revision: ${status.settingsRevision}`);
+  }
+  if (status.syncRevision !== null) {
+    lines.push(`  Sync revision: ${status.syncRevision}`);
   }
   return lines.join("\n");
 }
