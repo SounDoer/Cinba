@@ -5,6 +5,7 @@ import { Arch, type Configuration, Platform, build as buildElectron } from "elec
 import { build } from "esbuild";
 import { parsePayloadRelease, requireProductTarget } from "@cinba/installer";
 import { buildReleaseBundle } from "./build-release-bundle.ts";
+import { verifyMacosApplicationSignature } from "./verify-macos-application.ts";
 
 const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const MACOS_INSTALLER_DIST = join(REPOSITORY_ROOT, "dist", "macos-installer");
@@ -36,12 +37,22 @@ export function createMacosArtifactConfiguration(options: {
     mac: {
       appId: "com.soundoer.cinba.installer",
       category: "public.app-category.developer-tools",
-      identity: null,
+      // A release certificate is intentionally optional for this personal build, but Electron's
+      // nested frameworks still need one coherent signature. Skipping signing leaves their linker
+      // signatures in a bundle that macOS rejects before the installer bootstrap can run.
+      identity: "-",
+      hardenedRuntime: false,
+      // The release bundle contains the already signed installed Desktop. Re-signing its nested
+      // frameworks as loose resources breaks their bundle topology; the outer signature still
+      // seals their bytes as installer resources.
+      signIgnore: "Contents/Resources/cinba-bundle/desktop/",
       artifactName: `Cinba-${options.version}-macos-arm64.\${ext}`,
     },
     dmg: {
       sign: false,
-      contents: [{ x: 220, y: 200, type: "file" }],
+      backgroundColor: "#f4f4f4",
+      window: { width: 540, height: 380 },
+      contents: [{ x: 270, y: 180, type: "file" }],
     },
   };
 }
@@ -101,6 +112,7 @@ export async function buildMacosArtifact(): Promise<string> {
       outputDirectory,
     }),
   });
+  await verifyMacosApplicationSignature(join(outputDirectory, "mac-arm64", "Cinba.app"));
   if (!outputs.includes(artifactPath)) {
     throw new Error("macOS artifact build did not produce the expected DMG");
   }

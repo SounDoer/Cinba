@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { temporaryDirectory } from "@cinba/test-support";
@@ -92,6 +92,59 @@ test("generates a sorted inventory without hashing the inventory file itself", a
     valid: true,
     problems: [],
   });
+});
+
+test("records and verifies safe relative symlinks without following them", async (t) => {
+  const root = temporaryDirectory("cinba-inventory-links-", t);
+  await mkdir(join(root, "Framework.framework", "Versions", "A"), { recursive: true });
+  await writeFile(join(root, "Framework.framework", "Versions", "A", "Framework"), "binary");
+  await symlink("A", join(root, "Framework.framework", "Versions", "Current"));
+  await symlink("Versions/Current/Framework", join(root, "Framework.framework", "Framework"));
+
+  const generated = await createArtifactInventory(root, {
+    version: "0.1.0",
+    revision: REVISION,
+    target: "macos-arm64",
+  });
+  assert.deepEqual(
+    generated.files.filter((entry) => "target" in entry),
+    [
+      { path: "Framework.framework/Framework", target: "Versions/Current/Framework" },
+      { path: "Framework.framework/Versions/Current", target: "A" },
+    ],
+  );
+  assert.deepEqual(await verifyArtifactInventory(root, generated), {
+    valid: true,
+    problems: [],
+  });
+
+  await symlink("B", join(root, "replacement"));
+  await rm(join(root, "Framework.framework", "Versions", "Current"));
+  await rename(join(root, "replacement"), join(root, "Framework.framework", "Versions", "Current"));
+  assert.deepEqual(await verifyArtifactInventory(root, generated), {
+    valid: false,
+    problems: [{ path: "Framework.framework/Versions/Current", reason: "target" }],
+  });
+});
+
+test("rejects absolute, escaping, and dangling symlinks", async (t) => {
+  for (const [name, target] of [
+    ["absolute", "/tmp"],
+    ["escaping", "../outside"],
+    ["dangling", "missing"],
+  ] as const) {
+    const root = temporaryDirectory(`cinba-inventory-${name}-`, t);
+    await writeFile(join(root, "file"), "file");
+    await symlink(target, join(root, "link"));
+    await assert.rejects(
+      createArtifactInventory(root, {
+        version: "0.1.0",
+        revision: REVISION,
+        target: "macos-arm64",
+      }),
+      name === "dangling" ? /dangling symlink/ : /unsafe symlink/,
+    );
+  }
 });
 
 test("reports tampered, missing, and unexpected files without trusting names from disk", async (t) => {

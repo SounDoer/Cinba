@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { Arch, type Configuration, Platform, build as buildElectron } from "electron-builder";
 import { build } from "esbuild";
 import { requireProductTarget } from "@cinba/installer";
+import { verifyMacosApplicationSignature } from "./verify-macos-application.ts";
 
 const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const DESKTOP_DIST = join(REPOSITORY_ROOT, "dist", "desktop");
@@ -43,7 +44,8 @@ export function createDesktopBuildConfiguration(options: {
     mac: {
       appId: "com.soundoer.cinba",
       category: "public.app-category.developer-tools",
-      identity: null,
+      identity: "-",
+      hardenedRuntime: false,
     },
   };
 }
@@ -99,13 +101,14 @@ export async function buildDesktopApplication(): Promise<string[]> {
     publish: "never",
     config: createDesktopBuildConfiguration({ version, outputDirectory }),
   });
-  return outputs.length > 0
-    ? outputs
-    : [
-        target === "windows-x64"
-          ? join(outputDirectory, "win-unpacked")
-          : join(outputDirectory, "mac-arm64", "Cinba.app"),
-      ];
+  const fallbackOutput =
+    target === "windows-x64"
+      ? join(outputDirectory, "win-unpacked")
+      : join(outputDirectory, "mac-arm64", "Cinba.app");
+  if (target === "macos-arm64") {
+    await verifyMacosApplicationSignature(fallbackOutput);
+  }
+  return outputs.length > 0 ? outputs : [fallbackOutput];
 }
 
 if (import.meta.main) {

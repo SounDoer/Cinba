@@ -14,5 +14,6 @@ test("Desktop packaging is a stable shell without an embedded release or updater
   assert.equal(config.extraResources, undefined);
   assert.equal(config.electronDist, undefined);
   assert.equal(config.win?.signExecutable, false);
-  assert.equal(config.mac?.identity, null);
+  assert.equal(config.mac?.identity, "-");
+  assert.equal(config.mac?.hardenedRuntime, false);
 });

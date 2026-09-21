@@ -11,6 +11,7 @@ import { buildDesktopApplication } from "./build-desktop-app.ts";
 import { buildProductLauncher } from "./build-product-launcher.ts";
 import { buildProductPayload } from "./build-product-payload.ts";
 import { verifyBundleInstallation } from "./verify-bundle-installation.ts";
+import { verifyMacosApplicationSignature } from "./verify-macos-application.ts";
 import { renderBundledLinuxInstaller } from "./linux-install-scripts.ts";
 
 const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -38,7 +39,16 @@ export async function buildReleaseBundle(): Promise<string> {
     const desktopDestination =
       target === "macos-arm64" ? join(root, "desktop", "Cinba.app") : join(root, "desktop");
     await mkdir(dirname(desktopDestination), { recursive: true });
-    await cp(desktopSource, desktopDestination, { recursive: true, dereference: true });
+    // Electron frameworks use versioned symlinks. Dereferencing them duplicates the target trees,
+    // makes the framework layout ambiguous to codesign, and leaves the installed Desktop invalid.
+    await cp(desktopSource, desktopDestination, {
+      recursive: true,
+      dereference: target !== "macos-arm64",
+      verbatimSymlinks: target === "macos-arm64",
+    });
+    if (target === "macos-arm64") {
+      await verifyMacosApplicationSignature(desktopDestination);
+    }
   } else {
     const installer = join(root, "install.sh");
     await writeFile(installer, renderBundledLinuxInstaller(), { mode: 0o755 });

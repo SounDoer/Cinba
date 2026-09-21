@@ -54,7 +54,7 @@ ${changesZh}
 
 **Windows ${windowsVersion} 或更高版本（x64）**：下载并运行 \`${windowsArtifact}\`。Cinba 未签名，SmartScreen 阻止时选择“更多信息”→“仍要运行”。安装仅作用于当前用户，不需要管理员权限。
 
-**macOS ${macosMinimum.version} 或更高版本（Apple Silicon）**：下载并打开 \`${macosArtifact}\`，双击其中的 Cinba，按提示安装到 \`~/Applications\`。Cinba 未签名也未 notarize，若 Gatekeeper 阻止首次打开，在“系统设置 → 隐私与安全性”中选择“仍要打开”，或执行：
+**macOS ${macosMinimum.version} 或更高版本（Apple Silicon）**：下载并打开 \`${macosArtifact}\`，双击其中的 Cinba，按提示安装到 \`~/Applications\`。Cinba 使用 ad-hoc 签名但未经 notarize，若 Gatekeeper 阻止首次打开，在“系统设置 → 隐私与安全性”中选择“仍要打开”，或执行：
 
 \`\`\`sh
 xattr -dr com.apple.quarantine "$HOME/Applications/Cinba.app"
@@ -82,7 +82,7 @@ ${changesEn}
 
 **Windows ${windowsVersion} or later (x64)**: download and run \`${windowsArtifact}\`. Cinba is unsigned; if SmartScreen blocks it, choose **More info** → **Run anyway**. Installation is per-user and needs no administrator privileges.
 
-**macOS ${macosMinimum.version} or later (Apple Silicon)**: download and open \`${macosArtifact}\`, double-click Cinba inside it, and confirm the install into \`~/Applications\`. Cinba is neither signed nor notarized; if Gatekeeper blocks the first launch, allow it under **System Settings → Privacy & Security**, or run:
+**macOS ${macosMinimum.version} or later (Apple Silicon)**: download and open \`${macosArtifact}\`, double-click Cinba inside it, and confirm the install into \`~/Applications\`. Cinba is ad-hoc signed but not notarized; if Gatekeeper blocks the first launch, allow it under **System Settings → Privacy & Security**, or run:
 
 \`\`\`sh
 xattr -dr com.apple.quarantine "$HOME/Applications/Cinba.app"

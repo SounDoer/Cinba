@@ -31,8 +31,10 @@ export {
 } from "./inventory.ts";
 export type {
   ArtifactInventory,
+  InventoryEntry,
   InventoryIdentity,
   InventoryFile,
+  InventoryLink,
   InventoryProblem,
   InventoryVerification,
 } from "./inventory.ts";

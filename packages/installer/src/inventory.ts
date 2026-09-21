@@ -1,7 +1,7 @@
 import { createReadStream } from "node:fs";
-import { lstat, readdir } from "node:fs/promises";
+import { lstat, readdir, readlink, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { type ProductTarget, isProductTarget } from "./platform.ts";
 
 export type InventoryFile = {
@@ -11,18 +11,34 @@ export type InventoryFile = {
   executable: boolean;
 };
 
+export type InventoryLink = {
+  path: string;
+  target: string;
+};
+
+export type InventoryEntry = InventoryFile | InventoryLink;
+
 export type ArtifactInventory = {
   schemaVersion: 1;
   product: "Cinba";
   version: string;
   revision: string;
   target: ProductTarget;
-  files: InventoryFile[];
+  files: InventoryEntry[];
 };
 
 export type InventoryProblem = {
   path: string;
-  reason: "missing" | "unexpected" | "not-file" | "symlink" | "size" | "sha256" | "executable";
+  reason:
+    | "missing"
+    | "unexpected"
+    | "not-file"
+    | "not-symlink"
+    | "symlink"
+    | "target"
+    | "size"
+    | "sha256"
+    | "executable";
 };
 
 export type InventoryVerification = {
@@ -67,9 +83,29 @@ function safeRelativePath(value: unknown, context: string): string {
   return value;
 }
 
-function parseFile(value: unknown, index: number): InventoryFile {
+function safeLinkTarget(value: unknown, context: string): string {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.includes("\\") ||
+    value.includes("\0") ||
+    isAbsolute(value)
+  ) {
+    throw new Error(`${context} must be a relative POSIX symlink target`);
+  }
+  return value;
+}
+
+function parseEntry(value: unknown, index: number): InventoryEntry {
   const context = `inventory files[${index}]`;
   const parsed = record(value, context);
+  if (Object.hasOwn(parsed, "target")) {
+    exactKeys(parsed, ["path", "target"], context);
+    return {
+      path: safeRelativePath(parsed.path, `${context}.path`),
+      target: safeLinkTarget(parsed.target, `${context}.target`),
+    };
+  }
   exactKeys(parsed, ["path", "size", "sha256", "executable"], context);
   const path = safeRelativePath(parsed.path, `${context}.path`);
   if (!Number.isSafeInteger(parsed.size) || (parsed.size as number) < 0) {
@@ -114,7 +150,7 @@ export function parseArtifactInventory(value: unknown): ArtifactInventory {
   if (!Array.isArray(parsed.files) || parsed.files.length === 0) {
     throw new Error("artifact inventory files must be a non-empty array");
   }
-  const files = parsed.files.map(parseFile);
+  const files = parsed.files.map(parseEntry);
   for (let index = 1; index < files.length; index += 1) {
     if (files[index - 1]!.path >= files[index]!.path) {
       throw new Error("artifact inventory files must be unique and sorted by path");
@@ -138,27 +174,42 @@ async function sha256(path: string): Promise<string> {
   return hash.digest("hex");
 }
 
-async function collectFiles(
+type CollectedEntry = { path: string; kind: "file" | "symlink" };
+
+async function collectEntries(
   root: string,
   directory: string,
   problems: InventoryProblem[],
-): Promise<string[]> {
-  const files: string[] = [];
+): Promise<CollectedEntry[]> {
+  const collected: CollectedEntry[] = [];
   const entries = await readdir(directory, { withFileTypes: true });
   for (const entry of entries) {
     const absolute = resolve(directory, entry.name);
     const path = relative(root, absolute).split(sep).join("/");
     if (entry.isSymbolicLink()) {
-      problems.push({ path, reason: "symlink" });
+      collected.push({ path, kind: "symlink" });
     } else if (entry.isDirectory()) {
-      files.push(...(await collectFiles(root, absolute, problems)));
+      collected.push(...(await collectEntries(root, absolute, problems)));
     } else if (entry.isFile()) {
-      files.push(path);
+      collected.push({ path, kind: "file" });
     } else {
       problems.push({ path, reason: "not-file" });
     }
   }
-  return files;
+  return collected;
+}
+
+function linkStaysInside(root: string, linkPath: string, target: string): boolean {
+  const resolvedTarget = resolve(dirname(linkPath), target);
+  const fromRoot = relative(root, resolvedTarget);
+  return fromRoot !== "" && fromRoot !== ".." && !fromRoot.startsWith(`..${sep}`);
+}
+
+function comparePaths(left: CollectedEntry, right: CollectedEntry): number {
+  if (left.path < right.path) {
+    return -1;
+  }
+  return left.path > right.path ? 1 : 0;
 }
 
 export async function createArtifactInventory(
@@ -169,17 +220,32 @@ export async function createArtifactInventory(
   const root = resolve(rootDirectory);
   const inventoryFileName = options.inventoryFileName ?? "inventory.json";
   const structuralProblems: InventoryProblem[] = [];
-  const paths = await collectFiles(root, root, structuralProblems);
+  const entries = await collectEntries(root, root, structuralProblems);
   if (structuralProblems.length > 0) {
     const first = structuralProblems[0]!;
     throw new Error(`artifact contains unsupported ${first.reason} entry at ${first.path}`);
   }
-  const files: InventoryFile[] = [];
-  for (const filePath of paths.filter((candidate) => candidate !== inventoryFileName).toSorted()) {
-    const absolute = resolve(root, ...filePath.split("/"));
+  const files: InventoryEntry[] = [];
+  for (const entry of entries
+    .filter((candidate) => candidate.path !== inventoryFileName)
+    .toSorted(comparePaths)) {
+    const absolute = resolve(root, ...entry.path.split("/"));
+    if (entry.kind === "symlink") {
+      const target = await readlink(absolute);
+      if (!linkStaysInside(root, absolute, target)) {
+        throw new Error(`artifact contains unsafe symlink entry at ${entry.path}`);
+      }
+      try {
+        await stat(absolute);
+      } catch {
+        throw new Error(`artifact contains dangling symlink entry at ${entry.path}`);
+      }
+      files.push({ path: entry.path, target });
+      continue;
+    }
     const status = await lstat(absolute);
     files.push({
-      path: filePath,
+      path: entry.path,
       size: status.size,
       sha256: await sha256(absolute),
       executable: identity.target === "windows-x64" ? false : (status.mode & 0o111) !== 0,
@@ -202,7 +268,8 @@ export async function verifyArtifactInventory(
   const inventoryFileName = options.inventoryFileName ?? "inventory.json";
   const enforceExecutable = options.enforceExecutable ?? inventory.target !== "windows-x64";
   const problems: InventoryProblem[] = [];
-  const actualPaths = new Set(await collectFiles(root, root, problems));
+  const actualEntries = await collectEntries(root, root, problems);
+  const actualPaths = new Set(actualEntries.map((entry) => entry.path));
   actualPaths.delete(inventoryFileName);
   const expectedPaths = new Set(inventory.files.map((file) => file.path));
 
@@ -219,6 +286,21 @@ export async function verifyArtifactInventory(
     }
     const absolute = resolve(root, ...expected.path.split("/"));
     const status = await lstat(absolute);
+    if ("target" in expected) {
+      if (!status.isSymbolicLink()) {
+        problems.push({ path: expected.path, reason: "not-symlink" });
+        continue;
+      }
+      const target = await readlink(absolute);
+      if (!linkStaysInside(root, absolute, target) || target !== expected.target) {
+        problems.push({ path: expected.path, reason: "target" });
+      }
+      continue;
+    }
+    if (status.isSymbolicLink()) {
+      problems.push({ path: expected.path, reason: "symlink" });
+      continue;
+    }
     if (!status.isFile()) {
       problems.push({ path: expected.path, reason: "not-file" });
       continue;

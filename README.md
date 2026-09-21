@@ -3,9 +3,9 @@
 Cinba is a personal AI coding agent built on [pi.dev](https://pi.dev/). One Core owns the agent
 state while Desktop, Web, and terminal clients connect through the same protocol.
 
-Cinba is personal, experimental software. Release artifacts are intentionally unsigned. Windows
-SmartScreen and macOS Gatekeeper may therefore require an explicit user decision before the first
-launch.
+Cinba is personal, experimental software. Release artifacts intentionally lack trusted publisher
+signatures. Windows SmartScreen and macOS Gatekeeper may therefore require an explicit user
+decision before the first launch.
 
 ## Install Cinba
 
@@ -25,8 +25,9 @@ current user's command path.
 Download `Cinba-X.Y.Z-macos-arm64.dmg` on an Apple Silicon Mac, open it, and run the Cinba installer
 inside. Cinba installs to `~/Applications/Cinba.app` for the current user.
 
-If Gatekeeper blocks the unsigned application, first verify that the DMG came from the selected
-GitHub Release, then allow it under **System Settings → Privacy & Security**, or run:
+The application is ad-hoc signed but not notarized. If Gatekeeper blocks it, first verify that the
+DMG came from the selected GitHub Release, then allow it under **System Settings → Privacy &
+Security**, or run:
 
 ```sh
 xattr -dr com.apple.quarantine "$HOME/Applications/Cinba.app"
