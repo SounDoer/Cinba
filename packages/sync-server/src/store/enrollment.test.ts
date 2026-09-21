@@ -88,6 +88,73 @@ test("approval delivers one Core credential once and stores only its salted hash
   );
 });
 
+test("local Host bootstrap initializes Settings and approves exactly one enrollment atomically", async (t) => {
+  const directory = temporaryDirectory("cinba-local-host-bootstrap-", t);
+  const store = createSyncStore(directory);
+  const selected = await store.createEnrollment(request("This Core", "local"));
+  const other = await store.createEnrollment(request("Other Core", "sync"));
+  const settings = {
+    version: 1 as const,
+    defaultModel: { provider: "deepseek", id: "deepseek-chat" },
+    webTools: { searchPrimary: "brave" as const },
+  };
+  const result = await store.bootstrapLocalHost({
+    enrollmentId: selected.enrollmentId,
+    enrollmentSecret: selected.enrollmentSecret,
+    settings,
+  });
+  assert.deepEqual(
+    await store.bootstrapLocalHost({
+      enrollmentId: selected.enrollmentId,
+      enrollmentSecret: selected.enrollmentSecret,
+      settings,
+    }),
+    result,
+  );
+  assert.deepEqual(store.settings(), {
+    version: 1,
+    settingsRevision: 1,
+    syncRevision: 1,
+    settings,
+  });
+  assert.equal(store.credentialStatuses().length, 0);
+  assert.equal(store.connectedCores().cores.length, 1);
+  assert.equal(store.connectedCores().cores[0]?.id, result.coreId);
+  assert.deepEqual(
+    store.pendingEnrollments().enrollments.map((enrollment) => enrollment.id),
+    [other.enrollmentId],
+  );
+  assert.equal(
+    (await store.enrollmentStatus(selected.enrollmentId, selected.enrollmentSecret)).status,
+    "approved",
+  );
+});
+
+test("local Host bootstrap rejects the wrong proof and any initialized authority", async (t) => {
+  const directory = temporaryDirectory("cinba-local-host-bootstrap-refused-", t);
+  const store = createSyncStore(directory);
+  const enrollment = await store.createEnrollment(request("This Core", "local"));
+  const settings = { version: 1 as const, webTools: { searchPrimary: "auto" as const } };
+  await assert.rejects(
+    store.bootstrapLocalHost({
+      enrollmentId: enrollment.enrollmentId,
+      enrollmentSecret: "wrong-secret",
+      settings,
+    }),
+    EnrollmentAuthenticationError,
+  );
+  await store.updateSettings(0, settings);
+  await assert.rejects(
+    store.bootstrapLocalHost({
+      enrollmentId: enrollment.enrollmentId,
+      enrollmentSecret: enrollment.enrollmentSecret,
+      settings,
+    }),
+    /already been initialized/,
+  );
+  assert.equal(store.connectedCores().cores.length, 0);
+});
+
 test("Core credentials are isolated, revocation is immediate, and Local cores never get secrets", async (t) => {
   const directory = temporaryDirectory("cinba-enrollment-", t);
   const store = createSyncStore(directory);

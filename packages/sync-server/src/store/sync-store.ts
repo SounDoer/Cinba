@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import {
   type CapabilitiesReport,
   type ConnectedCoreList,
@@ -75,6 +76,19 @@ export type SyncStoreOptions = {
   readOnly?: () => boolean;
 };
 
+export type LocalHostBootstrap = {
+  enrollmentId: string;
+  enrollmentSecret: string;
+  settings: SharedSettings;
+};
+
+export type LocalHostBootstrapResult = {
+  serverId: string;
+  coreId: string;
+  settingsRevision: number;
+  syncRevision: number;
+};
+
 export type SyncStore = {
   problem(): SyncStoreUnavailableError | undefined;
   serverId(): string;
@@ -89,6 +103,7 @@ export type SyncStore = {
   createEnrollment(request: EnrollmentRequest): Promise<EnrollmentCreated>;
   enrollmentStatus(enrollmentId: string, secret: string): Promise<EnrollmentStatus>;
   decideEnrollment(enrollmentId: string, decision: "approve" | "reject"): Promise<void>;
+  bootstrapLocalHost(request: LocalHostBootstrap): Promise<LocalHostBootstrapResult>;
   reportCapabilities(coreCredential: string, report: CapabilitiesReport): Promise<void>;
   snapshotForCore(coreCredential: string): Promise<SyncSnapshot>;
   updateCoreCredentialSource(
@@ -487,6 +502,83 @@ export function createSyncStore(directory: string, options: SyncStoreOptions = {
         nextEnrollment.coreId = coreId;
         nextEnrollment.credentialDelivery = encryptCredential(credential, current.key);
         commit(next);
+      }),
+    bootstrapLocalHost: (request) =>
+      enqueue(() => {
+        const current = requireState();
+        const enrollment = current.state.enrollments.find(
+          (candidate) => candidate.id === request.enrollmentId,
+        );
+        if (!enrollment || !verifySecret(request.enrollmentSecret, enrollment.secretHash)) {
+          throw new EnrollmentAuthenticationError();
+        }
+        const settings = parseSharedSettings(request.settings);
+        if (enrollment.status === "approved") {
+          if (
+            !enrollment.coreId ||
+            current.state.cores.length !== 1 ||
+            current.state.cores[0]?.id !== enrollment.coreId ||
+            !isDeepStrictEqual(current.state.settings, settings)
+          ) {
+            throw new Error("Local Sync Host bootstrap conflicts with existing state");
+          }
+          return {
+            serverId: current.state.serverId,
+            coreId: enrollment.coreId,
+            settingsRevision: current.state.settingsRevision,
+            syncRevision: current.state.syncRevision,
+          };
+        }
+        if (
+          enrollment.status !== "pending" ||
+          new Date(enrollment.expiresAt).getTime() <= now().getTime()
+        ) {
+          throw new Error("Pending enrollment does not exist");
+        }
+        if (
+          current.state.administrator ||
+          !current.state.setupCode ||
+          current.state.settingsRevision !== 0 ||
+          current.state.syncRevision !== 0 ||
+          current.state.cores.length !== 0 ||
+          Object.keys(current.state.credentials).length !== 0
+        ) {
+          throw new Error("Local Sync Host has already been initialized");
+        }
+        const next = cloneState(current.state);
+        next.settingsRevision = 1;
+        next.syncRevision = 1;
+        next.settings = settings;
+        next.history.push({
+          settingsRevision: 1,
+          syncRevision: 1,
+          createdAt: now().toISOString(),
+          settings: structuredClone(settings),
+        });
+        const nextEnrollment = next.enrollments.find(
+          (candidate) => candidate.id === enrollment.id,
+        )!;
+        const coreId = randomUUID();
+        const credential = coreCredential(coreId);
+        next.cores.push({
+          id: coreId,
+          name: enrollment.name,
+          platform: enrollment.platform,
+          appVersion: enrollment.appVersion,
+          credentialSource: enrollment.credentialSource,
+          createdAt: now().toISOString(),
+          tokenHash: hashSecret(credential),
+        });
+        nextEnrollment.status = "approved";
+        nextEnrollment.coreId = coreId;
+        nextEnrollment.credentialDelivery = encryptCredential(credential, current.key);
+        commit(next);
+        return {
+          serverId: next.serverId,
+          coreId,
+          settingsRevision: next.settingsRevision,
+          syncRevision: next.syncRevision,
+        };
       }),
     reportCapabilities: (credential, report) =>
       enqueue(() => {

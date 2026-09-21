@@ -58,6 +58,76 @@ test("the standalone Sync server serves health, API, and the same-origin web app
   }
 });
 
+test("manager control bootstraps exactly the enrollment proof created by a Core", async (t) => {
+  const root = temporaryDirectory("cinba-sync-bootstrap-server-", t);
+  const webRoot = join(root, "web");
+  mkdirSync(webRoot);
+  writeFileSync(join(webRoot, "index.html"), "Sync");
+  const server = createSyncServer(
+    {
+      stateDirectory: join(root, "state"),
+      host: "127.0.0.1",
+      port: 0,
+      publicOrigin: "http://127.0.0.1:4518",
+      webRoot,
+    },
+    { token: "manager-secret" },
+  );
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert(address && typeof address === "object");
+  const origin = `http://127.0.0.1:${address.port}`;
+  try {
+    const created = (await (
+      await fetch(`${origin}/api/core/enrollments`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          version: 1,
+          name: "This Core",
+          platform: "linux",
+          appVersion: "0.1.0",
+          credentialSource: "local",
+        }),
+      })
+    ).json()) as { enrollmentId: string; enrollmentSecret: string };
+    const bootstrap = await fetch(`${origin}/local-sync/bootstrap`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer manager-secret",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        enrollmentId: created.enrollmentId,
+        enrollmentSecret: created.enrollmentSecret,
+        settings: {
+          version: 1,
+          defaultModel: { provider: "deepseek", id: "deepseek-chat" },
+          webTools: { searchPrimary: "auto" },
+        },
+      }),
+    });
+    assert.equal(bootstrap.status, 200);
+    const bootstrapText = await bootstrap.text();
+    assert.equal(bootstrapText.includes(created.enrollmentSecret), false);
+
+    const hostStatus = await fetch(`${origin}/local-sync/host-status`, {
+      headers: { authorization: "Bearer manager-secret" },
+    });
+    assert.deepEqual(await hostStatus.json(), {
+      status: "ok",
+      serverId: (JSON.parse(bootstrapText) as { serverId: string }).serverId,
+      setupState: "setup-required",
+      settingsRevision: 1,
+      syncRevision: 1,
+      connectedCoreCount: 1,
+      pendingEnrollmentCount: 0,
+    });
+  } finally {
+    await closeSyncServer(server);
+  }
+});
+
 test("Sync refuses public binds and HTTPS mode requires the expected proxy headers", async (t) => {
   assert.throws(() => assertLoopbackSyncHost("0.0.0.0"), /loopback/);
   const root = temporaryDirectory("cinba-sync-proxy-", t);

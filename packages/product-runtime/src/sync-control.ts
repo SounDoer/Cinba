@@ -39,6 +39,28 @@ export type ManagedSyncStatus =
       draining: boolean;
     };
 
+export type ManagedSyncHostStatus = {
+  serverId: string;
+  setupState: "setup-required" | "ready";
+  settingsRevision: number;
+  syncRevision: number;
+  connectedCoreCount: number;
+  pendingEnrollmentCount: number;
+};
+
+export type ManagedSyncHostBootstrapRequest = {
+  enrollmentId: string;
+  enrollmentSecret: string;
+  settings: unknown;
+};
+
+export type ManagedSyncHostBootstrapResult = {
+  serverId: string;
+  coreId: string;
+  settingsRevision: number;
+  syncRevision: number;
+};
+
 type InspectManagedSyncOptions = {
   config: ManagedSyncControlConfig;
   probeHealth?: (baseUrl: string) => Promise<boolean>;
@@ -194,6 +216,109 @@ async function defaultRequestStatus(
   }
 }
 
+async function defaultRequestHostStatus(
+  baseUrl: string,
+  token: string,
+): Promise<ManagedSyncHostStatus | undefined> {
+  try {
+    const response = await fetch(new URL("/local-sync/host-status", baseUrl), {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(2_000),
+    });
+    if (!response.ok) {
+      return undefined;
+    }
+    const body = (await response.json()) as Record<string, unknown>;
+    const count = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= 0;
+    return body.status === "ok" &&
+      typeof body.serverId === "string" &&
+      body.serverId.length > 0 &&
+      body.serverId.length <= 512 &&
+      (body.setupState === "setup-required" || body.setupState === "ready") &&
+      count(body.settingsRevision) &&
+      count(body.syncRevision) &&
+      count(body.connectedCoreCount) &&
+      count(body.pendingEnrollmentCount)
+      ? {
+          serverId: body.serverId,
+          setupState: body.setupState,
+          settingsRevision: body.settingsRevision as number,
+          syncRevision: body.syncRevision as number,
+          connectedCoreCount: body.connectedCoreCount as number,
+          pendingEnrollmentCount: body.pendingEnrollmentCount as number,
+        }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function defaultRequestSetupCode(
+  baseUrl: string,
+  token: string,
+): Promise<string | undefined | false> {
+  try {
+    const response = await fetch(new URL("/local-sync/setup-code", baseUrl), {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(2_000),
+    });
+    const body = (await response.json()) as Record<string, unknown>;
+    if (response.status === 409 && body.status === "setup-complete") {
+      return undefined;
+    }
+    return response.ok &&
+      body.status === "ok" &&
+      typeof body.setupCode === "string" &&
+      body.setupCode.length > 0 &&
+      body.setupCode.length <= 512
+      ? body.setupCode
+      : false;
+  } catch {
+    return false;
+  }
+}
+
+async function defaultRequestBootstrap(
+  baseUrl: string,
+  token: string,
+  request: ManagedSyncHostBootstrapRequest,
+): Promise<ManagedSyncHostBootstrapResult | undefined> {
+  try {
+    const response = await fetch(new URL("/local-sync/bootstrap", baseUrl), {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) {
+      return undefined;
+    }
+    const body = (await response.json()) as Record<string, unknown>;
+    const revision = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= 0;
+    return body.status === "ok" &&
+      typeof body.serverId === "string" &&
+      body.serverId.length > 0 &&
+      body.serverId.length <= 512 &&
+      typeof body.coreId === "string" &&
+      body.coreId.length > 0 &&
+      body.coreId.length <= 512 &&
+      revision(body.settingsRevision) &&
+      revision(body.syncRevision)
+      ? {
+          serverId: body.serverId,
+          coreId: body.coreId,
+          settingsRevision: body.settingsRevision as number,
+          syncRevision: body.syncRevision as number,
+        }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function ownedControl(options: InspectManagedSyncOptions): Promise<
   | {
       pid: number;
@@ -246,6 +371,72 @@ export async function inspectManagedSyncControl(
         draining: owned.draining,
       }
     : { running: true, managed: false };
+}
+
+export async function inspectManagedSyncHost(
+  options: InspectManagedSyncOptions & {
+    requestHostStatus?: (
+      baseUrl: string,
+      token: string,
+    ) => Promise<ManagedSyncHostStatus | undefined>;
+  },
+): Promise<ManagedSyncHostStatus> {
+  const owned = await ownedControl(options);
+  if (!owned) {
+    throw new Error("the running local Sync is not owned by this manager");
+  }
+  const status = await (options.requestHostStatus ?? defaultRequestHostStatus)(
+    options.config.baseUrl,
+    owned.token,
+  );
+  if (!status) {
+    throw new Error("Cinba Sync returned an invalid local Host status");
+  }
+  return status;
+}
+
+export async function readManagedSyncSetupCode(
+  options: InspectManagedSyncOptions & {
+    requestSetupCode?: (baseUrl: string, token: string) => Promise<string | undefined | false>;
+  },
+): Promise<string | undefined> {
+  const owned = await ownedControl(options);
+  if (!owned) {
+    throw new Error("the running local Sync is not owned by this manager");
+  }
+  const setupCode = await (options.requestSetupCode ?? defaultRequestSetupCode)(
+    options.config.baseUrl,
+    owned.token,
+  );
+  if (setupCode === false) {
+    throw new Error("Cinba Sync refused the local Setup Code request");
+  }
+  return setupCode;
+}
+
+export async function bootstrapManagedSyncHost(
+  options: InspectManagedSyncOptions & {
+    request: ManagedSyncHostBootstrapRequest;
+    requestBootstrap?: (
+      baseUrl: string,
+      token: string,
+      request: ManagedSyncHostBootstrapRequest,
+    ) => Promise<ManagedSyncHostBootstrapResult | undefined>;
+  },
+): Promise<ManagedSyncHostBootstrapResult> {
+  const owned = await ownedControl(options);
+  if (!owned) {
+    throw new Error("the running local Sync is not owned by this manager");
+  }
+  const result = await (options.requestBootstrap ?? defaultRequestBootstrap)(
+    options.config.baseUrl,
+    owned.token,
+    options.request,
+  );
+  if (!result) {
+    throw new Error("Cinba Sync refused the local Host bootstrap request");
+  }
+  return result;
 }
 
 async function defaultRequestStop(

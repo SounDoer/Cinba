@@ -377,6 +377,41 @@ const serveLocalCoreControl = createLocalCoreControlHandler({
     serviceIdleSince = lifetime === "on-demand" && clients.size === 0 ? Date.now() : undefined;
     console.log(`[cinba] Core lifetime changed to ${lifetime}`);
   },
+  beginSyncEnrollment: async (serverUrl) => {
+    if (syncConnection.get()) {
+      throw new Error("A Sync connection already exists");
+    }
+    const normalizedServerUrl = normalizeSyncServerUrl(serverUrl, {
+      allowInsecureLoopback: true,
+    });
+    const created = await enrollment.begin({
+      serverUrl: normalizedServerUrl,
+      sources: { settings: "sync", credentials: "local" },
+      request: {
+        version: 1,
+        name: localState.get().coreName,
+        platform: corePlatform(),
+        appVersion: process.env.npm_package_version ?? "0.0.0",
+        credentialSource: "local",
+      },
+    });
+    const effective = resolveSyncSettings({
+      sources: LOCAL_SOURCES,
+      local: localSettings.get(),
+      override: instanceOverride.get(),
+    }).settings;
+    void waitForEnrollment();
+    return {
+      enrollmentId: created.enrollmentId,
+      enrollmentSecret: created.enrollmentSecret,
+      expiresAt: created.expiresAt,
+      settings: {
+        version: 1,
+        ...(effective.defaultModel ? { defaultModel: { ...effective.defaultModel } } : {}),
+        webTools: { ...effective.webTools },
+      },
+    };
+  },
 });
 const serveCoreSyncControl = createCoreSyncControlHandler({
   view: () => {
@@ -523,7 +558,7 @@ async function serveHttp(request: IncomingMessage, response: ServerResponse): Pr
   if (serveHealth(request, response)) {
     return;
   }
-  if (serveLocalCoreControl(request, response)) {
+  if (await serveLocalCoreControl(request, response)) {
     return;
   }
   if (await serveCoreSyncControl(request, response)) {

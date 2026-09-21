@@ -23,9 +23,17 @@ async function withControlServer(
     setLifetime: (next) => {
       lifetime = next;
     },
+    beginSyncEnrollment: async () => {
+      return {
+        enrollmentId: "enrollment-id",
+        enrollmentSecret: "enrollment-secret",
+        expiresAt: "2026-09-21T12:00:00.000Z",
+        settings: { version: 1, webTools: { searchPrimary: "auto" } },
+      };
+    },
   });
-  const server = createServer((request, response) => {
-    if (!control(request, response)) {
+  const server = createServer(async (request, response) => {
+    if (!(await control(request, response))) {
       response.writeHead(404).end();
     }
   });
@@ -45,6 +53,38 @@ async function withControlServer(
     });
   }
 }
+
+test("an authorized manager can begin one local Sync enrollment", async () => {
+  await withControlServer("secret", async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/local-core/sync-enrollment`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer secret",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ serverUrl: "http://127.0.0.1:4518" }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await response.json(), {
+      status: "ok",
+      enrollmentId: "enrollment-id",
+      enrollmentSecret: "enrollment-secret",
+      expiresAt: "2026-09-21T12:00:00.000Z",
+      settings: { version: 1, webTools: { searchPrimary: "auto" } },
+    });
+
+    const extra = await fetch(`${baseUrl}/local-core/sync-enrollment`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer secret",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ serverUrl: "http://127.0.0.1:4518", extra: true }),
+    });
+    assert.equal(extra.status, 400);
+  });
+});
 
 test("an authorized manager can inspect on-demand Core state", async () => {
   await withControlServer("secret", async (baseUrl) => {

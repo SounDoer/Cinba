@@ -76,9 +76,22 @@ export function createSyncServer(
       return true;
     },
     requestStop: localControl.requestStop ?? (() => undefined),
+    hostStatus: () => {
+      const settings = store.settings();
+      return {
+        serverId: store.serverId(),
+        setupState: store.authenticationState(),
+        settingsRevision: settings.settingsRevision,
+        syncRevision: settings.syncRevision,
+        connectedCoreCount: store.connectedCores().cores.length,
+        pendingEnrollmentCount: store.pendingEnrollments().enrollments.length,
+      };
+    },
+    setupCode: () => store.localSetupCode(),
+    bootstrap: async (request) => await store.bootstrapLocalHost(request),
   });
   return createHttpServer(async (request, response) => {
-    if (control(request, response)) {
+    if (await control(request, response)) {
       return;
     }
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
@@ -139,24 +152,27 @@ export async function runSyncServer(
   signals: Pick<EventEmitter, "once"> = process,
 ): Promise<void> {
   assertLoopbackSyncHost(options.host);
+  const managerToken = process.env.CINBA_LOCAL_SYNC_CONTROL_TOKEN;
   let requestStop: () => void = () => undefined;
   const stopping = new Promise<void>((resolve) => {
     requestStop = resolve;
   });
   const server = createSyncServer(options, {
-    ...(process.env.CINBA_LOCAL_SYNC_CONTROL_TOKEN
-      ? { token: process.env.CINBA_LOCAL_SYNC_CONTROL_TOKEN }
-      : {}),
+    ...(managerToken ? { token: managerToken } : {}),
     requestStop,
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(options.port, options.host, resolve);
   });
-  const status = inspectForStartup(options.stateDirectory);
   console.log(`[sync] Cinba Sync is listening at ${options.publicOrigin}`);
-  if (status.setupCode) {
-    console.log(`[sync] Setup Code: ${status.setupCode}`);
+  // Foreground diagnostic use has no manager control channel, so its terminal remains the
+  // recovery surface. Managed services retrieve the code explicitly over the protected route.
+  if (!managerToken) {
+    const status = inspectForStartup(options.stateDirectory);
+    if (status.setupCode) {
+      console.log(`[sync] Setup Code: ${status.setupCode}`);
+    }
   }
   signals.once("SIGINT", requestStop);
   signals.once("SIGTERM", requestStop);

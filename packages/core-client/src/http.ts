@@ -42,6 +42,7 @@ export async function requestJson(
     timeoutMs?: number;
     method?: string;
     headers?: Record<string, string>;
+    body?: string;
   } = {},
 ): Promise<unknown | undefined> {
   const controllerConstructor = (
@@ -61,6 +62,7 @@ export async function requestJson(
       {
         ...(options.method ? { method: options.method } : {}),
         ...(options.headers ? { headers: options.headers } : {}),
+        ...(options.body === undefined ? {} : { body: options.body }),
         ...(controller ? { signal: controller.signal } : {}),
       },
     );

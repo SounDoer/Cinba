@@ -47,7 +47,12 @@ export {
   SyncMaintenanceError,
   SyncStoreUnavailableError,
 } from "./store/sync-store.ts";
-export type { SyncStore, SyncStoreOptions } from "./store/sync-store.ts";
+export type {
+  LocalHostBootstrap,
+  LocalHostBootstrapResult,
+  SyncStore,
+  SyncStoreOptions,
+} from "./store/sync-store.ts";
 export {
   backupSyncState,
   inspectSyncState,

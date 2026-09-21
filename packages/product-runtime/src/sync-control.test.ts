@@ -3,8 +3,11 @@ import { join } from "node:path";
 import test from "node:test";
 import { temporaryDirectory } from "@cinba/test-support";
 import {
+  bootstrapManagedSyncHost,
   createManagedSyncControl,
   inspectManagedSyncControl,
+  inspectManagedSyncHost,
+  readManagedSyncSetupCode,
   removeManagedSyncControl,
   stopManagedSyncControl,
   waitForManagedSyncExit,
@@ -47,6 +50,120 @@ test("matching private records and authenticated status establish Sync ownership
       draining: false,
     },
   );
+});
+
+test("Host status and Setup Code use the already-proven managed Sync identity", async (t) => {
+  const root = temporaryDirectory("cinba-sync-host-control-", t);
+  const control = config(root);
+  await createManagedSyncControl({ config: control, pid: 123, token: "secret" });
+  const ownership = {
+    config: control,
+    probeHealth: async () => true,
+    processIsAlive: () => true,
+    requestStatus: async () => ({
+      status: "ok" as const,
+      pid: 123,
+      activeRequestCount: 0,
+      safeToStop: true,
+      draining: false,
+    }),
+  };
+  assert.deepEqual(
+    await inspectManagedSyncHost({
+      ...ownership,
+      requestHostStatus: async (_baseUrl, token) => {
+        assert.equal(token, "secret");
+        return {
+          serverId: "server-id",
+          setupState: "setup-required",
+          settingsRevision: 2,
+          syncRevision: 3,
+          connectedCoreCount: 1,
+          pendingEnrollmentCount: 0,
+        };
+      },
+    }),
+    {
+      serverId: "server-id",
+      setupState: "setup-required",
+      settingsRevision: 2,
+      syncRevision: 3,
+      connectedCoreCount: 1,
+      pendingEnrollmentCount: 0,
+    },
+  );
+  assert.equal(
+    await readManagedSyncSetupCode({
+      ...ownership,
+      requestSetupCode: async (_baseUrl, token) => {
+        assert.equal(token, "secret");
+        return "setup-secret";
+      },
+    }),
+    "setup-secret",
+  );
+  assert.equal(
+    await readManagedSyncSetupCode({
+      ...ownership,
+      requestSetupCode: async () => undefined,
+    }),
+    undefined,
+  );
+
+  const bootstrapRequest = {
+    enrollmentId: "enrollment-id",
+    enrollmentSecret: "enrollment-secret",
+    settings: { version: 1, webTools: { searchPrimary: "auto" } },
+  };
+  assert.deepEqual(
+    await bootstrapManagedSyncHost({
+      ...ownership,
+      request: bootstrapRequest,
+      requestBootstrap: async (_baseUrl, token, request) => {
+        assert.equal(token, "secret");
+        assert.equal(request, bootstrapRequest);
+        return {
+          serverId: "server-id",
+          coreId: "core-id",
+          settingsRevision: 1,
+          syncRevision: 1,
+        };
+      },
+    }),
+    {
+      serverId: "server-id",
+      coreId: "core-id",
+      settingsRevision: 1,
+      syncRevision: 1,
+    },
+  );
+});
+
+test("Host control never uses a stale or externally owned Sync", async (t) => {
+  const root = temporaryDirectory("cinba-sync-host-unowned-", t);
+  const control = config(root);
+  await createManagedSyncControl({ config: control, pid: 123, token: "secret" });
+  let hostRequests = 0;
+  await assert.rejects(
+    inspectManagedSyncHost({
+      config: control,
+      probeHealth: async () => true,
+      processIsAlive: () => true,
+      requestStatus: async () => ({
+        status: "ok",
+        pid: 456,
+        activeRequestCount: 0,
+        safeToStop: true,
+        draining: false,
+      }),
+      requestHostStatus: async () => {
+        hostRequests += 1;
+        return undefined;
+      },
+    }),
+    /not owned/,
+  );
+  assert.equal(hostRequests, 0);
 });
 
 test("stale or mismatched records can never request a Sync stop", async (t) => {

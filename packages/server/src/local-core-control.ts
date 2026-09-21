@@ -1,6 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { CoreSyncSettings } from "@cinba/contract";
 import type { CoreLifetime } from "./service-idle.ts";
+
+const MAX_BODY_BYTES = 8 * 1024;
 
 export type LocalCoreControlSnapshot = {
   status: "ok";
@@ -14,7 +17,14 @@ export type LocalCoreControlSnapshot = {
 export type LocalCoreControlHandler = (
   request: IncomingMessage,
   response: ServerResponse,
-) => boolean;
+) => Promise<boolean>;
+
+export type LocalCoreSyncEnrollmentReceipt = {
+  enrollmentId: string;
+  enrollmentSecret: string;
+  expiresAt: string;
+  settings: CoreSyncSettings & { version: 1 };
+};
 
 function tokenMatches(header: string | undefined, token: string): boolean {
   if (!header?.startsWith("Bearer ")) {
@@ -34,6 +44,38 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown): 
     .end(JSON.stringify(body));
 }
 
+async function readSyncServerUrl(request: IncomingMessage): Promise<string> {
+  if (
+    request.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json"
+  ) {
+    throw new Error("Content-Type must be application/json");
+  }
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytes += buffer.byteLength;
+    if (bytes > MAX_BODY_BYTES) {
+      throw new Error("Request body is too large");
+    }
+    chunks.push(buffer);
+  }
+  const value = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Sync enrollment request must be an object");
+  }
+  const parsed = value as Record<string, unknown>;
+  if (
+    Object.keys(parsed).length !== 1 ||
+    typeof parsed.serverUrl !== "string" ||
+    parsed.serverUrl.length === 0 ||
+    parsed.serverUrl.length > 2_048
+  ) {
+    throw new Error("Sync enrollment request must contain only serverUrl");
+  }
+  return parsed.serverUrl;
+}
+
 /** Local-only lifecycle controls, enabled solely for a manager token-bearing Core. */
 export function createLocalCoreControlHandler(options: {
   lifetime: () => CoreLifetime;
@@ -41,12 +83,13 @@ export function createLocalCoreControlHandler(options: {
   snapshot: () => Omit<LocalCoreControlSnapshot, "status" | "lifetime" | "pid">;
   requestStop: () => void;
   setLifetime: (lifetime: CoreLifetime) => void;
+  beginSyncEnrollment?: (serverUrl: string) => Promise<LocalCoreSyncEnrollmentReceipt>;
   schedule?: (callback: () => void) => void;
 }): LocalCoreControlHandler {
   const enabled = Boolean(options.token);
   const schedule = options.schedule ?? setImmediate;
 
-  return (request, response) => {
+  return async (request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
     const requestedLifetime = path.startsWith("/local-core/lifetime/")
       ? path.slice("/local-core/lifetime/".length)
@@ -57,7 +100,10 @@ export function createLocalCoreControlHandler(options: {
         : undefined;
     if (
       !enabled ||
-      (path !== "/local-core/status" && path !== "/local-core/stop" && !lifetimeRequest)
+      (path !== "/local-core/status" &&
+        path !== "/local-core/stop" &&
+        path !== "/local-core/sync-enrollment" &&
+        !lifetimeRequest)
     ) {
       return false;
     }
@@ -77,6 +123,33 @@ export function createLocalCoreControlHandler(options: {
         pid: process.pid,
         ...options.snapshot(),
       } satisfies LocalCoreControlSnapshot);
+      return true;
+    }
+
+    if (path === "/local-core/sync-enrollment") {
+      if (request.method !== "POST") {
+        response.writeHead(405, { allow: "POST" }).end();
+        return true;
+      }
+      if (!options.beginSyncEnrollment) {
+        response.writeHead(404, { "cache-control": "no-store" }).end();
+        return true;
+      }
+      let serverUrl: string;
+      try {
+        serverUrl = await readSyncServerUrl(request);
+      } catch {
+        sendJson(response, 400, { status: "invalid-request" });
+        return true;
+      }
+      try {
+        sendJson(response, 200, {
+          status: "ok",
+          ...(await options.beginSyncEnrollment(serverUrl)),
+        });
+      } catch {
+        sendJson(response, 409, { status: "enrollment-refused" });
+      }
       return true;
     }
 

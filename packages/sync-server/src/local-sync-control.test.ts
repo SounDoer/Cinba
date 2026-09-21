@@ -14,6 +14,8 @@ async function withControlServer(
   let stops = 0;
   let activeRequests = 0;
   let draining = false;
+  let setupCode: string | undefined = "setup-secret";
+  const bootstraps: unknown[] = [];
   const control = createLocalSyncControlHandler({
     token,
     snapshot: () => ({ activeRequestCount: activeRequests, draining }),
@@ -27,9 +29,27 @@ async function withControlServer(
     requestStop: () => {
       stops += 1;
     },
+    hostStatus: () => ({
+      serverId: "server-id",
+      setupState: setupCode ? "setup-required" : "ready",
+      settingsRevision: 2,
+      syncRevision: 3,
+      connectedCoreCount: 1,
+      pendingEnrollmentCount: 4,
+    }),
+    setupCode: () => setupCode,
+    bootstrap: async (request) => {
+      bootstraps.push(request);
+      return {
+        serverId: "server-id",
+        coreId: "core-id",
+        settingsRevision: 1,
+        syncRevision: 1,
+      };
+    },
   });
-  const server = createServer((request, response) => {
-    if (!control(request, response)) {
+  const server = createServer(async (request, response) => {
+    if (!(await control(request, response))) {
       response.writeHead(404).end();
     }
   });
@@ -48,6 +68,91 @@ async function withControlServer(
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 }
+
+test("local Host bootstrap strictly parses one proof without echoing its secret", async () => {
+  await withControlServer("secret", async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/local-sync/bootstrap`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer secret",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        enrollmentId: "enrollment-id",
+        enrollmentSecret: "enrollment-secret",
+        settings: { version: 1, webTools: { searchPrimary: "auto" } },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert.equal(text.includes("enrollment-secret"), false);
+    assert.deepEqual(JSON.parse(text), {
+      status: "ok",
+      serverId: "server-id",
+      coreId: "core-id",
+      settingsRevision: 1,
+      syncRevision: 1,
+    });
+
+    const extra = await fetch(`${baseUrl}/local-sync/bootstrap`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer secret",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        enrollmentId: "enrollment-id",
+        enrollmentSecret: "enrollment-secret",
+        settings: { version: 1, webTools: { searchPrimary: "auto" } },
+        unexpected: true,
+      }),
+    });
+    assert.equal(extra.status, 400);
+    assert.deepEqual(await extra.json(), { status: "invalid-request" });
+  });
+});
+
+test("local Sync control exposes redacted Host status and Setup Code separately", async () => {
+  await withControlServer("secret", async (baseUrl) => {
+    const headers = { authorization: "Bearer secret" };
+    const status = await fetch(`${baseUrl}/local-sync/host-status`, { headers });
+    assert.equal(status.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await status.json(), {
+      status: "ok",
+      serverId: "server-id",
+      setupState: "setup-required",
+      settingsRevision: 2,
+      syncRevision: 3,
+      connectedCoreCount: 1,
+      pendingEnrollmentCount: 4,
+    });
+    assert.equal(
+      JSON.stringify(
+        await (await fetch(`${baseUrl}/local-sync/status`, { headers })).json(),
+      ).includes("setup-secret"),
+      false,
+    );
+
+    const setup = await fetch(`${baseUrl}/local-sync/setup-code`, { headers });
+    assert.equal(setup.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await setup.json(), { status: "ok", setupCode: "setup-secret" });
+  });
+});
+
+test("local Host controls require manager authentication and the correct method", async () => {
+  await withControlServer("secret", async (baseUrl) => {
+    assert.equal((await fetch(`${baseUrl}/local-sync/host-status`)).status, 401);
+    assert.equal(
+      (
+        await fetch(`${baseUrl}/local-sync/setup-code`, {
+          method: "POST",
+          headers: { authorization: "Bearer secret" },
+        })
+      ).status,
+      405,
+    );
+  });
+});
 
 test("local Sync control rejects an unauthenticated stop", async () => {
   await withControlServer("secret", async (baseUrl, stops) => {

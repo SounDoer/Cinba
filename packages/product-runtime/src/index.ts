@@ -51,15 +51,21 @@ export {
 export { parseProductRelease, readProductRelease } from "./release.ts";
 export type { ProductRelease } from "./release.ts";
 export {
+  bootstrapManagedSyncHost,
   createManagedSyncControl,
   createManagedSyncControlConfig,
   inspectManagedSyncControl,
+  inspectManagedSyncHost,
+  readManagedSyncSetupCode,
   removeManagedSyncControl,
   stopManagedSyncControl,
   waitForManagedSyncExit,
 } from "./sync-control.ts";
 export type {
   LocalSyncControlStatus,
+  ManagedSyncHostBootstrapRequest,
+  ManagedSyncHostBootstrapResult,
+  ManagedSyncHostStatus,
   ManagedSyncControlConfig,
   ManagedSyncStatus,
 } from "./sync-control.ts";
@@ -74,3 +80,4 @@ export {
   writeSyncHostConfig,
 } from "./sync-host-config.ts";
 export type { SyncHostConfig, SyncHostStorageState } from "./sync-host-config.ts";
+export { beginManagedCoreSyncEnrollment } from "./core-service-control.ts";

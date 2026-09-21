@@ -7,6 +7,7 @@ export {
   requestLocalCoreLifetime,
   requestLocalCoreStatus,
   requestLocalCoreStop,
+  requestLocalCoreSyncEnrollment,
 } from "./core-control.ts";
 export { probeCoreHealth } from "./core-health.ts";
 export type {
@@ -19,4 +20,4 @@ export type {
   SocketFactory,
 } from "./core-client.ts";
 export type { CoreHealth, HealthFetcher, HealthResponse } from "./core-health.ts";
-export type { LocalCoreControlStatus } from "./core-control.ts";
+export type { LocalCoreControlStatus, LocalCoreSyncEnrollmentReceipt } from "./core-control.ts";
