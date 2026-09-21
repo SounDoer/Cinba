@@ -45,7 +45,7 @@ async function createSourcePayload(root: string): Promise<string> {
   return payloadRoot;
 }
 
-test("an installed manager creates, bootstraps, inspects, and deletes a Host with real processes", async () => {
+test("an installed manager creates, bootstraps, configures, inspects, and deletes a Host with real processes", async () => {
   const platform = process.platform;
   if (platform !== "win32" && platform !== "darwin" && platform !== "linux") {
     throw new Error(`unsupported test platform: ${platform}`);
@@ -84,7 +84,12 @@ test("an installed manager creates, bootstraps, inspects, and deletes a Host wit
     assert.equal(creation.status.running, false);
 
     const paths = resolveProductPaths({ platform, homeDirectory, environment });
-    assert.equal((await manager.inspect()).state, "created");
+    const configured = await manager.configure("https://sync.example.com");
+    assert.equal(configured.state, "created");
+    assert.equal(configured.publicOrigin, "https://sync.example.com");
+    const inspected = await manager.inspect();
+    assert.equal(inspected.state, "created");
+    assert.equal(inspected.publicOrigin, "https://sync.example.com");
     assert.deepEqual(await manager.delete(), { schemaVersion: 1, state: "not-created" });
     await assert.rejects(rm(paths.syncDataDirectory), { code: "ENOENT" });
   } catch (cause) {
