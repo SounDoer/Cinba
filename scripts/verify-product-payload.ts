@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  type ProductTarget,
   parseArtifactInventory,
   requireProductTarget,
   verifyArtifactInventory,
@@ -31,11 +32,17 @@ async function unusedPort(): Promise<number> {
   return port;
 }
 
-async function capture(executable: string, arguments_: string[], cwd: string): Promise<string> {
+async function capture(
+  executable: string,
+  arguments_: string[],
+  cwd: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<string> {
   const child = spawn(executable, arguments_, {
     cwd,
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
+    env: environment,
   });
   let stdout = "";
   let stderr = "";
@@ -55,6 +62,30 @@ async function capture(executable: string, arguments_: string[], cwd: string): P
     throw new Error(`payload command exited with ${code}\n${stderr}`);
   }
   return stdout.trim();
+}
+
+export function isolatedPayloadEnvironment(
+  target: ProductTarget,
+  root: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  if (target === "windows-x64") {
+    return {
+      ...environment,
+      LOCALAPPDATA: join(root, "local-app-data"),
+      USERPROFILE: join(root, "home"),
+    };
+  }
+  if (target === "macos-arm64") {
+    return { ...environment, HOME: join(root, "home") };
+  }
+  return {
+    ...environment,
+    HOME: join(root, "home"),
+    XDG_CONFIG_HOME: join(root, "xdg-config"),
+    XDG_DATA_HOME: join(root, "xdg-data"),
+    XDG_STATE_HOME: join(root, "xdg-state"),
+  };
 }
 
 async function stop(process: ChildProcess): Promise<void> {
@@ -131,9 +162,25 @@ export async function verifyProductPayload(): Promise<void> {
   const temporary = await mkdtemp(join(tmpdir(), "cinba-payload-probe-"));
   const port = await unusedPort();
   const node = layout.nodeExecutable;
-  const version = await capture(node, [layout.cliEntry, "--version"], temporary);
+  const environment = isolatedPayloadEnvironment(target, temporary);
+  const version = await capture(node, [layout.cliEntry, "--version"], temporary, environment);
   if (version !== `Cinba ${release.version} (${release.revision})`) {
     throw new Error(`packaged CLI returned an unexpected identity: ${version}`);
+  }
+  const help = await capture(node, [layout.cliEntry, "help"], temporary, environment);
+  for (const command of ["cinba sync create", "cinba sync serve", "cinba sync status [--json]"]) {
+    if (!help.includes(command)) {
+      throw new Error(`packaged CLI help does not contain ${command}`);
+    }
+  }
+  const syncStatus = await capture(
+    node,
+    [layout.cliEntry, "sync", "status", "--json"],
+    temporary,
+    environment,
+  );
+  if (syncStatus !== '{"schemaVersion":1,"state":"not-created"}') {
+    throw new Error(`packaged CLI returned an unexpected Sync Host status: ${syncStatus}`);
   }
   let stdout = "";
   let stderr = "";
@@ -142,7 +189,7 @@ export async function verifyProductPayload(): Promise<void> {
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
     env: {
-      ...process.env,
+      ...environment,
       CINBA_CORE_LIFETIME: "persistent",
       CINBA_EXTENSION_ROOT: layout.extensionRoot,
       CINBA_PORT: String(port),
