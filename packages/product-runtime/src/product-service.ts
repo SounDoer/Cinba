@@ -6,7 +6,10 @@ import type { LocalCoreConfig } from "@cinba/core-manager";
 import { resolveProductPaths } from "@cinba/installer";
 import { createCoreServiceControlConfig } from "./core-service-control.ts";
 import { resolveProductPayloadLayout } from "./layout.ts";
-import { inspectProductComponentMode } from "./managed-services.ts";
+import {
+  type ProductManagedServiceOptions,
+  inspectProductComponentMode,
+} from "./managed-services.ts";
 import {
   createManagedSyncControl,
   createManagedSyncControlConfig,
@@ -227,8 +230,9 @@ export async function runProductService(service: ProductServiceProcess): Promise
 export async function runningCoreControlConfig(
   coreConfig: LocalCoreConfig,
   stateDirectory: string,
+  options: ProductManagedServiceOptions = {},
 ) {
-  const mode = await inspectProductComponentMode("core");
+  const mode = await inspectProductComponentMode("core", options);
   return mode.state === "background" && mode.running
     ? createCoreServiceControlConfig(stateDirectory)
     : {

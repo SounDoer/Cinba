@@ -16,6 +16,7 @@ import {
 import { readProductRelease } from "./release.ts";
 import {
   type ProductSyncHostCreation,
+  type ProductSyncHostOptions,
   type ProductSyncHostStatus,
   configureProductSyncHost,
   createProductSyncHost,
@@ -43,32 +44,38 @@ export type InstalledSyncHostManager = {
 export function createInstalledSyncHostManager(
   payloadRoot: string,
   release: ProductProtocolIdentity,
+  options: ProductSyncHostOptions = {},
 ): InstalledSyncHostManager {
   return {
-    inspect: inspectProductSyncHost,
+    inspect: async () => await inspectProductSyncHost(options),
     create: async (publicOrigin) =>
       await createInstalledSyncHost(
         payloadRoot,
         release,
         publicOrigin ?? createSyncHostConfig().publicOrigin,
+        options,
       ),
-    configure: configureProductSyncHost,
-    setMode: setProductSyncHostMode,
-    delete: async () => await deleteInstalledSyncHost(payloadRoot, release),
+    configure: async (publicOrigin) => await configureProductSyncHost(publicOrigin, options),
+    setMode: async (mode) => await setProductSyncHostMode(mode, options),
+    delete: async () => await deleteInstalledSyncHost(payloadRoot, release, options),
   };
 }
 
 export function createInstalledSyncHostManagerFromPayload(
   payloadRoot: string,
+  options: ProductSyncHostOptions = {},
 ): InstalledSyncHostManager {
   const release = readProductRelease(payloadRoot);
   return {
-    inspect: inspectProductSyncHost,
+    inspect: async () => await inspectProductSyncHost(options),
     create: async (publicOrigin) =>
-      await createInstalledSyncHostManager(payloadRoot, await release).create(publicOrigin),
-    configure: configureProductSyncHost,
-    setMode: setProductSyncHostMode,
-    delete: async () => await createInstalledSyncHostManager(payloadRoot, await release).delete(),
+      await createInstalledSyncHostManager(payloadRoot, await release, options).create(
+        publicOrigin,
+      ),
+    configure: async (publicOrigin) => await configureProductSyncHost(publicOrigin, options),
+    setMode: async (mode) => await setProductSyncHostMode(mode, options),
+    delete: async () =>
+      await createInstalledSyncHostManager(payloadRoot, await release, options).delete(),
   };
 }
 
@@ -76,10 +83,11 @@ async function createInstalledSyncHost(
   payloadRoot: string,
   release: ProductProtocolIdentity,
   publicOrigin: string,
+  options: ProductSyncHostOptions,
 ): Promise<ProductSyncHostCreation> {
-  const platform = supportedPlatform();
-  const homeDirectory = homedir();
-  const environment = process.env;
+  const platform = options.platform ?? supportedPlatform();
+  const homeDirectory = options.homeDirectory ?? homedir();
+  const environment = options.environment ?? process.env;
   const paths = resolveProductPaths({ platform, homeDirectory, environment });
   const coreConfig = createProductCoreConfig(payloadRoot, {
     platform,
@@ -130,7 +138,7 @@ async function createInstalledSyncHost(
       },
       beginEnrollment: async (serverUrl) =>
         await beginManagedCoreSyncEnrollment(
-          await runningCoreControlConfig(coreConfig, paths.stateDirectory),
+          await runningCoreControlConfig(coreConfig, paths.stateDirectory, options),
           serverUrl,
         ),
       bootstrap: async (receipt) => {
@@ -172,16 +180,18 @@ async function createInstalledSyncHost(
         await coreSync.cancelEnrollment();
       },
     },
+    ...options,
   });
 }
 
 async function deleteInstalledSyncHost(
   payloadRoot: string,
   release: ProductProtocolIdentity,
+  options: ProductSyncHostOptions,
 ): Promise<ProductSyncHostStatus> {
-  const platform = supportedPlatform();
-  const homeDirectory = homedir();
-  const environment = process.env;
+  const platform = options.platform ?? supportedPlatform();
+  const homeDirectory = options.homeDirectory ?? homedir();
+  const environment = options.environment ?? process.env;
   const paths = resolveProductPaths({ platform, homeDirectory, environment });
   const coreConfig = createProductCoreConfig(payloadRoot, {
     platform,
@@ -198,7 +208,7 @@ async function deleteInstalledSyncHost(
       prepareDisconnect: async () => {
         await ensureLocalCore({ config: coreConfig, expectedRevision: release.revision });
         await prepareManagedCoreSyncHostDelete(
-          await runningCoreControlConfig(coreConfig, paths.stateDirectory),
+          await runningCoreControlConfig(coreConfig, paths.stateDirectory, options),
         );
       },
       stopSync: async () => {
@@ -211,6 +221,7 @@ async function deleteInstalledSyncHost(
         }
       },
     },
+    ...options,
   });
 }
 
