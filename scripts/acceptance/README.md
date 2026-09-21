@@ -41,8 +41,9 @@ docker exec cinba-sd bash /systemd-probe.sh after-reboot
 docker rm -f cinba-sd
 ```
 
-它覆盖没有 linger 时的诊断与交互式拒绝、Background、登出后继续运行、重启恢复、切回
-On-demand、卸载保留数据与 linger、重装和 purge。
+它覆盖没有 linger 时的诊断与交互式拒绝、Background、登出后继续运行，以及真实 Sync Host 的
+`create/bootstrap → background → 重启恢复 → disable/enable`。普通卸载必须保留 Host 配置和
+authority，重装后识别同一 Host 并以安全的 disabled 模式恢复；purge 最终删除全部 Host 数据。
 
 容器不能代替真实 VPS 上的 SSH 断开、主机重启和正式发布后的 bootstrap 一行命令，这些仍需在真实
 主机上验收。

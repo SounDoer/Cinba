@@ -39,20 +39,33 @@ before-reboot)
   units; listening
   u 'systemctl --user status "cinba*" --no-pager 2>&1 | head -15'
 
-  step "logout (SSH disconnect): core keeps running"
+  step "create local Sync Host, then keep Core and Sync in Background"
+  u 'cinba sync status --json'
+  u 'cinba sync create --show-setup-code'
+  u 'cinba sync status; cinba sync mode background; cinba sync status'
+  units; listening
+  u 'systemctl --user status "cinba*" --no-pager 2>&1 | head -30'
+
+  step "logout (SSH disconnect): Core and Sync keep running"
   sleep 3; loginctl list-sessions --no-legend; usermgr; listening
   ;;
 after-reboot)
-  step "after reboot: core restored per mode"
+  step "after reboot: Core and Sync restored per mode"
   systemctl is-system-running
   sleep 5; usermgr; listening
-  u 'cinba core mode; cinba core status'
+  u 'cinba core mode; cinba core status; cinba sync mode; cinba sync status'
+
+  step "disable and re-enable the Host without deleting authority"
+  u 'cinba sync mode disabled; cinba sync status'
+  listening
+  u 'cinba sync mode background; cinba sync status'
+  listening
 
   step "switch back to on-demand"
   u 'cinba core mode on-demand; cinba core mode'
   units; listening
 
-  step "background again, then normal uninstall"
+  step "background again, then normal uninstall preserves the Host"
   u 'cinba core mode background >/dev/null; echo marker > ~/.local/share/cinba/data/probe-marker.txt; find ~/.local/share/cinba -type f | sort | xargs sha256sum > /tmp/data-before.txt'
   units; listening
   u 'cinba uninstall'
@@ -61,8 +74,8 @@ after-reboot)
   units; listening
   step "linger left as-is (account-wide, spec says do not disable)"; loginctl show-user "$U" -p Linger
 
-  step "reinstall restores; purge removes everything"
-  u "~/dl/install.sh >/dev/null 2>&1; cinba version; cat ~/.local/share/cinba/data/probe-marker.txt; cinba core mode"
+  step "reinstall restores the Host; purge removes everything"
+  u "~/dl/install.sh >/dev/null 2>&1; cinba version; cat ~/.local/share/cinba/data/probe-marker.txt; cinba core mode; cinba sync status"
   u 'cinba uninstall --purge --delete-all-cinba-data'
   sleep 8
   u 'command -v cinba; ls -la ~/.local/bin 2>&1; ls -d ~/.local/lib/cinba ~/.local/share/cinba ~/.local/state/cinba ~/.cache/cinba ~/.config/cinba 2>&1; grep -c "Cinba CLI" ~/.bashrc'
