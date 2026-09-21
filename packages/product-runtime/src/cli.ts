@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, posix, resolve, win32 } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
+import { CoreSyncControlClient } from "@cinba/core-client";
 import {
   type LocalCoreConfig,
   ensureLocalCore,
@@ -15,7 +16,10 @@ import {
   CINBA_UPDATE_STATE_DIRECTORY_ENV,
   checkForProductUpdatesAutomatically,
 } from "./automatic-update.ts";
-import { createCoreServiceControlConfig } from "./core-service-control.ts";
+import {
+  beginManagedCoreSyncEnrollment,
+  createCoreServiceControlConfig,
+} from "./core-service-control.ts";
 import { resolveProductPayloadLayout } from "./layout.ts";
 import { formatInstalledDoctorReport, runInstalledDoctor } from "./doctor.ts";
 import {
@@ -25,9 +29,13 @@ import {
 } from "./managed-services.ts";
 import { readProductRelease } from "./release.ts";
 import {
+  bootstrapManagedSyncHost,
   createManagedSyncControl,
   createManagedSyncControlConfig,
+  inspectManagedSyncControl,
+  readManagedSyncSetupCode,
   removeManagedSyncControl,
+  stopManagedSyncControl,
 } from "./sync-control.ts";
 import {
   type SyncHostConfig,
@@ -36,7 +44,9 @@ import {
   syncHostConfigPath,
 } from "./sync-host-config.ts";
 import {
+  type ProductSyncHostCreation,
   configureProductSyncHost,
+  createProductSyncHost,
   formatProductSyncHostStatus,
   inspectProductSyncHost,
   setProductSyncHostMode,
@@ -46,6 +56,7 @@ export type ProductCommand =
   | { type: "tui"; workingDirectory: string }
   | { type: "core"; action: "status" | "start" | "stop" }
   | { type: "sync"; action: "serve" }
+  | { type: "sync-host-create"; publicOrigin: string | undefined; showSetupCode: boolean }
   | { type: "sync-host-status"; json: boolean }
   | { type: "sync-host-configure"; publicOrigin: string }
   | { type: "component-mode"; component: ProductServiceComponent; mode: ServiceMode | null }
@@ -65,6 +76,7 @@ export type ProductCliDependencies = {
   readRelease: typeof readProductRelease;
   checkForUpdates: typeof checkForProductUpdatesAutomatically;
   configureSyncHost: typeof configureProductSyncHost;
+  createSyncHost?: (publicOrigin?: string) => Promise<ProductSyncHostCreation>;
   inspectSyncHost: typeof inspectProductSyncHost;
   setSyncHostMode: typeof setProductSyncHostMode;
   writeOutput: (output: string) => void;
@@ -87,6 +99,7 @@ Usage:
   cinba core <status|start|stop>
   cinba core mode [on-demand|background]
   cinba sync serve
+  cinba sync create [--public-origin URL] [--show-setup-code]
   cinba sync configure --public-origin URL
   cinba sync status [--json]
   cinba sync mode [disabled|on-demand|background]
@@ -113,6 +126,31 @@ Options:
 
 export function formatProductHelp(): string {
   return HELP;
+}
+
+function parseSyncHostCreate(arguments_: readonly string[]): ProductCommand | undefined {
+  if (arguments_[0] !== "sync" || arguments_[1] !== "create") {
+    return undefined;
+  }
+  let publicOrigin: string | undefined;
+  let showSetupCode = false;
+  for (let index = 2; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === "--show-setup-code" && !showSetupCode) {
+      showSetupCode = true;
+      continue;
+    }
+    if (argument === "--public-origin" && publicOrigin === undefined) {
+      publicOrigin = arguments_[index + 1];
+      if (!publicOrigin) {
+        throw new Error("run 'cinba help' for usage");
+      }
+      index += 1;
+      continue;
+    }
+    throw new Error("run 'cinba help' for usage");
+  }
+  return { type: "sync-host-create", publicOrigin, showSetupCode };
 }
 
 export function parseProductCommand(
@@ -152,6 +190,10 @@ export function parseProductCommand(
   }
   if (arguments_.length === 2 && arguments_[0] === "sync" && arguments_[1] === "serve") {
     return { type: "sync", action: "serve" };
+  }
+  const syncHostCreate = parseSyncHostCreate(arguments_);
+  if (syncHostCreate) {
+    return syncHostCreate;
   }
   if (
     arguments_[0] === "sync" &&
@@ -417,6 +459,114 @@ async function runProductService(service: ProductServiceProcess): Promise<void> 
   }
 }
 
+async function createInstalledSyncHost(
+  payloadRoot: string,
+  release: ProductProtocolIdentity,
+  publicOrigin = createSyncHostConfig().publicOrigin,
+): Promise<ProductSyncHostCreation> {
+  const platform = process.platform;
+  if (platform !== "win32" && platform !== "darwin" && platform !== "linux") {
+    throw new Error(`Cinba is not available on ${platform}`);
+  }
+  const homeDirectory = homedir();
+  const environment = process.env;
+  const paths = resolveProductPaths({ platform, homeDirectory, environment });
+  const coreConfig = createProductCoreConfig(payloadRoot, {
+    platform,
+    homeDirectory,
+    environment,
+    release,
+  });
+  const coreControl = {
+    baseUrl: coreConfig.baseUrl,
+    runtimePath: coreConfig.runtimePath,
+    controlPath: coreConfig.controlPath,
+  };
+  const syncControl = createManagedSyncControlConfig(paths.stateDirectory);
+  const coreSync = new CoreSyncControlClient(coreConfig.baseUrl, { timeoutMs: 2_000 });
+  let syncRun: Promise<void> | undefined;
+  let syncFailure: unknown;
+  const delay = (milliseconds: number) =>
+    new Promise<void>((resolvePromise) => setTimeout(resolvePromise, milliseconds));
+
+  return await createProductSyncHost(publicOrigin, {
+    platform,
+    homeDirectory,
+    environment,
+    createRuntime: {
+      ensureCore: async () => {
+        await ensureLocalCore({ config: coreConfig, expectedRevision: release.revision });
+      },
+      startSync: async (syncHostConfig) => {
+        syncFailure = undefined;
+        syncRun = runProductService(
+          createProductServiceProcess(payloadRoot, release, "sync", {
+            platform,
+            homeDirectory,
+            environment,
+            managedService: true,
+            syncHostConfig: { schemaVersion: 1, ...syncHostConfig },
+          }),
+        ).catch((error: unknown) => {
+          syncFailure = error;
+        });
+        const deadline = Date.now() + 30_000;
+        while (Date.now() < deadline) {
+          if (syncFailure) {
+            throw syncFailure;
+          }
+          const status = await inspectManagedSyncControl({ config: syncControl });
+          if (status.running && status.managed) {
+            return;
+          }
+          await delay(100);
+        }
+        throw new Error("Cinba Sync did not become ready for Host creation");
+      },
+      beginEnrollment: async (serverUrl) =>
+        await beginManagedCoreSyncEnrollment(coreControl, serverUrl),
+      bootstrap: async (receipt) => {
+        await bootstrapManagedSyncHost({
+          config: syncControl,
+          request: {
+            enrollmentId: receipt.enrollmentId,
+            enrollmentSecret: receipt.enrollmentSecret,
+            settings: receipt.settings,
+          },
+        });
+      },
+      waitCoreOnline: async () => {
+        const deadline = Date.now() + 30_000;
+        while (Date.now() < deadline) {
+          try {
+            if ((await coreSync.status()).state === "online") {
+              return;
+            }
+          } catch {
+            // The Core may still be consuming its one-time approval.
+          }
+          await delay(100);
+        }
+        throw new Error("Cinba Core did not become online with the new Sync Host");
+      },
+      readSetupCode: async () => await readManagedSyncSetupCode({ config: syncControl }),
+      stopSync: async () => {
+        const status = await inspectManagedSyncControl({ config: syncControl });
+        if (status.running && status.managed) {
+          await stopManagedSyncControl({ config: syncControl });
+        }
+        await syncRun;
+        if (syncFailure) {
+          throw syncFailure;
+        }
+      },
+      cancelEnrollment: async () => {
+        await coreSync.cancelEnrollment();
+      },
+    },
+  });
+}
+
 function formatCoreStatus(status: Awaited<ReturnType<typeof inspectLocalCore>>): string {
   if (!status.running) {
     return "Cinba Core: stopped";
@@ -514,6 +664,16 @@ export async function runProductCli(
     dependencies.writeOutput(
       formatProductSyncHostStatus(await dependencies.configureSyncHost(command.publicOrigin)),
     );
+    return;
+  }
+  if (command.type === "sync-host-create") {
+    const creation = dependencies.createSyncHost
+      ? await dependencies.createSyncHost(command.publicOrigin)
+      : await createInstalledSyncHost(payload.root, release, command.publicOrigin);
+    dependencies.writeOutput(formatProductSyncHostStatus(creation.status));
+    if (creation.setupCode && (command.showSetupCode || process.stdout.isTTY)) {
+      dependencies.writeOutput(`Setup Code: ${creation.setupCode}`);
+    }
     return;
   }
   if (command.type === "component-mode" && command.component === "sync") {

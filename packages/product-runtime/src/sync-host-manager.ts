@@ -1,4 +1,6 @@
+import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
+import type { LocalCoreSyncEnrollmentReceipt } from "@cinba/core-client";
 import { type ServiceMode, acquireInstallationLock, resolveProductPaths } from "@cinba/installer";
 import {
   createSyncHostConfig,
@@ -51,6 +53,107 @@ export type ProductSyncHostStatus =
       running: boolean;
       healthy: boolean | null;
     };
+
+export type ProductSyncHostCreateRuntime = {
+  ensureCore(): Promise<void>;
+  startSync(config: { publicOrigin: string }): Promise<void>;
+  beginEnrollment(publicOrigin: string): Promise<LocalCoreSyncEnrollmentReceipt>;
+  bootstrap(receipt: LocalCoreSyncEnrollmentReceipt): Promise<void>;
+  waitCoreOnline(): Promise<void>;
+  readSetupCode(): Promise<string | undefined>;
+  stopSync(): Promise<void>;
+  cancelEnrollment(): Promise<void>;
+};
+
+export type ProductSyncHostCreateOptions = ProductSyncHostOptions & {
+  createRuntime: ProductSyncHostCreateRuntime;
+};
+
+export type ProductSyncHostCreation = {
+  status: ProductSyncHostStatus;
+  setupCode?: string;
+};
+
+export async function createProductSyncHost(
+  publicOrigin: string,
+  options: ProductSyncHostCreateOptions,
+): Promise<ProductSyncHostCreation> {
+  const config = createSyncHostConfig(publicOrigin);
+  const paths = resolveProductPaths({
+    platform: supportedPlatform(options.platform ?? process.platform),
+    homeDirectory: options.homeDirectory ?? homedir(),
+    environment: options.environment ?? process.env,
+  });
+  const unlock = await acquireInstallationLock({
+    programDirectory: paths.programDirectory,
+    releasesDirectory: paths.releasesDirectory,
+    transactionDirectory: paths.transactionDirectory,
+  });
+  let syncStarted = false;
+  let enrollmentStarted = false;
+  try {
+    const storage = await inspectSyncHostStorage(paths);
+    if (storage.state === "created") {
+      return { status: await inspectProductSyncHost(options) };
+    }
+    if (storage.state !== "not-created") {
+      throw new Error(`Cinba Sync Host requires repair: ${storage.state}`);
+    }
+    await options.createRuntime.ensureCore();
+    syncStarted = true;
+    await options.createRuntime.startSync(config);
+    const receipt = await options.createRuntime.beginEnrollment(config.publicOrigin);
+    enrollmentStarted = true;
+    await options.createRuntime.bootstrap(receipt);
+    await options.createRuntime.waitCoreOnline();
+    enrollmentStarted = false;
+    const setupCode = await options.createRuntime.readSetupCode();
+    await options.createRuntime.stopSync();
+    syncStarted = false;
+    await writeSyncHostConfig(syncHostConfigPath(paths), config);
+    await setProductComponentMode("sync", "on-demand", {
+      ...options,
+      componentCreated: true,
+      installationLockHeld: true,
+    });
+    return {
+      status: await inspectProductSyncHost(options),
+      ...(setupCode ? { setupCode } : {}),
+    };
+  } catch (error) {
+    const cleanupErrors: unknown[] = [];
+    if (enrollmentStarted) {
+      try {
+        await options.createRuntime.cancelEnrollment();
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+    }
+    if (syncStarted) {
+      try {
+        await options.createRuntime.stopSync();
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+    }
+    try {
+      await rm(syncHostConfigPath(paths), { force: true });
+      await rm(paths.syncDataDirectory, { recursive: true, force: true });
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError);
+    }
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...cleanupErrors],
+        "Cinba Sync Host creation failed and its uncommitted state could not be fully removed",
+        { cause: error },
+      );
+    }
+    throw error;
+  } finally {
+    await unlock();
+  }
+}
 
 export async function setProductSyncHostMode(
   mode: ServiceMode,

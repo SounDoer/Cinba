@@ -11,6 +11,7 @@ import {
   configureProductSyncHost,
   createManagedSyncControl,
   createManagedSyncControlConfig,
+  createProductSyncHost,
   createSyncHostConfig,
   formatProductSyncHostStatus,
   inspectProductSyncHost,
@@ -91,6 +92,189 @@ test("configuring an absent Host refuses without creating storage", async (t) =>
   });
   await assert.rejects(access(paths.configurationDirectory), { code: "ENOENT" });
   await assert.rejects(access(paths.syncDataDirectory), { code: "ENOENT" });
+});
+
+test("creating a Host commits config only after bootstrap and Core connectivity succeed", async (t) => {
+  const root = temporaryDirectory("cinba-sync-host-create-", t);
+  const { options, paths } = nativeLayout(root);
+  const events: string[] = [];
+  const receipt = {
+    enrollmentId: "enrollment-1",
+    enrollmentSecret: "secret-proof",
+    expiresAt: "2099-01-01T00:00:00.000Z",
+    settings: { version: 1 as const, webTools: { searchPrimary: "auto" as const } },
+  };
+
+  const result = await createProductSyncHost("https://sync.example.com", {
+    ...options,
+    adapter: stoppedServiceAdapter(),
+    createRuntime: {
+      ensureCore: async () => {
+        events.push("ensure-core");
+      },
+      startSync: async () => {
+        events.push("start-sync");
+        await mkdir(paths.syncDataDirectory, { recursive: true });
+      },
+      beginEnrollment: async () => {
+        events.push("begin-enrollment");
+        return receipt;
+      },
+      bootstrap: async (received) => {
+        events.push("bootstrap");
+        assert.equal(received, receipt);
+        await assert.rejects(access(syncHostConfigPath(paths)), { code: "ENOENT" });
+      },
+      waitCoreOnline: async () => {
+        events.push("wait-core-online");
+      },
+      readSetupCode: async () => {
+        events.push("read-setup-code");
+        return "setup-once";
+      },
+      stopSync: async () => {
+        events.push("stop-sync");
+      },
+      cancelEnrollment: async () => {
+        events.push("cancel-enrollment");
+      },
+    },
+  });
+
+  assert.deepEqual(events, [
+    "ensure-core",
+    "start-sync",
+    "begin-enrollment",
+    "bootstrap",
+    "wait-core-online",
+    "read-setup-code",
+    "stop-sync",
+  ]);
+  assert.equal(result.setupCode, "setup-once");
+  assert.equal(result.status.state, "created");
+  assert.equal(result.status.publicOrigin, "https://sync.example.com");
+  assert.equal(result.status.mode, "on-demand");
+  assert.deepEqual(
+    JSON.parse(await readFile(syncHostConfigPath(paths), "utf8")),
+    createSyncHostConfig("https://sync.example.com"),
+  );
+});
+
+test("a failed Host bootstrap cancels enrollment and removes its uncommitted authority", async (t) => {
+  const root = temporaryDirectory("cinba-sync-host-create-failed-", t);
+  const { options, paths } = nativeLayout(root);
+  const events: string[] = [];
+  const failure = new Error("bootstrap failed");
+
+  await assert.rejects(
+    createProductSyncHost("https://sync.example.com", {
+      ...options,
+      adapter: stoppedServiceAdapter(),
+      createRuntime: {
+        ensureCore: async () => undefined,
+        startSync: async () => {
+          events.push("start-sync");
+          await mkdir(paths.syncDataDirectory, { recursive: true });
+        },
+        beginEnrollment: async () => ({
+          enrollmentId: "enrollment-1",
+          enrollmentSecret: "secret-proof",
+          expiresAt: "2099-01-01T00:00:00.000Z",
+          settings: { version: 1, webTools: { searchPrimary: "auto" } },
+        }),
+        bootstrap: async () => {
+          events.push("bootstrap");
+          throw failure;
+        },
+        waitCoreOnline: async () => undefined,
+        readSetupCode: async () => undefined,
+        stopSync: async () => {
+          events.push("stop-sync");
+        },
+        cancelEnrollment: async () => {
+          events.push("cancel-enrollment");
+        },
+      },
+    }),
+    (error: unknown) => error === failure,
+  );
+
+  assert.deepEqual(events, ["start-sync", "bootstrap", "cancel-enrollment", "stop-sync"]);
+  await assert.rejects(access(paths.syncDataDirectory), { code: "ENOENT" });
+  await assert.rejects(access(syncHostConfigPath(paths)), { code: "ENOENT" });
+});
+
+test("a Sync startup failure still stops and removes partial Host state", async (t) => {
+  const root = temporaryDirectory("cinba-sync-host-create-start-failed-", t);
+  const { options, paths } = nativeLayout(root);
+  const events: string[] = [];
+  const failure = new Error("Sync startup timed out");
+
+  await assert.rejects(
+    createProductSyncHost("https://sync.example.com", {
+      ...options,
+      adapter: stoppedServiceAdapter(),
+      createRuntime: {
+        ensureCore: async () => undefined,
+        startSync: async () => {
+          events.push("start-sync");
+          await mkdir(paths.syncDataDirectory, { recursive: true });
+          throw failure;
+        },
+        beginEnrollment: async () => {
+          throw new Error("unreachable");
+        },
+        bootstrap: async () => undefined,
+        waitCoreOnline: async () => undefined,
+        readSetupCode: async () => undefined,
+        stopSync: async () => {
+          events.push("stop-sync");
+        },
+        cancelEnrollment: async () => {
+          events.push("cancel-enrollment");
+        },
+      },
+    }),
+    (error: unknown) => error === failure,
+  );
+
+  assert.deepEqual(events, ["start-sync", "stop-sync"]);
+  await assert.rejects(access(paths.syncDataDirectory), { code: "ENOENT" });
+});
+
+test("creating an existing Host is idempotent and does not reopen bootstrap", async (t) => {
+  const root = temporaryDirectory("cinba-sync-host-create-existing-", t);
+  const { options, paths } = nativeLayout(root);
+  await mkdir(paths.syncDataDirectory, { recursive: true });
+  await writeSyncHostConfig(
+    syncHostConfigPath(paths),
+    createSyncHostConfig("https://sync.example.com"),
+  );
+  let runtimeCalls = 0;
+  const unused = async () => {
+    runtimeCalls += 1;
+    throw new Error("creation runtime must stay unused");
+  };
+
+  const result = await createProductSyncHost("https://different.example.com", {
+    ...options,
+    adapter: stoppedServiceAdapter(),
+    createRuntime: {
+      ensureCore: unused,
+      startSync: unused,
+      beginEnrollment: unused,
+      bootstrap: unused,
+      waitCoreOnline: unused,
+      readSetupCode: unused,
+      stopSync: unused,
+      cancelEnrollment: unused,
+    },
+  });
+
+  assert.equal(runtimeCalls, 0);
+  assert.equal(result.setupCode, undefined);
+  assert.equal(result.status.state, "created");
+  assert.equal(result.status.publicOrigin, "https://sync.example.com");
 });
 
 test("configuring a stopped Host atomically updates only its public origin", async (t) => {

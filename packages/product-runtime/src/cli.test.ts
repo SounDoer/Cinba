@@ -77,6 +77,25 @@ test("the installed command defaults to the TUI and keeps management explicit", 
       publicOrigin: "https://sync.example.com",
     },
   );
+  assert.deepEqual(parseProductCommand(["sync", "create"], project), {
+    type: "sync-host-create",
+    publicOrigin: undefined,
+    showSetupCode: false,
+  });
+  assert.deepEqual(
+    parseProductCommand(
+      ["sync", "create", "--public-origin", "https://sync.example.com", "--show-setup-code"],
+      project,
+    ),
+    {
+      type: "sync-host-create",
+      publicOrigin: "https://sync.example.com",
+      showSetupCode: true,
+    },
+  );
+  assert.throws(() => parseProductCommand(["sync", "create", "--unknown"], project), {
+    message: "run 'cinba help' for usage",
+  });
   assert.throws(() => parseProductCommand(["sync", "configure"], project), {
     message: "run 'cinba help' for usage",
   });
@@ -184,6 +203,34 @@ test("Sync mode changes only a committed Host through the Host manager", async (
   assert.deepEqual(modes, ["background"]);
   assert.match(output[0]!, /Cinba Sync Host: created/);
   assert.match(output[0]!, /Mode: background/);
+});
+
+test("Sync create prints its one-time Setup Code only through the explicit escape hatch", async () => {
+  const output: string[] = [];
+  await runProductCli(["sync", "create", "--show-setup-code"], resolve("project"), {
+    readRelease: async () => release,
+    checkForUpdates: async () => undefined,
+    createSyncHost: async (publicOrigin) => {
+      assert.equal(publicOrigin, undefined);
+      return {
+        status: {
+          schemaVersion: 1,
+          state: "created",
+          publicOrigin: "http://127.0.0.1:4518",
+          availability: "this-device-only",
+          mode: "on-demand",
+          running: false,
+          healthy: null,
+        },
+        setupCode: "setup-once",
+      };
+    },
+    writeOutput: (line) => output.push(line),
+  });
+
+  assert.equal(output.length, 2);
+  assert.match(output[0]!, /Cinba Sync Host: created/);
+  assert.equal(output[1], "Setup Code: setup-once");
 });
 
 test("the installed Core separates durable data, runtime state, logs, and payload", () => {

@@ -83,8 +83,14 @@ export type { SyncHostConfig, SyncHostStorageState } from "./sync-host-config.ts
 export { beginManagedCoreSyncEnrollment } from "./core-service-control.ts";
 export {
   configureProductSyncHost,
+  createProductSyncHost,
   formatProductSyncHostStatus,
   inspectProductSyncHost,
   setProductSyncHostMode,
 } from "./sync-host-manager.ts";
 export type { ProductSyncHostOptions, ProductSyncHostStatus } from "./sync-host-manager.ts";
+export type {
+  ProductSyncHostCreateOptions,
+  ProductSyncHostCreateRuntime,
+  ProductSyncHostCreation,
+} from "./sync-host-manager.ts";
