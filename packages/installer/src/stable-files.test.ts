@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, readlink, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { temporaryDirectory } from "@cinba/test-support";
@@ -99,6 +99,9 @@ test("a macOS installer can replace itself from its embedded bundle", async (t) 
   await mkdir(join(bundleRoot, "launcher"), { recursive: true });
   await writeFile(join(desktopApplicationPath, "installer.txt"), "outer installer");
   await writeFile(join(stableApplication, "Contents", "stable.txt"), "stable application");
+  if (process.platform !== "win32") {
+    await symlink("stable.txt", join(stableApplication, "Contents", "Current"));
+  }
   await writeFile(launcher, "stable launcher");
   const prepared = await prepareStableProductFiles({
     bundle: {
@@ -123,6 +126,9 @@ test("a macOS installer can replace itself from its embedded bundle", async (t) 
     "stable application",
   );
   assert.equal(await readFile(productPaths.launcherPath, "utf8"), "stable launcher");
+  if (process.platform !== "win32") {
+    assert.equal(await readlink(join(desktopApplicationPath, "Contents", "Current")), "stable.txt");
+  }
   await prepared.commit();
   await assert.rejects(readFile(join(desktopApplicationPath, "installer.txt"), "utf8"), /ENOENT/);
 });

@@ -20,7 +20,7 @@ test("the macOS DMG ad-hoc signs one self-installing application without a drag 
   );
   assert.equal(
     configuration.mac && !Array.isArray(configuration.mac) && configuration.mac.signIgnore,
-    "Contents/Resources/cinba-bundle/desktop/",
+    "Contents/Resources/cinba-bundle(?:/|$)",
   );
   assert.equal(
     configuration.mac && !Array.isArray(configuration.mac) && configuration.mac.artifactName,

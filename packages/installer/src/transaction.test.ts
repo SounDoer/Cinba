@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readlink, rename, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { temporaryDirectory } from "@cinba/test-support";
@@ -102,6 +102,54 @@ test("a bundled macOS candidate may stage from inside the application directory"
     transactionId: FIRST_ID,
   });
   assert.equal(transaction.phase, "ready");
+});
+
+test("a staged macOS candidate keeps relative symbolic links independent of its source", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("release symlinks exist only in macOS artifacts");
+    return;
+  }
+  const root = temporaryDirectory("cinba-stage-macos-links-", t);
+  const paths = layout(root);
+  const source = join(root, "source");
+  await mkdir(join(source, "framework"), { recursive: true });
+  await writeFile(join(source, "framework", "binary"), "framework binary");
+  await symlink("binary", join(source, "framework", "Current"));
+  await writeFile(
+    join(source, "release.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        product: "Cinba",
+        version: "1.0.0",
+        revision: OLD_REVISION,
+        protocolVersion: 1,
+        dataFormatVersion: 1,
+        target: "macos-arm64",
+        nodeVersion: "24.0.0",
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  const inventory = await createArtifactInventory(source, {
+    version: "1.0.0",
+    revision: OLD_REVISION,
+    target: "macos-arm64",
+  });
+  await writeFile(join(source, "inventory.json"), `${JSON.stringify(inventory, null, 2)}\n`);
+
+  const transaction = await stageCandidate({
+    sourceDirectory: source,
+    layout: paths,
+    expectedTarget: "macos-arm64",
+    transactionId: FIRST_ID,
+  });
+
+  assert.equal(
+    await readlink(join(releasePath(paths, transaction.candidate), "framework", "Current")),
+    "binary",
+  );
 });
 
 test("a candidate cannot stage recursively from managed release storage", async (t) => {

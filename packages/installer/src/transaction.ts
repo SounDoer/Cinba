@@ -200,7 +200,13 @@ async function placeCandidate(
       // The payload is still where it was; fall through to the copy.
     }
   }
-  await cp(source, destination, { recursive: true, force: false, errorOnExist: true });
+  await cp(source, destination, {
+    recursive: true,
+    force: false,
+    errorOnExist: true,
+    // Frameworks and package shims rely on relative links surviving after the source disappears.
+    verbatimSymlinks: true,
+  });
 }
 
 export async function stageCandidate(

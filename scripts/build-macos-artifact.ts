@@ -1,15 +1,19 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { Arch, type Configuration, Platform, build as buildElectron } from "electron-builder";
 import { build } from "esbuild";
-import { parsePayloadRelease, requireProductTarget } from "@cinba/installer";
+import { parsePayloadRelease, requireProductTarget, verifyReleaseBundle } from "@cinba/installer";
 import { buildReleaseBundle } from "./build-release-bundle.ts";
 import { verifyMacosApplicationSignature } from "./verify-macos-application.ts";
 
 const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const MACOS_INSTALLER_DIST = join(REPOSITORY_ROOT, "dist", "macos-installer");
 const STAGING_DIRECTORY = join(MACOS_INSTALLER_DIST, "app");
+const execFileAsync = promisify(execFile);
 
 export function createMacosArtifactConfiguration(options: {
   version: string;
@@ -42,10 +46,10 @@ export function createMacosArtifactConfiguration(options: {
       // signatures in a bundle that macOS rejects before the installer bootstrap can run.
       identity: "-",
       hardenedRuntime: false,
-      // The release bundle contains the already signed installed Desktop. Re-signing its nested
-      // frameworks as loose resources breaks their bundle topology; the outer signature still
-      // seals their bytes as installer resources.
-      signIgnore: "Contents/Resources/cinba-bundle/desktop/",
+      // The complete release bundle already has inventories and the installed Desktop has its own
+      // signature. Signing any executable inside this resource tree mutates bytes after inventory
+      // generation, while the outer application signature still seals the tree as resources.
+      signIgnore: "Contents/Resources/cinba-bundle(?:/|$)",
       artifactName: `Cinba-${options.version}-macos-arm64.\${ext}`,
     },
     dmg: {
@@ -55,6 +59,35 @@ export function createMacosArtifactConfiguration(options: {
       contents: [{ x: 270, y: 180, type: "file" }],
     },
   };
+}
+
+async function verifyMacosDiskImage(artifactPath: string): Promise<void> {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "cinba-dmg-verification-"));
+  const mountPoint = join(temporaryDirectory, "mounted");
+  await mkdir(mountPoint);
+  let attached = false;
+  try {
+    await execFileAsync("hdiutil", [
+      "attach",
+      "-nobrowse",
+      "-readonly",
+      "-mountpoint",
+      mountPoint,
+      artifactPath,
+    ]);
+    attached = true;
+    const application = join(mountPoint, "Cinba.app");
+    await verifyMacosApplicationSignature(application);
+    await verifyReleaseBundle(
+      join(application, "Contents", "Resources", "cinba-bundle"),
+      "macos-arm64",
+    );
+  } finally {
+    if (attached) {
+      await execFileAsync("hdiutil", ["detach", mountPoint]);
+    }
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
 }
 
 async function prepareInstallerApplication(version: string): Promise<void> {
@@ -116,6 +149,7 @@ export async function buildMacosArtifact(): Promise<string> {
   if (!outputs.includes(artifactPath)) {
     throw new Error("macOS artifact build did not produce the expected DMG");
   }
+  await verifyMacosDiskImage(artifactPath);
   return artifactPath;
 }
 

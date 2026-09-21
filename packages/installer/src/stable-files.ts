@@ -96,6 +96,8 @@ async function prepareReplacement(
       force: false,
       errorOnExist: true,
       preserveTimestamps: true,
+      // macOS frameworks contain relative links which must not retain a dependency on the DMG.
+      verbatimSymlinks: true,
     });
     if (previousStatus) {
       await renameStable(destination, backup);
