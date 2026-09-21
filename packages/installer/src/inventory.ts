@@ -1,7 +1,7 @@
 import { createReadStream } from "node:fs";
 import { lstat, readdir, readlink, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { dirname, posix, relative, resolve, sep } from "node:path";
 import { type ProductTarget, isProductTarget } from "./platform.ts";
 
 export type InventoryFile = {
@@ -89,7 +89,7 @@ function safeLinkTarget(value: unknown, context: string): string {
     value.length === 0 ||
     value.includes("\\") ||
     value.includes("\0") ||
-    isAbsolute(value)
+    posix.isAbsolute(value)
   ) {
     throw new Error(`${context} must be a relative POSIX symlink target`);
   }
