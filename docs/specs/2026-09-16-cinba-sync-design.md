@@ -2,8 +2,9 @@
 
 日期：2026-09-16
 
-状态：已实施；自动化测试与完整 `npm run check` 已通过
-实机验收：仍需完成的项目见 `docs/notes/2026-09-16-cinba-sync-deployment.md`
+状态：第一版已实施；自动化测试与完整 `npm run check` 已通过。部署章节记录历史
+源码部署形状；当前产品方向以 `docs/specs/2026-09-17-cinba-sync-product-experience.md` 为准。
+实机验收与退役说明见 `docs/notes/2026-09-16-cinba-sync-deployment.md`。
 
 ## 1. 背景
 
@@ -494,6 +495,10 @@ Desktop
 
 ## 13. 网络与部署
 
+本节是已退役的第一版源码部署设计，不是当前正式安装指南。`packages/deploy`、
+`prod` 分支和定时拉取 checkout 的产品路径已退役；后续本机 GUI Sync 和始终在线部署
+分别按新产品体验规格设计。
+
 Sync Server 默认只监听 loopback，通过部署者提供的 HTTPS reverse proxy 暴露。当前 VPS 形状：
 
 ```text
@@ -597,8 +602,9 @@ sync-web
 - `packages/core-client`：封装上述 Core 操作，不承载管理员 API；
 - `packages/web` / `packages/tui`：当前 Core 的状态、来源和 Override；
 - `packages/desktop`：保留 CoreProfile Store，Sync 管理由 Core Web 导向系统浏览器；
-- `packages/deploy`：独立 Sync 服务安装、健康检查和发布接线；
-- `scripts/cinba.ts`：Sync 本机管理与恢复命令；
+- `packages/installer` / `packages/product-runtime`：正式安装中的 Sync 运行入口、独立数据目录、
+  服务注册和生命周期模式；
+- `scripts/cinba.ts`：源码开发环境的 Sync 本机管理与恢复命令；
 - `scripts/launch.ts`：仓库开发入口，不把 Sync 混进普通 Core 生命周期。
 
 改变 `packages/contract` 后，必须确认 Web、TUI 和 Desktop 都跟上。

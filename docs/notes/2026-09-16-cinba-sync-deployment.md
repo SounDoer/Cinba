@@ -1,81 +1,50 @@
 # Cinba Sync 部署与验收记录
 
-本文记录第一版 Sync Server 的等价部署形状。Sync Server 始终是独立常驻服务，不进入 Core 的
-on-demand 生命周期，也不随 Web、TUI 或 Desktop 窗口关闭。
+日期：2026-09-16
 
-## 共同约束
+最后更新：2026-09-21
 
-- 服务只允许监听 `127.0.0.1`、`localhost` 或 loopback IPv6；程序会拒绝 `0.0.0.0` 和普通网卡地址。
-- 远程管理必须使用 HTTPS reverse proxy。配置 HTTPS public origin 后，Server 同时检查
-  `X-Forwarded-Proto: https` 和匹配的 `X-Forwarded-Host`。
-- 权威状态默认位于 `~/.cinba-sync`，权限只授予运行服务的系统用户。
-- `CINBA_SYNC_PUBLIC_ORIGIN` 必须是客户端实际访问的根 origin，不能带路径。
-- Sync 与 Core 可以来自同一 release，但使用不同进程、端口、状态目录和健康检查。
+状态：历史实施记录；基于源码 checkout、`packages/deploy` 和 `prod` 分支的操作说明已退役，
+不得用于当前正式产品。
 
-## VPS：systemd user service + Caddy + Tailnet
+## 历史结论
 
-以非 root 的 `cinba` 用户安装仓库中的 `packages/deploy/systemd/cinba-sync.service`：
+第一版 Sync Server 已验证下列边界：
 
-```sh
-install -d -m 700 ~/.config/cinba ~/.config/systemd/user
-install -m 644 packages/deploy/systemd/cinba-sync.service ~/.config/systemd/user/
-printf '%s\n' 'CINBA_SYNC_PUBLIC_ORIGIN=https://sync.example.ts.net' > ~/.config/cinba/sync.env
-chmod 600 ~/.config/cinba/sync.env
-systemctl --user daemon-reload
-systemctl --user enable --now cinba-sync.service
-curl --fail http://127.0.0.1:4518/health
+- Sync Server 是与 Core 平级的独立常驻进程，使用独立的端口、状态目录和健康检查；
+- 服务只监听 loopback；远程访问必须由外部 HTTPS reverse proxy 提供，不直接暴露裸
+  HTTP 端口；
+- Sync 权威数据、加密 key、Core enrollment、管理端身份和备份恢复均不依赖普通 Core；
+- systemd user service、launchd、Caddy 与 Tailscale 形状曾在第一版源码部署链中验证。
+
+这些结论仍是后续设计输入，但旧的复制 unit、修改 checkout 路径、推进 `prod` 分支和
+定时拉取源码不再是受支持的安装方式。
+
+## 当前正式产品边界
+
+`v0.1.0` 起，Sync 运行时与 `sync-web` 已进入统一 release payload，并复用正式 launcher、
+安装目录和跨平台服务管理抽象。当前已有底层命令是：
+
+```text
+cinba sync serve
+cinba sync mode
+cinba sync mode disabled
+cinba sync mode on-demand
+cinba sync mode background
 ```
 
-Caddy 示例位于 `packages/deploy/caddy/Caddyfile.sync.example`。站点必须绑定 Tailnet/LAN 接口，
-只把流量反代到 `127.0.0.1:4518`；不要开放 Sync 的裸 HTTP 端口。Caddy 的 `reverse_proxy` 会提供
-Server 校验所需的 forwarded headers。
+这些命令是安装与生命周期基础，不等于面向普通用户的 Sync 创建向导。正式产品尚未承诺
+VPS、Tailscale、Caddy、TLS、LAN 或公网入口的自动安装与配置，也不再提供旧
+`packages/deploy` 中的 unit 和 Caddy 示例。
 
-检查服务和初始化状态：
+旧记录中的 `cinba sync status`、`backup` 和 `restore` 属于源码时期命令形状，不是当前
+正式 launcher 的公开命令，因此不再在这里作为部署步骤继续传播。
 
-```sh
-cinba sync status
-journalctl --user -u cinba-sync.service
-```
+## 下一阶段
 
-release 切换会先验证新 Core，再仅在 `cinba-sync.service` 原本 active 时重启它，并验证 loopback
-`/health`。没有启用 Sync 的主机不会被部署流程擅自启动 Sync。
+当前有效的产品方向见 `docs/specs/2026-09-17-cinba-sync-product-experience.md`。第一实施切片是
+本机 GUI Sync：由 Desktop tray 按需托管 loopback-only Sync，完成本机创建、首次管理授权、
+当前 Core 自动 enrollment、Disable 和独立确认的永久 Delete。
 
-## 家用 Mac
-
-复制 `packages/deploy/launchd/com.cinba.sync.plist.example` 到
-`~/Library/LaunchAgents/com.cinba.sync.plist`，把示例用户名、checkout 路径和 public origin 改为本机
-实际值，再执行：
-
-```sh
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cinba.sync.plist
-curl --fail http://127.0.0.1:4518/health
-```
-
-远程设备仍通过 Tailnet/LAN HTTPS proxy 访问。只在这台 Mac 自己使用时，可以把 public origin 设为
-`http://127.0.0.1:4518`，但其它设备不能使用这个 loopback URL。
-
-## 无 VPS
-
-任选一台常驻 Mac 或 Linux 主机承担同一个 Sync Server 角色即可；协议、Core enrollment、backup 和
-restore 都不依赖 VPS。Windows 当前可以运行 `cinba sync serve` 做前台托管，但第一版没有增加
-Windows Service 安装器。
-
-## 备份、迁移与 URL 变化
-
-```sh
-CINBA_SYNC_MIGRATION_PASSWORD='一次性强密码' cinba sync backup /private/path/sync.backup
-CINBA_SYNC_MIGRATION_PASSWORD='一次性强密码' cinba sync restore /private/path/sync.backup
-```
-
-迁移密码通过环境变量传入，避免进入命令参数。`restore --force` 会先把原目标目录改名保留；恢复完成
-后应核对保留目录再决定何时清理。若 public URL 不变，原 Core credential 继续有效；URL 改变时只需
-在各 Core 修改 connection URL，不重新 enrollment，旧 Server 也不会自动重定向。
-
-## 尚需实机完成的验收
-
-自动测试覆盖独立进程、维护只读、加密备份恢复和多 Core 协议流程，但下列项目必须在目标设备完成：
-
-- VPS 上真实 Tailscale certificate、Caddy interface bind 与 systemd 重启；
-- Windows 和 macOS Desktop 对同一 HTTPS Sync origin 的 cookie/login 行为；
-- macOS launchd 重启与睡眠唤醒；
-- 手机浏览器的 Setup、Login、key 替换和 enrollment approval。
+VPS/TUI 始终在线部署需要另行设计和验收；在那之前，不应把历史源码部署步骤
+包装成正式产品功能。

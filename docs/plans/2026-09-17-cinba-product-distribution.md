@@ -2,10 +2,11 @@
 
 日期：2026-09-17
 
-最后更新：2026-09-20
+最后更新：2026-09-21
 
 状态：`v0.1.0` 已从 `827153f` 正式发布；Windows 当前用户、Linux 容器与发布后 bootstrap、updater
-验收通过；等待 macOS 实测、干净环境验收与首个跨版本更新
+验收通过；旧 `packages/deploy` 与远端 `prod` 分支已退役；等待 macOS 实测、干净环境验收与
+首个跨版本更新
 
 对应规格：`docs/specs/2026-09-17-cinba-product-distribution-design.md`
 
@@ -28,15 +29,15 @@
 - Linux 容器探针完成离线安装、On-demand、Background、重启恢复、卸载与 purge 的验证，发现的无
   systemd 时无法卸载、无 linger 时诊断不足两项已修复并复测通过；
 - `v0.1.0` 已正式发布并标记 Immutable，release notes 精简为只服务于安装；发布后已验证不可变资产、
-  一行 bootstrap 在干净 Ubuntu 上完成安装，以及 updater 正确发现已发布版本。
+  一行 bootstrap 在干净 Ubuntu 上完成安装，以及 updater 正确发现已发布版本；
+- 远端 `prod` 分支已于 2026-09-21 删除，仓库不再保留第二套 Git 分支驱动的发布入口。
 
 仍未完成的是必须依赖真实目标系统或后续版本的验收，不把局部探针误记成完整通过：
 
 - 在 Windows 干净普通用户、macOS 干净账号、Ubuntu 22.04/24.04 与清空后的 VPS 上完成从零安装；
 - 完成 SmartScreen、Gatekeeper、真实 SSH 与主机重启恢复和真实更新失败恢复；
 - 首个后续版本存在后，执行真实 `N-1 → N` 更新与双向连接兼容矩阵；
-- 人工复核剩余实机结果后正式发布 `v0.1.0`，确认 immutable 状态和 updater 发现行为；
-- 正式发布并完成新链验收后，再删除远端 `prod` 分支。
+- 人工复核剩余实机结果，把新发现的问题继续回写自动化测试或规格。
 
 逐项记录见 `docs/notes/2026-09-18-cinba-product-distribution-verification.md`。
 

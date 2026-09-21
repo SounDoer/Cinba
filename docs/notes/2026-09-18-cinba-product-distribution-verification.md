@@ -2,10 +2,11 @@
 
 日期：2026-09-18
 
-最后更新：2026-09-20
+最后更新：2026-09-21
 
 状态：`v0.1.0` 已从 `827153f` 正式发布并标记 Immutable；发布后 bootstrap 与 updater 发现已验证；
-macOS 尚未在任何近期构建上实测，干净账号、真实 VPS 与跨版本更新待验收
+旧 `packages/deploy` 与远端 `prod` 分支已退役；macOS 尚未在任何近期构建上实测，干净账号、真实
+VPS 与跨版本更新待验收
 
 对应规格：`docs/specs/2026-09-17-cinba-product-distribution-design.md`
 
@@ -410,7 +411,7 @@ Windows 上的 `cinba update` 返回 `GitHub latest release request failed with 
 
 ## 收尾
 
-- [ ] 第一轮真实验收的问题已回写自动化测试或规格；
+- [x] 第一轮真实验收的问题已回写自动化测试或规格；
 - [ ] 清空后的旧 VPS 已使用正式 Headless artifact 重建；
-- [ ] 远端 `prod` 分支已在新发布链验收后删除；
+- [x] 远端 `prod` 分支已在新发布链验收后删除；
 - [ ] 不再存在第二套 Git checkout/VPS deployment 产品路径。
