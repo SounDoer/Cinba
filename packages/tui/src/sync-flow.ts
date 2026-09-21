@@ -1,6 +1,7 @@
 import type { Component } from "@earendil-works/pi-tui";
 import { type CoreSyncControlClient, CoreSyncControlError } from "@cinba/core-client";
 import type { CoreInstanceOverride, CoreSyncSources, CoreSyncView } from "@cinba/contract";
+import type { ServiceMode } from "@cinba/installer";
 import {
   type ProductSyncHostStatus,
   formatProductSyncHostStatus,
@@ -39,6 +40,7 @@ export type SyncHostManager = {
     status: ProductSyncHostStatus;
     setupCode?: string;
   }>;
+  setMode?(mode: ServiceMode): Promise<ProductSyncHostStatus>;
 };
 
 const SOURCES: { value: string; label: string; sources: CoreSyncSources }[] = [
@@ -276,9 +278,52 @@ export class SyncFlow {
         this.#host.append(`Setup Code: ${creation.setupCode}`);
         this.#host.requestRender();
       }
+      this.#chooseHostMode();
     } catch (error) {
       this.#host.showNotice(
         error instanceof Error ? error.message : "The Sync Host could not be created",
+      );
+    } finally {
+      this.#busy = false;
+    }
+  }
+
+  #chooseHostMode(): void {
+    if (!this.#hostManager.setMode) {
+      return;
+    }
+    const picker = new ChoicePicker("How should this Sync Host run?", [
+      {
+        value: "background",
+        label: "Background (VPS recommended)",
+        description: "Keep running after SSH exits; Linux may require linger.",
+      },
+      {
+        value: "on-demand",
+        label: "On-demand",
+        description: "Run only while a local Cinba surface needs it.",
+      },
+    ]);
+    picker.onAnswer = (choice) => {
+      this.#host.showPrompt();
+      if (choice === "background" || choice === "on-demand") {
+        void this.#setHostMode(choice);
+      }
+    };
+    this.#host.showInteraction(picker);
+  }
+
+  async #setHostMode(mode: ServiceMode): Promise<void> {
+    if (this.#busy || !this.#hostManager.setMode) {
+      return;
+    }
+    this.#busy = true;
+    try {
+      this.#hostStatus = await this.#hostManager.setMode(mode);
+      this.#host.showNotice(`Sync Host mode changed to ${mode}`);
+    } catch (error) {
+      this.#host.showNotice(
+        error instanceof Error ? error.message : "The Sync Host mode could not be changed",
       );
     } finally {
       this.#busy = false;

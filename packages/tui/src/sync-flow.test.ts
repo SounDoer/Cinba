@@ -128,3 +128,65 @@ test("creating a Host explains Settings initialization and keeps Credentials loc
   assert.match(rendered, /Credentials stay/i);
   assert.match(rendered, /local/i);
 });
+
+test("a created Host shows its Setup Code and immediately offers VPS lifecycle choices", async () => {
+  let interaction: Component | undefined;
+  const output: string[] = [];
+  const notices: string[] = [];
+  const coreView = view("online");
+  const created = {
+    schemaVersion: 1 as const,
+    state: "created" as const,
+    publicOrigin: "https://sync.example.com",
+    availability: "remote-https" as const,
+    mode: "on-demand" as const,
+    running: false,
+    healthy: null,
+    setupState: null,
+    settingsRevision: null,
+    syncRevision: null,
+    connectedCoreCount: null,
+    pendingEnrollmentCount: null,
+  };
+  const flow = new SyncFlow(
+    {
+      status: async () => coreView,
+      cancelEnrollment: async () => ({ version: 1, accepted: true }),
+      syncNow: async () => ({ version: 1, accepted: true }),
+      updateSources: async () => ({ version: 1, accepted: true }),
+      disconnect: async () => ({ version: 1, accepted: true }),
+      connect: async () => ({ version: 1, accepted: true }),
+      updateOverride: async () => ({ version: 1, accepted: true }),
+    },
+    {
+      append: (line) => output.push(line),
+      showInteraction: (component) => {
+        interaction = component;
+      },
+      showPrompt: () => undefined,
+      requestRender: () => undefined,
+      showNotice: (text) => notices.push(text),
+    },
+    {
+      inspect: async () => ({ schemaVersion: 1, state: "not-created" }),
+      create: async () => ({ status: created, setupCode: "setup-once" }),
+      setMode: async () => created,
+    },
+  );
+  await flow.open();
+
+  send(interaction, "\x1b[B");
+  send(interaction, "\r");
+  send(interaction, "\x1b[B");
+  send(interaction, "\r");
+  send(interaction, "\r");
+  send(interaction, "https://sync.example.com");
+  send(interaction, "\r");
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(notices, ["Sync Host created"]);
+  assert.match(output.join("\n"), /Setup Code: setup-once/);
+  const rendered = interaction?.render(80).join("\n") ?? "";
+  assert.match(rendered, /On-demand/);
+  assert.match(rendered, /Background.*VPS/i);
+});
