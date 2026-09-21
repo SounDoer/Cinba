@@ -4,9 +4,9 @@
 
 最后更新：2026-09-21
 
-状态：`v0.1.0` 已从 `827153f` 正式发布并标记 Immutable；发布后 bootstrap 与 updater 发现已验证；
-旧 `packages/deploy` 与远端 `prod` 分支已退役；macOS 尚未在任何近期构建上实测，干净账号、真实
-VPS 与跨版本更新待验收
+状态：`v0.1.1` 已从 `a54322a` 正式发布并标记 Immutable；三平台原生构建、公开 bootstrap、updater
+发现和真实 VPS 安装均已验证；旧 `packages/deploy` 与远端 `prod` 分支已退役；macOS 安装包仍缺少
+真实用户安装验收
 
 对应规格：`docs/specs/2026-09-17-cinba-product-distribution-design.md`
 
@@ -356,6 +356,29 @@ attestation 校验一致。复测结果：
 Windows 上的 `cinba update` 返回 `GitHub latest release request failed with HTTP 403`，经查为本机
 匿名 API 限流（`x-ratelimit-remaining: 0`，限额 60/小时，约 25 分钟后重置），同时刻容器中成功，
 非产品缺陷；提示未说明限流与重试时间，已记入待改进。
+
+## 正式发布 v0.1.1
+
+2026-09-21 将 `a54322a6a3f6697e563162e13b4388b0c5228a9d` 通过
+[Prepare product release](https://github.com/SounDoer/Cinba/actions/runs/35583350967) 构建并正式发布为
+[v0.1.1](https://github.com/SounDoer/Cinba/releases/tag/v0.1.1)。Windows、macOS、Linux 原生 runner
+分别通过完整 `npm run check`，三个 artifact、bootstrap、manifest 与 SHA256SUMS 完成 attestation；
+release 非 draft、非 prerelease，`isImmutable=true`，tag 与 latest 均指向锁定 revision。
+
+发布后验证：
+
+- GitHub asset digest、SHA256SUMS 与 manifest 中的大小和 SHA-256 全部一致；
+- 公开的一行 bootstrap 在全新 Ubuntu 24.04 容器中下载 122 MB、校验并安装成功，`version`、`doctor`
+  与 `sync status --json` 正确；
+- 真实 VPS 从候选 `0.1.0 (99a5742f)` 通过正式 `v0.1.1` bootstrap 更新，原 Sync authority、管理员
+  设置、background mode 与 Core enrollment 保持；两个 HTTPS 入口继续返回 200；
+- VPS 建立权限 `600` 的一致性备份并记录 SHA-256；备份仍与 VPS 同盘，只用于误操作恢复，异机加密
+  副本需在个人设备上完成。
+
+验收发现 `v0.1.1` 的独立 `cinba update` 错把命令行 handoff 标记为 TUI，并让 detached helper 继承
+SSH PTY；SSH 关闭后安装没有提交，安全地保留旧版本，却重启了无 TTY 的 TUI。正式 bootstrap 可完成
+更新。`9339963` 已在发布后按 TDD 修复：增加 `cli` handoff、禁止 surface restart，并让 helper 脱离
+终端 stdio；该修复不属于 immutable `v0.1.1`，将在下一版本发布。
 
 ## 正式发版前置检查
 

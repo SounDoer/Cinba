@@ -65,6 +65,10 @@ cinba update
 与 SHA-256。更新期间不要手工替换 `releases/` 或 `current.json`；失败时保留日志，由稳定 launcher 负责
 回滚和恢复原 lifecycle mode。
 
+`v0.1.1` 已知限制：从 SSH 中直接确认 `cinba update` 后，命令行 handoff 可能在 SSH 退出时中断并
+遗留一个无 TTY 的 TUI；旧版本和数据会安全保留。下一版本包含修复。在此之前可停止 Core/Sync user
+unit，重新执行目标正式版本的公开 bootstrap，再启动两个 unit；不要手工改 current pointer。
+
 ## 一致性备份
 
 备份包含管理员验证数据、Sync authority 与 Core credential，应视为敏感文件。备份时短暂停止 unit，
