@@ -40,6 +40,7 @@ export type SyncHostManager = {
     status: ProductSyncHostStatus;
     setupCode?: string;
   }>;
+  configure?(publicOrigin: string): Promise<ProductSyncHostStatus>;
   setMode?(mode: ServiceMode): Promise<ProductSyncHostStatus>;
 };
 
@@ -218,6 +219,9 @@ export class SyncFlow {
       ...(this.#hostStatus.state === "not-created" && this.#hostManager.create
         ? [{ value: "create", label: "Create Sync Host on this device" }]
         : []),
+      ...(this.#hostStatus.state === "created" && this.#hostManager.configure
+        ? [{ value: "configure", label: "Configure public origin" }]
+        : []),
     ]);
     picker.onAnswer = (choice) => {
       this.#host.showPrompt();
@@ -231,8 +235,55 @@ export class SyncFlow {
       if (choice === "create") {
         this.#confirmHostCreation();
       }
+      if (choice === "configure") {
+        this.#confirmHostConfiguration();
+      }
     };
     this.#host.showInteraction(picker);
+  }
+
+  #confirmHostConfiguration(): void {
+    const picker = new ChoicePicker(
+      "Change public origin — management sign-in and connected Cores may need to reconnect",
+      [{ value: "continue", label: "Continue" }],
+    );
+    picker.onAnswer = (choice) => {
+      this.#host.showPrompt();
+      if (choice === "continue") {
+        this.#askConfiguredHostPublicOrigin();
+      }
+    };
+    this.#host.showInteraction(picker);
+  }
+
+  #askConfiguredHostPublicOrigin(): void {
+    const currentOrigin =
+      this.#hostStatus?.state === "created" ? this.#hostStatus.publicOrigin : "";
+    const input = new TextInput("Public HTTPS origin", currentOrigin);
+    input.onAnswer = (publicOrigin) => {
+      this.#host.showPrompt();
+      if (publicOrigin) {
+        void this.#configureHost(publicOrigin);
+      }
+    };
+    this.#host.showInteraction(input);
+  }
+
+  async #configureHost(publicOrigin: string): Promise<void> {
+    if (this.#busy || !this.#hostManager.configure) {
+      return;
+    }
+    this.#busy = true;
+    try {
+      this.#hostStatus = await this.#hostManager.configure(publicOrigin);
+      this.#host.showNotice("Sync Host public origin updated");
+    } catch (error) {
+      this.#host.showNotice(
+        error instanceof Error ? error.message : "The Sync Host origin could not be changed",
+      );
+    } finally {
+      this.#busy = false;
+    }
   }
 
   #confirmHostCreation(): void {

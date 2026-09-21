@@ -190,3 +190,57 @@ test("a created Host shows its Setup Code and immediately offers VPS lifecycle c
   assert.match(rendered, /On-demand/);
   assert.match(rendered, /Background.*VPS/i);
 });
+
+test("configuring a Host warns that changing its origin can require reconnecting", async () => {
+  let interaction: Component | undefined;
+  const coreView = view("online");
+  const created = {
+    schemaVersion: 1 as const,
+    state: "created" as const,
+    publicOrigin: "https://sync.example.com",
+    availability: "remote-https" as const,
+    mode: "background" as const,
+    running: true,
+    healthy: true,
+    setupState: "ready" as const,
+    settingsRevision: 2,
+    syncRevision: 4,
+    connectedCoreCount: 1,
+    pendingEnrollmentCount: 0,
+  };
+  const flow = new SyncFlow(
+    {
+      status: async () => coreView,
+      cancelEnrollment: async () => ({ version: 1, accepted: true }),
+      syncNow: async () => ({ version: 1, accepted: true }),
+      updateSources: async () => ({ version: 1, accepted: true }),
+      disconnect: async () => ({ version: 1, accepted: true }),
+      connect: async () => ({ version: 1, accepted: true }),
+      updateOverride: async () => ({ version: 1, accepted: true }),
+    },
+    {
+      append: () => undefined,
+      showInteraction: (component) => {
+        interaction = component;
+      },
+      showPrompt: () => undefined,
+      requestRender: () => undefined,
+      showNotice: () => undefined,
+    },
+    {
+      inspect: async () => created,
+      configure: async () => created,
+    },
+  );
+  await flow.open();
+
+  send(interaction, "\x1b[B");
+  send(interaction, "\r");
+  assert.match(interaction?.render(80).join("\n") ?? "", /Configure public origin/);
+  send(interaction, "\x1b[B");
+  send(interaction, "\r");
+
+  const rendered = interaction?.render(80).join("\n") ?? "";
+  assert.match(rendered, /origin/i);
+  assert.match(rendered, /reconnect/i);
+});
