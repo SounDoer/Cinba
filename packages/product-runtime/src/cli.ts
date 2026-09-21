@@ -39,6 +39,7 @@ import {
   configureProductSyncHost,
   formatProductSyncHostStatus,
   inspectProductSyncHost,
+  setProductSyncHostMode,
 } from "./sync-host-manager.ts";
 
 export type ProductCommand =
@@ -65,6 +66,7 @@ export type ProductCliDependencies = {
   checkForUpdates: typeof checkForProductUpdatesAutomatically;
   configureSyncHost: typeof configureProductSyncHost;
   inspectSyncHost: typeof inspectProductSyncHost;
+  setSyncHostMode: typeof setProductSyncHostMode;
   writeOutput: (output: string) => void;
   executeCommand?: (command: ProductCommand) => Promise<void>;
 };
@@ -432,6 +434,7 @@ export async function runProductCli(
     checkForUpdates: checkForProductUpdatesAutomatically,
     configureSyncHost: configureProductSyncHost,
     inspectSyncHost: inspectProductSyncHost,
+    setSyncHostMode: setProductSyncHostMode,
     writeOutput: (output) => console.log(output),
     ...overrides,
   };
@@ -511,6 +514,16 @@ export async function runProductCli(
     dependencies.writeOutput(
       formatProductSyncHostStatus(await dependencies.configureSyncHost(command.publicOrigin)),
     );
+    return;
+  }
+  if (command.type === "component-mode" && command.component === "sync") {
+    const status = command.mode
+      ? await dependencies.setSyncHostMode(
+          command.mode,
+          process.stdin.isTTY && process.stdout.isTTY ? { authorizeLinger: askLingerConsent } : {},
+        )
+      : await dependencies.inspectSyncHost();
+    dependencies.writeOutput(formatProductSyncHostStatus(status));
     return;
   }
 

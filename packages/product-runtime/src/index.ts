@@ -85,5 +85,6 @@ export {
   configureProductSyncHost,
   formatProductSyncHostStatus,
   inspectProductSyncHost,
+  setProductSyncHostMode,
 } from "./sync-host-manager.ts";
 export type { ProductSyncHostOptions, ProductSyncHostStatus } from "./sync-host-manager.ts";

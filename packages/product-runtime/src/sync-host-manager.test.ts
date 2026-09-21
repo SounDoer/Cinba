@@ -16,6 +16,7 @@ import {
   inspectProductSyncHost,
   removeManagedSyncControl,
   setProductComponentMode,
+  setProductSyncHostMode,
   syncHostConfigPath,
   writeSyncHostConfig,
 } from "./index.ts";
@@ -387,6 +388,74 @@ test("an authority without committed Host config requires explicit repair", asyn
     state: "repair-required",
     reason: "orphaned-authority",
   });
+});
+
+test("an orphaned authority cannot be promoted to a Background Host", async (t) => {
+  const root = temporaryDirectory("cinba-sync-host-orphan-mode-", t);
+  const { options, paths } = nativeLayout(root);
+  await mkdir(paths.syncDataDirectory, { recursive: true });
+  let mutations = 0;
+  const adapter: PlatformServiceAdapter = {
+    inspect: async () => ({ registered: false, running: false }),
+    install: async () => {
+      mutations += 1;
+    },
+    remove: async () => {
+      mutations += 1;
+    },
+    start: async () => {
+      mutations += 1;
+    },
+    stop: async () => {
+      mutations += 1;
+    },
+  };
+
+  await assert.rejects(setProductSyncHostMode("background", { ...options, adapter }), {
+    message: "Cinba Sync Host requires repair: orphaned-authority",
+  });
+  assert.equal(mutations, 0);
+});
+
+test("a committed Host changes mode through the shared platform service adapter", async (t) => {
+  const root = temporaryDirectory("cinba-sync-host-mode-", t);
+  const { options, paths } = nativeLayout(root);
+  await mkdir(paths.syncDataDirectory, { recursive: true });
+  await writeSyncHostConfig(syncHostConfigPath(paths), createSyncHostConfig());
+  let registered = false;
+  let running = false;
+  const adapter: PlatformServiceAdapter = {
+    inspect: async () => ({ registered, running }),
+    install: async () => {
+      registered = true;
+    },
+    remove: async () => {
+      registered = false;
+    },
+    start: async () => {
+      running = true;
+    },
+    stop: async () => {
+      running = false;
+    },
+  };
+
+  assert.deepEqual(
+    await setProductSyncHostMode("background", {
+      ...options,
+      adapter,
+      verifyHealth: async () => undefined,
+    }),
+    {
+      schemaVersion: 1,
+      state: "created",
+      publicOrigin: "http://127.0.0.1:4518",
+      availability: "this-device-only",
+      mode: "background",
+      running: true,
+      healthy: true,
+    },
+  );
 });
 
 test("committed Host config without its authority requires explicit repair", async (t) => {

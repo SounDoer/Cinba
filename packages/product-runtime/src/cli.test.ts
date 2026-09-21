@@ -160,6 +160,32 @@ test("Sync configure updates the Host origin and prints its resulting status", a
   ]);
 });
 
+test("Sync mode changes only a committed Host through the Host manager", async () => {
+  const modes: string[] = [];
+  const output: string[] = [];
+  await runProductCli(["sync", "mode", "background"], resolve("project"), {
+    readRelease: async () => release,
+    checkForUpdates: async () => undefined,
+    setSyncHostMode: async (mode) => {
+      modes.push(mode);
+      return {
+        schemaVersion: 1,
+        state: "created",
+        publicOrigin: "http://127.0.0.1:4518",
+        availability: "this-device-only",
+        mode,
+        running: true,
+        healthy: true,
+      };
+    },
+    writeOutput: (line) => output.push(line),
+  });
+
+  assert.deepEqual(modes, ["background"]);
+  assert.match(output[0]!, /Cinba Sync Host: created/);
+  assert.match(output[0]!, /Mode: background/);
+});
+
 test("the installed Core separates durable data, runtime state, logs, and payload", () => {
   const payload = resolve("payload");
   const config = createProductCoreConfig(payload, {

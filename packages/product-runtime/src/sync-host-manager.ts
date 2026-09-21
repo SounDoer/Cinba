@@ -10,6 +10,7 @@ import {
   type ProductManagedServiceOptions,
   inspectProductComponentMode,
   restartProductBackgroundService,
+  setProductComponentMode,
 } from "./managed-services.ts";
 import {
   type LocalSyncControlStatus,
@@ -50,6 +51,39 @@ export type ProductSyncHostStatus =
       running: boolean;
       healthy: boolean | null;
     };
+
+export async function setProductSyncHostMode(
+  mode: ServiceMode,
+  options: ProductSyncHostOptions = {},
+): Promise<ProductSyncHostStatus> {
+  const paths = resolveProductPaths({
+    platform: supportedPlatform(options.platform ?? process.platform),
+    homeDirectory: options.homeDirectory ?? homedir(),
+    environment: options.environment ?? process.env,
+  });
+  const unlock = await acquireInstallationLock({
+    programDirectory: paths.programDirectory,
+    releasesDirectory: paths.releasesDirectory,
+    transactionDirectory: paths.transactionDirectory,
+  });
+  try {
+    const storage = await inspectSyncHostStorage(paths);
+    if (storage.state === "not-created") {
+      throw new Error("Cinba Sync Host has not been created");
+    }
+    if (storage.state !== "created") {
+      throw new Error(`Cinba Sync Host requires repair: ${storage.state}`);
+    }
+    await setProductComponentMode("sync", mode, {
+      ...options,
+      componentCreated: true,
+      installationLockHeld: true,
+    });
+    return await inspectProductSyncHost(options);
+  } finally {
+    await unlock();
+  }
+}
 
 export async function configureProductSyncHost(
   publicOrigin: string,
