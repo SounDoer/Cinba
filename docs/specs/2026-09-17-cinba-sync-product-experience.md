@@ -2,7 +2,9 @@
 
 日期：2026-09-17
 
-状态：产品决定已确认，尚未实施
+最后更新：2026-09-21
+
+状态：产品决定已更新，尚未实施
 
 相关现状：`docs/specs/2026-09-16-cinba-sync-design.md` 记录已经实施的第一版。本设计描述下一阶段
 产品体验；发生冲突时，本设计是目标方向，但在对应迁移完成前，代码仍以已实施规格为准。
@@ -16,8 +18,9 @@
 本设计先收敛以下体验：
 
 - Cinba 默认不要求 Sync，用户可以直接只在当前设备使用；
-- 用户可以连接已有 Sync、在 GUI 设备创建本机 Sync，或部署始终在线的 Sync；
-- 本机 Sync 不要求用户执行命令、记住端口或维护前台终端；
+- 用户可以连接已有 Sync，或在 Windows、macOS 和 Linux 设备上创建本机 Sync Host；
+- GUI 设备不要求用户执行命令、记住端口或维护前台终端；VPS 用户可以通过 TUI
+  完成相同流程，CLI 作为自动化、故障处理和无交互环境入口；
 - 管理后台不要求用户创建并记住一个管理员密码；
 - Sync Host、管理端和 Connected Core 使用彼此独立、容易解释的身份与权限；
 - 尚未完整验证的远程网络方案不提前伪装成产品选项。
@@ -33,7 +36,8 @@ Cinba 首次启动不使用 Sync 选择阻塞用户。默认状态是：
 只在这台设备使用
 ```
 
-用户进入 `Settings → Cinba Sync` 后看到当前状态和三个后续动作：
+用户进入 Desktop/Web 的 `Settings → Cinba Sync` 或 TUI 的 `/sync` 后，看到当前状态
+和三个后续动作：
 
 ```text
 Cinba Sync
@@ -52,10 +56,24 @@ Cinba Sync
 三个动作分别表示：
 
 - **连接已有 Sync**：当前 Core 成为某个既有 Sync 的消费者；
-- **在这台设备创建 Sync**：当前 GUI 设备成为 Sync Host；
+- **在这台设备创建 Sync**：当前 Windows、macOS 或 Linux 设备成为 Sync Host；
 - **部署始终在线的 Sync**：在 VPS、NAS 或其他常驻设备安装 Sync Host。
 
-第三条路径的完整 VPS/TUI 部署体验需要单独设计，不在本文展开。
+前两个动作属于 Cinba 产品能力。第三个动作是部署说明：Cinba 负责安装和运行
+loopback-only Sync Host，用户负责自己的 HTTPS 网络入口。Cinba 不安装或配置
+Tailscale、Caddy、Nginx、DNS、TLS 或防火墙。
+
+四个产品表面的责任是：
+
+| 表面       | 责任                                                                  |
+| ---------- | --------------------------------------------------------------------- |
+| CLI        | 完整的本机 Host 创建、配置、状态、生命周期和删除逃生口                |
+| TUI        | VPS/Linux 的主要交互入口，也可在 Windows/macOS 管理本机 Host          |
+| Desktop    | Windows/macOS 的图形化本机 Host 编排                                  |
+| `sync-web` | Shared Settings、Credentials、Connected Cores、History 等完整管理能力 |
+
+CLI、TUI 和 Desktop 只能管理运行在同一台主机、属于当前安装的 Sync Host；不通过普通
+Core 网络连接远程启停或删除另一台主机的 Sync。
 
 ## 3. 权限模型
 
@@ -139,6 +157,19 @@ Edge on Laptop        Last used 12 days ago
 
 具体凭据载体、持久 Cookie、CSRF、轮换和 Desktop 安全存储属于实施设计；无论采用何种载体，都不能
 复用普通 Core credential。
+
+### 4.3 实施分期与旧实例兼容
+
+无密码受信管理端仍是目标体验，但不阻塞正式 Sync Host 安装、创建和生命周期管理的
+第一实施切片。该切片继续使用已验证的兼容流程：
+
+```text
+Setup Code → 设置管理员密码 → 持久管理会话
+```
+
+Host 创建命令或 TUI 可以在本机终端显示一次性 Setup Code 与管理地址，但不得把它写入
+可读配置、命令参数、公开日志或 URL query。后续实施无密码配对时，必须为现有管理员
+密码实例提供可管理、可升级和可回滚的兼容路径，不通过重建 Host 强制迁移。
 
 ## 5. Core enrollment
 
@@ -271,41 +302,79 @@ Credentials 保存为本地副本的流程。撤销后：
 访问权时，用户还必须在 Provider 侧轮换对应 API key，并把新值更新到 Sync。主动断开是用户控制的
 迁移行为；管理端撤销是阻止后续 Sync 访问的权限收回。
 
-## 7. 本机 GUI Sync
+## 7. 本机 Sync Host
 
 ### 7.1 创建流程
 
 ```text
-Settings → Cinba Sync
+CLI / TUI / Desktop 选择“在这台设备创建 Cinba Sync”
         ↓
-在这台设备创建 Cinba Sync
-        ↓
-创建并按需启动 Sync
+创建 Sync authority 与本机 Host 配置
         ↓
 用当前 Settings 初始化；不加入 API Credentials
         ↓
 当前 Core 自动连接并批准
         ↓
-在 Desktop 中打开 sync-web
+选择 On-demand 或 Background 生命周期
+        ↓
+显示管理地址和首次授权信息
 ```
 
-正常流程不显示端口、状态目录、环境变量、Setup Code 或终端命令。
+Desktop 正常流程不显示端口、状态目录、环境变量或终端命令。TUI/CLI 面向主机
+操作者，可以显示脱敏的监听地址、public origin、服务模式和日志位置，但不显示
+可复用的凭据。
 
-### 7.2 按需生命周期
+### 7.2 生命周期模式
 
-本机 Sync 默认不登录自启动，也不安装系统后台服务。第一阶段由现有 Desktop tray 进程托管：
+用户没有创建本机 Sync 时，不启动任何 Sync 进程，也不允许把一个尚未创建的组件
+直接切换为 Background。创建后使用统一生命周期模型：
 
-- 用户没有创建本机 Sync 时，不启动任何 Sync 进程；
-- 打开本机 Core 或管理后台时，Desktop 自动确保已配置的本机 Sync 运行；
-- 关闭窗口后 Desktop 仍在系统托盘，Sync 继续稳定运行；
-- 用户明确执行 `Quit Cinba` 时，Desktop 安全停止自己管理的本机 Sync；
-- 下次启动并需要 Sync 时自动恢复；
-- 不显示前台终端窗口。
+```text
+disabled    保留 Host 数据与配置，不自动启动
+on-demand   在本机 Cinba 需要时运行
+background  由当前用户的平台服务管理器常驻运行
+```
 
-未来可以提供“Cinba 关闭后仍供其他设备使用”的用户级后台模式，但必须由用户主动启用。后台模式不
-等同于始终在线：GUI 设备休眠、注销或关机时仍然不可用。
+- Windows Background 使用当前用户 Scheduled Task；
+- macOS Background 使用当前用户 LaunchAgent；
+- Linux Background 使用 systemd user service，需要 linger 时必须说明原因并获得
+  用户明确同意；
+- Desktop 设备可以选择 On-demand；VPS、NAS 或其他常驻主机通常选择 Background；
+- Background 只表示一个用户级常驻进程，不承诺设备休眠、断电或网络中断时始终可用。
 
-### 7.3 复用现有 sync-web
+三个平台共享创建、配置、状态和模式语义；只把服务注册的系统差异留在已有平台 adapter。
+
+### 7.3 CLI 与 TUI
+
+正式 launcher 提供可自动化和故障恢复的本机入口：
+
+```text
+cinba sync create [--public-origin URL]
+cinba sync configure --public-origin URL
+cinba sync status
+cinba sync mode [disabled|on-demand|background]
+cinba sync serve
+cinba sync delete
+```
+
+`create` 初始化 Host 但不自动共享 API Credentials；`configure` 只改变主机配置，不重建或删除
+authority；`status` 显示创建状态、生命周期、健康、管理地址和首次设置状态；`serve`
+保留为前台运行与诊断入口，不是普通用户的主流程；`delete` 必须使用独立危险确认。
+
+TUI 的 `/sync` 将两类操作明确分开：
+
+```text
+Cinba Sync
+├── This Core
+│   └── 连接、立即同步、断开
+└── Sync Host on this device
+    └── 创建、配置、启停、状态、删除
+```
+
+TUI 调用与 CLI 相同的 `product-runtime` 操作，不直接编辑配置文件、写 systemd unit 或
+实现另一套状态机。
+
+### 7.4 复用现有 sync-web
 
 `packages/sync-web` 仍是唯一完整管理界面，不新增 Desktop 专用管理实现：
 
@@ -321,11 +390,12 @@ Cinba Desktop
 Desktop 默认在受限制的独立 WebView 中打开，并保留“在浏览器中打开”。WebView 必须使用独立、持久
 的浏览器存储，禁用 Node 能力，限制到当前 Sync origin，并把外部链接交给系统浏览器。
 
-Desktop 只负责编排本机生命周期、加载正确地址和建立本机首次管理授权。Shared Settings、
+CLI、TUI 和 Desktop 只负责编排本机生命周期、加载正确地址和建立本机首次管理授权。
+Shared Settings、
 Credentials、Connected Cores、受信管理端、History 和 Backup 等管理能力仍然只在 `sync-web` 与
 Sync Server 实现一次。
 
-### 7.4 Disable 与 Delete
+### 7.5 Disable 与 Delete
 
 本机 Host 必须把可恢复的停用与永久删除分开，不能合并成含糊的 `Remove`：
 
@@ -338,34 +408,46 @@ key，使所有管理授权与 Core credential 永久失效。界面必须列出
 数量，并进行独立的危险操作确认。
 
 备份仍是可选能力。删除确认可以提供 `Create backup first`，但不强制创建；用户明确确认永久删除且
-没有备份时，产品可以执行不可恢复删除。
+没有备份时，产品可以执行不可恢复删除。已有的整个 Cinba 卸载仍遵循另一层边界：
+普通卸载保留 Sync Host 数据与配置，只有整个产品 purge 或上述明确 Host Delete 才删除它们。
 
 ## 8. 网络边界
 
-### 8.1 第一阶段仅承诺本机访问
+### 8.1 Loopback 监听与 Public Origin
 
-本机 GUI Sync 的第一阶段只监听 loopback：
+Sync Server 在所有产品形态中都只监听 loopback，不提供把监听地址改为 `0.0.0.0` 的开关。
+主机配置与 Sync authority 数据分开，位于当前正式安装的配置目录；第一版至少包含：
 
-```text
-Availability    This device only
+```json
+{
+  "schemaVersion": 1,
+  "publicOrigin": "https://sync.example.com"
+}
 ```
 
-不提供把监听地址改为 `0.0.0.0` 的开关，不自动修改防火墙，也不提供尚未完整验证的 Tailscale、LAN
-HTTPS 或公网 HTTPS 向导。
+`publicOrigin` 表示管理端和 Connected Core 实际访问的根 origin，用于安全 Cookie、forwarded
+header 校验和展示管理地址；它不改变 Sync 的本机监听地址。配置必须原子写入、严格解析，
+并拒绝账号信息、路径、query 与 fragment：
 
-当部署没有外部可达地址时，界面不显示误导性的“连接另一台设备”动作。当前本机 Core 已在创建流程中
-自动连接。
+- 仅限本机访问时，可以使用产品定义的精确 loopback HTTP origin；
+- 任何供其他设备使用的 origin 必须是 HTTPS；
+- 修改 origin 不重建 Sync authority，但必须清楚提示管理端需要在新地址重新登录，各
+  Connected Core 需要更新连接地址。
+
+没有外部 public origin 时，界面显示 `Availability: This device only`，不显示误导性的
+“连接另一台设备”动作。
 
 ### 8.2 网络部署与 Core 授权分离
 
 远程网络入口属于部署能力；Core enrollment 属于应用授权。二者不能由一个“Connect another
 device”按钮混合处理。
 
-未来若提供“允许其他设备访问”开关，进入 On 状态必须代表 Cinba 已经建立并验证了安全、稳定的
-HTTPS 入口，而不是简单暴露 HTTP 端口。支持某种方案前必须完整验证安装、TLS、地址稳定性、权限、
-防火墙、重启恢复、URL 迁移与卸载撤销。
+Cinba 接受用户已经建立的 HTTPS origin，但不把“填入一个 URL”表述为 Cinba 已经验证整套网络。
+产品可检查 origin 语法、本机服务健康以及实际请求的 forwarded proto/host，但网络可达性、
+证书、ACL、防火墙与域名稳定性仍由用户选择的基础设施负责。
 
-本设计暂不承诺本机 Sync 的远程访问。现阶段跨设备使用由已经具备安全网络入口的 VPS Sync 承担。
+VPS 首次实机验收继续使用已经验证的 Tailscale + Caddy 组合，但这只是一种部署选择，
+不形成产品依赖或业务协议概念。
 
 ## 9. 备份与恢复
 
@@ -385,43 +467,43 @@ Host 永久丢失后无法完整恢复权威数据的风险。
 
 ## 10. 第一实施切片
 
-第一实施切片只交付本机 GUI Sync 的完整纵向路径：
+第一实施切片交付跨平台 Sync Host 管理基础，并以 Linux VPS 作为第一个真实安装验收环境：
 
-- `Settings → Cinba Sync` 入口与默认本机状态；
-- 创建本机 Sync；
-- loopback-only；
-- 由 Desktop tray 托管的按需生命周期；
-- 本机第一次管理授权；
-- 当前 Core 自动 enrollment 与批准；
-- 用当前 Settings 一键初始化 Shared Settings；
-- API Credentials 默认不加入 Sync；
-- 在 Desktop 中复用现有 `sync-web`；
-- 来源切换不删除本地数据；
-- 主动断开与管理端撤销使用不同的 Settings/Credentials 处理；
-- 可恢复的 Disable 与独立确认的永久 Delete。
+1. 在 `product-runtime` 实现本机 Host 配置、创建、状态、Disable、Delete 与已有生命周期接线；
+2. 增加 `cinba sync create/configure/status/delete`，保留 `serve` 和 `mode`；
+3. TUI `/sync` 增加 `Sync Host on this device`，复用同一套运行时操作；
+4. 配置 public origin，同时继续强制 Sync 只监听 loopback；
+5. 用当前 Settings 初始化 Shared Settings，API Credentials 默认不加入 Sync；
+6. 当前 Core 自动 enrollment 与批准，不把同机其他 Core 自动提升为受信 Core；
+7. 使用现有 Setup Code + 管理员密码完成首次管理授权；
+8. 复用现有 `sync-web`，不在 CLI、TUI 或 Desktop 重复实现同步业务管理；
+9. 使用正式 Linux artifact 在干净后的 VPS 创建 Background Core 与 Sync，通过用户自有 HTTPS
+   入口完成初始化、重启恢复和远程管理验收；
+10. Windows、macOS 的配置、生命周期、更新和卸载边界由跨平台自动化测试覆盖，Desktop 图形入口
+    作为紧随其后的小切片。
 
 这个切片明确不包含：
 
-- 本机 Sync 对其他设备开放；
-- Tailscale、LAN、公网 HTTPS 或 SSH tunnel 配置；
-- 登录自启动或持续后台模式；
-- VPS/TUI 新部署向导；
+- 安装、登录或配置 Tailscale、Caddy、Nginx、LAN、公网 HTTPS 或 SSH tunnel；
+- 修改为监听 `0.0.0.0` 或自动修改防火墙；
 - 强制备份或恢复密钥；
 - Passkey；
-- 自动更新。
+- 无密码受信管理端迁移；
+- 新的无人值守自动更新机制；继续使用已有的正式更新、确认和恢复链。
 
 后续实施顺序由独立设计决定，不在本文把尚未验证的部署方案写成既定产品能力。
 
 ## 11. 与已实施第一版的主要差异
 
-| 主题 | 已实施第一版 | 本设计目标 |
-| --- | --- | --- |
-| 管理身份 | Setup Code 后设置管理员密码 | 一次性配对受信管理端，无日常密码 |
-| 管理入口 | 系统浏览器 | 复用 sync-web，Desktop 内置为默认入口，浏览器仍支持 |
-| 本机生命周期 | Windows 前台运行；服务部署为 persistent | GUI 本机默认按需运行，后台模式以后显式启用 |
-| Desktop 角色 | 只从当前 Core 导向系统浏览器 | 增加 Sync 产品入口与本机生命周期编排 |
-| 本机远程访问 | 未产品化 | 第一实施切片仍不提供，不用不完整向导占位 |
-| 备份 | CLI 能力已实现 | 保留为可选高级功能，不阻塞创建 |
+| 主题         | 已实施第一版                            | 本设计目标                                                         |
+| ------------ | --------------------------------------- | ------------------------------------------------------------------ |
+| 管理身份     | Setup Code 后设置管理员密码             | 第一切片保持兼容；后续迁移到一次性配对受信管理端                   |
+| Host 入口    | 源码 CLI 与手工部署                     | 共享运行时，由正式 CLI、TUI 和 Desktop 逐层提供                    |
+| 业务管理入口 | 系统浏览器                              | 继续复用 sync-web，Desktop WebView 和浏览器都可作为容器            |
+| 本机生命周期 | Windows 前台运行；源码服务为 persistent | 统一 disabled/on-demand/background，平台只负责服务 adapter         |
+| Desktop 角色 | 只从当前 Core 导向系统浏览器            | 增加 Sync Host 入口、本机生命周期编排与受限 WebView                |
+| 远程访问     | 源码部署手工提供 HTTPS origin           | Cinba 保持 loopback，接受用户已有 HTTPS origin，不配置网络基础设施 |
+| 备份         | CLI 能力已实现                          | 保留为可选高级功能，不阻塞创建                                     |
 
 这些差异需要兼容迁移设计，尤其是现有管理员密码、浏览器 session、VPS 实例和备份格式。本文不把
 迁移细节与产品体验混写；实施计划必须单独说明如何保持现有实例可管理、可升级和可回滚。
