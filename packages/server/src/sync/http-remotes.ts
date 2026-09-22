@@ -1,6 +1,7 @@
 import {
   CoreSyncClient,
   EnrollmentClient,
+  SyncClientError,
   SyncHttpClient,
   coreAuthorization,
   enrollmentAuthorization,
@@ -11,6 +12,10 @@ import type { EnrollmentRemote } from "./enrollment-coordinator.ts";
 
 export type CorePreferencesRemote = {
   updateCredentialSource(source: "local" | "sync", signal?: AbortSignal): Promise<unknown>;
+};
+
+export type CoreLifecycleRemote = {
+  revoke(signal?: AbortSignal): Promise<unknown>;
 };
 
 function http(serverUrl: string): SyncHttpClient {
@@ -28,6 +33,24 @@ export function createEnrollmentHttpRemote(serverUrl: string): EnrollmentRemote 
 export function createCoreSyncHttpRemote(
   serverUrl: string,
   credential: string,
-): SnapshotRemote & CapabilitiesRemote & CorePreferencesRemote {
+): SnapshotRemote & CapabilitiesRemote & CorePreferencesRemote & CoreLifecycleRemote {
   return new CoreSyncClient(http(serverUrl), coreAuthorization(credential));
+}
+
+export async function revokeCoreSyncAccess(
+  serverUrl: string,
+  credential: string,
+  remoteFor: (
+    serverUrl: string,
+    credential: string,
+  ) => CoreLifecycleRemote = createCoreSyncHttpRemote,
+): Promise<void> {
+  try {
+    await remoteFor(serverUrl, credential).revoke();
+  } catch (error) {
+    // A rejected credential means this Core no longer has server-side access.
+    if (!(error instanceof SyncClientError && error.status === 401)) {
+      throw error;
+    }
+  }
 }

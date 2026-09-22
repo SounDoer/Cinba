@@ -283,6 +283,16 @@ test("typed clients complete enrollment, configuration, synchronization, and rev
       return true;
     });
     assert.equal((await localCore.snapshot()).status, "updated");
+    await localCore.revoke();
+    assert.equal(
+      (await management.cores()).cores.find((core) => core.id === localApproval.coreId)?.revoked,
+      true,
+    );
+    await assert.rejects(localCore.snapshot(), (error: unknown) => {
+      assert.ok(error instanceof SyncClientError);
+      assert.equal(error.code, "unauthorized");
+      return true;
+    });
 
     const visibleLogs = JSON.stringify(logs);
     for (const secret of [

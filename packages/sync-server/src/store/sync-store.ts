@@ -110,6 +110,7 @@ export type SyncStore = {
     coreCredential: string,
     credentialSource: "local" | "sync",
   ): Promise<void>;
+  revokeAuthenticatedCore(coreCredential: string): Promise<void>;
   revokeCore(coreId: string): Promise<void>;
   authenticationState(): "setup-required" | "ready";
   authenticationMarker(): string;
@@ -633,6 +634,15 @@ export function createSyncStore(directory: string, options: SyncStoreOptions = {
         const target = next.cores.find((candidate) => candidate.id === core.id)!;
         target.credentialSource = credentialSource;
         target.lastSeenAt = now().toISOString();
+        commit(next);
+      }),
+    revokeAuthenticatedCore: (credential) =>
+      enqueue(() => {
+        const current = requireState().state;
+        const core = authenticateCore(current, credential);
+        const next = cloneState(current);
+        const target = next.cores.find((candidate) => candidate.id === core.id)!;
+        target.revokedAt = now().toISOString();
         commit(next);
       }),
     revokeCore: (coreId) =>

@@ -27,6 +27,7 @@ export function createEnrollmentCoordinator(options: {
   sleep?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
 }): EnrollmentCoordinator {
   let cancellation = new AbortController();
+  let beginning = false;
   const sleep =
     options.sleep ??
     (async (milliseconds, signal) => {
@@ -51,19 +52,27 @@ export function createEnrollmentCoordinator(options: {
 
   return {
     begin: async ({ serverUrl, sources, request, signal }) => {
+      if (beginning || options.store.get()) {
+        throw new Error("A Sync connection already exists");
+      }
+      beginning = true;
       cancellation.abort();
       cancellation = new AbortController();
-      const created = await options.remoteFor(serverUrl).create(request, signal);
-      options.store.begin({
-        serverUrl,
-        sources,
-        enrollment: {
-          id: created.enrollmentId,
-          secret: created.enrollmentSecret,
-          expiresAt: created.expiresAt,
-        },
-      });
-      return created;
+      try {
+        const created = await options.remoteFor(serverUrl).create(request, signal);
+        options.store.begin({
+          serverUrl,
+          sources,
+          enrollment: {
+            id: created.enrollmentId,
+            secret: created.enrollmentSecret,
+            expiresAt: created.expiresAt,
+          },
+        });
+        return created;
+      } finally {
+        beginning = false;
+      }
     },
     poll,
     wait: async (signal) => {

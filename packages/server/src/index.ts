@@ -58,6 +58,7 @@ import {
   resolveProviderCredential,
   resolveSyncSettings,
   resolveWebToolsRuntimeConfiguration,
+  revokeCoreSyncAccess,
   writeWebToolsRuntimeConfiguration,
 } from "./sync/index.ts";
 import { isAllowedWebSocketOrigin } from "./websocket-origin.ts";
@@ -516,8 +517,12 @@ const serveCoreSyncControl = createCoreSyncControlHandler({
       markCredentialsStale();
     }
   },
-  disconnect: () => {
-    const sharedCredentials = syncConnection.get()?.sources.credentials === "sync";
+  disconnect: async () => {
+    const connection = syncConnection.get();
+    const sharedCredentials = connection?.sources.credentials === "sync";
+    if (connection?.core) {
+      await revokeCoreSyncAccess(connection.serverUrl, connection.core.credential);
+    }
     enrollment.cancel();
     sync.disconnect();
     writeEffectiveWebToolsRuntime();

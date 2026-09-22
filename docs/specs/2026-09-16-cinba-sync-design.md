@@ -298,6 +298,7 @@ Core credential 只能：
 - 查询自己的最新 revision；
 - 下载自己模式允许的 Sync Snapshot；
 - 上报自己的非秘密能力与同步状态。
+- 撤销自身授权，用于完成主动断开。
 
 它不能修改 Shared Settings、写 Credential、批准 Core、读取其他 Core token 或调用管理 API。
 

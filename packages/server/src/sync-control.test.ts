@@ -21,7 +21,7 @@ async function withServer(
     view: () => VIEW,
     connect: async (request) => void calls.push(`connect:${request.serverUrl}`),
     cancel: () => void calls.push("cancel"),
-    disconnect: () => void calls.push("disconnect"),
+    disconnect: async () => void calls.push("disconnect"),
     syncNow: async () => void calls.push("sync"),
     updateSources: async (request) =>
       void calls.push(`sources:${request.sources.settings}/${request.sources.credentials}`),

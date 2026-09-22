@@ -355,6 +355,7 @@ test("typed clients keep management, enrollment, and Core authorization on separ
       capabilities: { version: 1, providers: [], models: [] },
     });
     await core.updateCredentialSource("local");
+    await core.revoke();
 
     assert.deepEqual(observed, [
       {
@@ -389,6 +390,12 @@ test("typed clients keep management, enrollment, and Core authorization on separ
       },
       {
         path: "/api/core/preferences",
+        authorization: "Bearer core-token",
+        csrf: undefined,
+        cookie: undefined,
+      },
+      {
+        path: "/api/core/connection",
         authorization: "Bearer core-token",
         csrf: undefined,
         cookie: undefined,

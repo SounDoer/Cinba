@@ -275,6 +275,10 @@ What should this Core use after disconnecting?
 
 默认保留当前正在使用的 Settings，使断开只停止之后的同步，不让模型与偏好意外倒退。
 
+完成本地迁移后，Core 必须使用自己的 Core credential 请求 Sync 撤销自身授权，再删除本地连接凭据。
+若 Sync 暂时不可达，断开失败并保留本地凭据以便重试；若服务端已经撤销该 Core，则直接完成本地清理。
+这样正常的断开再连接不会在 Connected Cores 中留下仍有效的旧授权。
+
 如果 Core 正在使用 Shared Credentials，Credentials 使用单独的明确选择，不能随 Settings 自动复制：
 
 ```text

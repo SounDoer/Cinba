@@ -89,6 +89,7 @@ export const SYNC_ROUTES = {
   },
   core: {
     enrollments: "/api/core/enrollments",
+    connection: "/api/core/connection",
     snapshot: "/api/core/snapshot",
     capabilities: "/api/core/capabilities",
     preferences: "/api/core/preferences",

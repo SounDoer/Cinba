@@ -148,6 +148,49 @@ test("waiting polls until approval without creating overlapping enrollment state
   assert.equal(polls, 2);
 });
 
+test("concurrent begin calls create only one remote enrollment", async (context) => {
+  const directory = temporaryDirectory("cinba-sync-concurrent-enrollment-", context);
+  const store = createSyncConnectionStore(join(directory, "connection.json"));
+  let release!: () => void;
+  const created = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let creates = 0;
+  const coordinator = createEnrollmentCoordinator({
+    store,
+    remoteFor: () => ({
+      create: async () => {
+        creates += 1;
+        await created;
+        return {
+          version: 1,
+          enrollmentId: "id",
+          enrollmentSecret: "secret",
+          expiresAt: "2026-09-16T12:00:00.000Z",
+        };
+      },
+      status: async () => ({ version: 1, status: "pending" }),
+    }),
+  });
+  const options = {
+    serverUrl: "https://sync.example.test",
+    sources: { settings: "sync", credentials: "local" } as const,
+    request: {
+      version: 1 as const,
+      name: "Core",
+      platform: "macos" as const,
+      appVersion: "1",
+      credentialSource: "local" as const,
+    },
+  };
+
+  const first = coordinator.begin(options);
+  await assert.rejects(coordinator.begin(options), /already exists/);
+  assert.equal(creates, 1);
+  release();
+  await first;
+});
+
 test("an invalid existing connection is preserved and makes the store read-only", (context) => {
   const directory = temporaryDirectory("cinba-sync-connection-", context);
   const path = join(directory, "connection.json");

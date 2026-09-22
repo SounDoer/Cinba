@@ -14,7 +14,7 @@ type Operations = {
   view(): CoreSyncView;
   connect(request: ReturnType<typeof parseConnectCoreSyncRequest>): Promise<void>;
   cancel(): void;
-  disconnect(): void;
+  disconnect(): Promise<void>;
   syncNow(): Promise<void>;
   updateSources(request: ReturnType<typeof parseUpdateCoreSyncSourcesRequest>): Promise<void>;
   updateOverride(request: ReturnType<typeof parseUpdateCoreInstanceOverrideRequest>): void;
@@ -96,7 +96,7 @@ export function createCoreSyncControlHandler(operations: Operations) {
       } else if (path === CORE_SYNC_ROUTES.cancel) {
         operations.cancel();
       } else if (path === CORE_SYNC_ROUTES.disconnect) {
-        operations.disconnect();
+        await operations.disconnect();
       } else if (path === CORE_SYNC_ROUTES.syncNow) {
         await operations.syncNow();
       } else if (path === CORE_SYNC_ROUTES.sources) {

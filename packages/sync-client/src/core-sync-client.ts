@@ -116,4 +116,16 @@ export class CoreSyncClient {
       }),
     );
   }
+
+  async revoke(signal?: AbortSignal): Promise<CoreReportAccepted> {
+    return valueFrom(
+      await this.http.json({
+        path: SYNC_ROUTES.core.connection,
+        method: "DELETE",
+        parser: parseCoreReportAccepted,
+        headers: this.headers(),
+        signal,
+      }),
+    );
+  }
 }

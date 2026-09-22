@@ -183,6 +183,16 @@ async function handleCoreRoute(
     sendJson(response, 200, { version: 1, accepted: true });
     return true;
   }
+  if (path === SYNC_ROUTES.core.connection && request.method === "DELETE") {
+    const credential = bearer(request, "Bearer");
+    if (!credential) {
+      sendError(response, 401, "unauthorized");
+      return true;
+    }
+    await store.revokeAuthenticatedCore(credential);
+    sendJson(response, 200, { version: 1, accepted: true });
+    return true;
+  }
   return false;
 }
 
