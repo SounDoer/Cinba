@@ -3,6 +3,7 @@ import {
   activateDesktopUpdate,
   createDesktopUpdatePresentation,
 } from "../desktop-api.ts";
+import { syncProfilePicker } from "../profile-picker.ts";
 import { desktopApi } from "./api.ts";
 import "./style.css";
 
@@ -20,16 +21,16 @@ const brand = document.querySelector<HTMLElement>("#product-name")!;
 let updatePresentation = createDesktopUpdatePresentation("Cinba Dev", undefined);
 
 function render(state: DesktopShellState): void {
-  const existing = new Map([...profile.options].map((option) => [option.value, option]));
   brand.textContent = state.productName;
-  profile.replaceChildren(
-    ...state.profiles.map((item) => {
-      const option = existing.get(item.id) ?? document.createElement("option");
-      option.value = item.id;
-      option.textContent = item.label;
-      option.selected = item.id === state.selectedProfileId;
-      return option;
-    }),
+  syncProfilePicker(
+    profile.options,
+    state.profiles,
+    state.selectedProfileId,
+    () => document.createElement("option"),
+    (options) => profile.replaceChildren(...options),
+    (profileId) => {
+      profile.value = profileId;
+    },
   );
   badge.textContent = state.status;
   badge.dataset.status = state.status;
